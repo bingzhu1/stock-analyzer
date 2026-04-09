@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.DS_Store
+
+data/
+enriched_data/
+coded_data/
+match_results/
+stats_results/

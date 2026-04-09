@@ -1,3 +1,0 @@
-TargetDate,TargetCode,MatchType,SampleSize,AvgNextOpenChange,MedianNextOpenChange,PositiveNextOpenChangeRate,AvgNextHighMove,MedianNextHighMove,HighMoveOver1PctRate,HighMoveOver2PctRate,AvgNextLowMove,MedianNextLowMove,LowMoveOver1PctRate,LowMoveOver2PctRate,AvgNextCloseMove,MedianNextCloseMove,PositiveNextCloseMoveRate,NegativeNextCloseMoveRate,DominantNextDayBias
-2026-04-07,,exact,0,,,,,,,,,,,,,,,,insufficient_sample
-2026-04-07,53354,near,2,-0.0005026034515466999,-0.0005026034515466999,0.5,0.01498254134243985,0.01498254134243985,1.0,0.0,0.01080403223618775,0.01080403223618775,0.5,0.0,-0.00605962388025755,-0.00605962388025755,0.0,1.0,insufficient_sample
