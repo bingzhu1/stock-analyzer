@@ -159,6 +159,30 @@ COL_CONFIG: dict[str, st.column_config.Column] = {
     "T2Close":        st.column_config.NumberColumn("T+2 收盘",     format="%.2f"),
     "T2Volume":       st.column_config.NumberColumn("T+2 成交量"),
     "T2Turnover":     st.column_config.NumberColumn("T+2 成交额"),
+    # Position context (values stored as 0–100)
+    "MatchPos15":          st.column_config.NumberColumn("位置15日%",    format="%.1f"),
+    "MatchPos30":          st.column_config.NumberColumn("位置30日%",    format="%.1f"),
+    "MatchPosLabel":       st.column_config.TextColumn("位置标签"),
+    # Previous-day state
+    "MatchPrevDate":       st.column_config.TextColumn("前一日"),
+    "MatchPrevCode":       st.column_config.TextColumn("前一日编码"),
+    "MatchPrevOpenType":   st.column_config.TextColumn("前一日开盘"),
+    "MatchPrevStructure":  st.column_config.TextColumn("前一日结构"),
+    "MatchPrevCloseDir":   st.column_config.TextColumn("前一日收盘"),
+    "MatchPrevCloseMove":  st.column_config.NumberColumn("前一日涨跌%",  format="%.2f"),
+    "MatchPrevVolume":     st.column_config.NumberColumn("前一日成交量"),
+    "MatchPrevTurnover":   st.column_config.NumberColumn("前一日成交额"),
+    "MatchPrevVRatio":     st.column_config.NumberColumn("前一日相对量", format="%.2f"),
+    # Momentum / stage
+    "MatchStageLabel":    st.column_config.TextColumn("阶段"),
+    "MatchRet3":          st.column_config.NumberColumn("3日涨跌%",   format="%+.2f"),
+    "MatchRet5":          st.column_config.NumberColumn("5日涨跌%",   format="%+.2f"),
+    "MatchRet10":         st.column_config.NumberColumn("10日涨跌%",  format="%+.2f"),
+    "MatchVol5Ratio":     st.column_config.NumberColumn("量/5日均",   format="%.2f"),
+    "MatchVolState":      st.column_config.TextColumn("量能"),
+    # Context similarity scoring
+    "ContextScore":       st.column_config.NumberColumn("相似度",   format="%.0f"),
+    "ContextLabel":       st.column_config.TextColumn("相似标签"),
 }
 # Keep old alias so any leftover reference still resolves.
 PCT_COL_CONFIG = COL_CONFIG
@@ -171,6 +195,25 @@ _STRUCTURE_COLORS = {
     "高开低走": "#e74c3c",
     "低开低走": "#c0392b",
     "平开震荡": "#95a5a6",
+}
+
+_STAGE_COLORS = {
+    "启动":    "#3498db",   # blue   — new move beginning from low base
+    "加速":    "#2ecc71",   # green  — strong momentum + expanding volume
+    "延续":    "#27ae60",   # teal   — normal on-trend continuation
+    "整理":    "#95a5a6",   # gray   — sideways / low-volume pause
+    "分歧":    "#f39c12",   # amber  — price/volume divergence, caution
+    "衰竭风险": "#e74c3c",  # red    — high position + momentum reversing
+}
+
+# Stage adjacency groups for context scoring: same group earns partial credit.
+_STAGE_ADJACENCY: dict[str, str] = {
+    "启动":    "momentum",   # breakout / acceleration group
+    "加速":    "momentum",
+    "延续":    "neutral",    # steady-state group
+    "整理":    "neutral",
+    "分歧":    "risk",       # topping / exhaustion group
+    "衰竭风险": "risk",
 }
 
 # Threshold (as raw ratio) for classifying open/close direction.
@@ -350,6 +393,525 @@ def add_pattern_labels(df: pd.DataFrame) -> pd.DataFrame:
         out["T2收盘方向"] = "—"
 
     return out
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Position feature helpers (app-layer only — no core module changes)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def compute_position_features(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Compute rolling price-position metrics for every row in coded_df.
+
+    Pos15 / Pos30  — where Close sits within the N-day High/Low range, 0–100.
+    NearHigh30     — Close is within 3 % of the 30-day rolling high.
+    NearLow30      — Close is within 3 % of the 30-day rolling low.
+    Rebound30      — how far Close has recovered above the 30-day rolling low (%).
+    PosLabel       — categorical bucket: 低位 (<33) / 中位 (33–66) / 高位 (≥67).
+
+    Returns a dataframe with Date + position columns only.
+    All percentage values stored on a 0–100 scale for direct display.
+    """
+    high  = df["High"].astype(float)
+    low   = df["Low"].astype(float)
+    close = df["Close"].astype(float)
+
+    out = df[["Date"]].copy()
+
+    for n, suffix in [(15, "15"), (30, "30")]:
+        roll_high = high.rolling(n).max()
+        roll_low  = low.rolling(n).min()
+        rng = roll_high - roll_low
+        pos = (close - roll_low) / rng.where(rng > 0)   # NaN when flat range
+        out[f"Pos{suffix}"] = (pos * 100).round(1)
+
+    roll_high30 = high.rolling(30).max()
+    roll_low30  = low.rolling(30).min()
+
+    out["NearHigh30"] = (close >= roll_high30 * 0.97).fillna(False)
+    out["NearLow30"]  = (close <= roll_low30  * 1.03).fillna(False)
+    out["Rebound30"]  = ((close - roll_low30) / roll_low30 * 100).round(2)
+
+    def _label(p: float) -> str:
+        if pd.isna(p):
+            return "—"
+        if p < 33:
+            return "低位"
+        if p >= 67:
+            return "高位"
+        return "中位"
+
+    out["PosLabel"] = out["Pos30"].apply(_label)
+    return out
+
+
+def enrich_with_position(match_df: pd.DataFrame, pos_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Join Pos15, Pos30, PosLabel from pos_df onto each match row by MatchDate.
+    Columns are prefixed with 'Match' so they don't collide with target-day fields.
+    """
+    if match_df.empty:
+        return match_df
+
+    lookup = pos_df.set_index("Date")[["Pos15", "Pos30", "PosLabel"]]
+    out = match_df.copy()
+    match_dates = pd.to_datetime(out["MatchDate"])
+
+    out["MatchPos15"]    = match_dates.map(lookup["Pos15"])
+    out["MatchPos30"]    = match_dates.map(lookup["Pos30"])
+    out["MatchPosLabel"] = match_dates.map(lookup["PosLabel"]).fillna("—")
+    return out
+
+
+def compute_prev_day_features(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    For every row in coded_df, capture summary features of the *previous* trading row.
+    The returned frame is keyed by Date (current day) so it can be joined
+    onto any match table via MatchDate, or looked up for the target date.
+
+    PrevDate       — calendar date of the prior trading day
+    PrevCode       — 5-digit code of the prior day
+    PrevOpenType   — 高开 / 低开 / 平开 (classified from O_gap)
+    PrevStructure  — intraday structure label (高开高走 etc.)
+    PrevCloseDir   — 收涨 / 收跌 / 平收 (classified from C_move)
+    PrevCloseMove  — C_move of prior day as a percentage (e.g. 1.23 = +1.23%)
+    PrevVolume     — Volume of prior day
+    PrevTurnover   — Close × Volume of prior day
+    PrevVRatio     — V_ratio of prior day (volume vs 20-day average)
+    """
+    out = df[["Date"]].copy()
+
+    # Shift raw OHLCV / feature columns by one row
+    prev_close   = df["Close"].shift(1)
+    prev_volume  = df["Volume"].shift(1)
+    prev_o_gap   = df["O_gap"].shift(1)   if "O_gap"   in df.columns else None
+    prev_c_move  = df["C_move"].shift(1)  if "C_move"  in df.columns else None
+    prev_v_ratio = df["V_ratio"].shift(1) if "V_ratio" in df.columns else None
+    prev_code    = df["Code"].shift(1)    if "Code"    in df.columns else None
+
+    # Date as formatted string so it displays consistently with MatchDate
+    out["PrevDate"]    = df["Date"].shift(1).dt.strftime("%Y-%m-%d").fillna("—")
+    if prev_code is not None:
+        out["PrevCode"] = prev_code.fillna("—")
+
+    out["PrevVolume"]   = prev_volume
+    out["PrevTurnover"] = prev_close * prev_volume
+
+    if prev_c_move is not None:
+        out["PrevCloseMove"] = (prev_c_move * 100).round(2)   # stored as % units
+
+    if prev_v_ratio is not None:
+        out["PrevVRatio"] = prev_v_ratio.round(3)
+
+    # Pattern labels — reuse existing classifiers
+    def _safe_open(v):
+        try:
+            return _classify_open(float(v))
+        except Exception:
+            return "—"
+
+    def _safe_close(v):
+        try:
+            return _classify_close(float(v))
+        except Exception:
+            return "—"
+
+    def _safe_structure(o, c):
+        try:
+            return _classify_structure(float(o), float(c))
+        except Exception:
+            return "—"
+
+    if prev_o_gap is not None:
+        out["PrevOpenType"] = prev_o_gap.apply(_safe_open)
+    if prev_c_move is not None:
+        out["PrevCloseDir"] = prev_c_move.apply(_safe_close)
+    if prev_o_gap is not None and prev_c_move is not None:
+        out["PrevStructure"] = pd.Series(
+            [_safe_structure(o, c) for o, c in zip(prev_o_gap, prev_c_move)],
+            index=df.index,
+        )
+
+    return out
+
+
+def enrich_with_prev_day(match_df: pd.DataFrame, prev_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Join previous-day features from prev_df onto each match row by MatchDate.
+    All added columns are prefixed with 'Match' for consistency with other enrichments.
+    """
+    if match_df.empty:
+        return match_df
+
+    prev_cols = [c for c in [
+        "PrevDate", "PrevCode", "PrevOpenType", "PrevStructure",
+        "PrevCloseDir", "PrevCloseMove", "PrevVolume", "PrevTurnover", "PrevVRatio",
+    ] if c in prev_df.columns]
+
+    lookup = prev_df.set_index("Date")[prev_cols]
+    out = match_df.copy()
+    match_dates = pd.to_datetime(out["MatchDate"])
+
+    for col in prev_cols:
+        out[f"Match{col}"] = match_dates.map(lookup[col])
+
+    return out
+
+
+def classify_stage(
+    pos30: float,
+    ret3: float,
+    ret5: float,
+    vol5_ratio: float,
+    vol_expanding: bool,
+) -> str:
+    """
+    Transparent rule-based momentum / stage classifier.
+    Rules are evaluated in strict priority order; first match wins.
+
+    Inputs (all required — returns '—' if any are NaN):
+      pos30        : 0–100, where Close sits in the 30-day High/Low range
+      ret3         : 3-day price return in percent
+      ret5         : 5-day price return in percent
+      vol5_ratio   : today's Volume / 5-day average volume
+      vol_expanding: True when today's Volume > yesterday's Volume
+
+    Stage assignment rules:
+      衰竭风险  pos30 ≥ 70 AND ret3 < −2.0
+               OR pos30 ≥ 75 AND ret5 < −1.5
+      分歧      pos30 ≥ 65 AND NOT vol_expanding AND |ret3| < 2.0
+               OR pos30 ≥ 60 AND ret5 > 0 AND vol5_ratio < 0.85
+      加速      ret3 ≥ 4.0 AND vol5_ratio ≥ 1.2
+               OR ret5 ≥ 7.0 AND vol5_ratio ≥ 1.15 AND vol_expanding
+      启动      pos30 < 35 AND ret3 ≥ 1.5 AND vol_expanding AND vol5_ratio ≥ 1.0
+               OR pos30 < 40 AND ret5 ≥ 2.5 AND vol5_ratio ≥ 1.1
+      整理      |ret5| < 2.0 AND vol5_ratio < 0.90
+               OR |ret3| < 1.0 AND |ret5| < 3.0
+      延续      ret5 ≥ 0   (default positive-trend fallback)
+      整理      default    (mild negative drift, no other rule fired)
+    """
+    if any(pd.isna(x) for x in [pos30, ret3, ret5, vol5_ratio]):
+        return "—"
+
+    # 1. 衰竭风险 — high position + price rolling over
+    if pos30 >= 70 and ret3 < -2.0:
+        return "衰竭风险"
+    if pos30 >= 75 and ret5 < -1.5:
+        return "衰竭风险"
+
+    # 2. 分歧 — price/volume divergence near highs
+    if pos30 >= 65 and (not vol_expanding) and abs(ret3) < 2.0:
+        return "分歧"
+    if pos30 >= 60 and ret5 > 0 and vol5_ratio < 0.85:
+        return "分歧"
+
+    # 3. 加速 — strong momentum + above-average expanding volume
+    if ret3 >= 4.0 and vol5_ratio >= 1.2:
+        return "加速"
+    if ret5 >= 7.0 and vol5_ratio >= 1.15 and vol_expanding:
+        return "加速"
+
+    # 4. 启动 — low base breakout with rising volume
+    if pos30 < 35 and ret3 >= 1.5 and vol_expanding and vol5_ratio >= 1.0:
+        return "启动"
+    if pos30 < 40 and ret5 >= 2.5 and vol5_ratio >= 1.1:
+        return "启动"
+
+    # 5. 整理 — sideways or low-energy pause
+    if abs(ret5) < 2.0 and vol5_ratio < 0.90:
+        return "整理"
+    if abs(ret3) < 1.0 and abs(ret5) < 3.0:
+        return "整理"
+
+    # 6. 延续 — positive drift, no special condition triggered
+    if ret5 >= 0:
+        return "延续"
+
+    # Default
+    return "整理"
+
+
+def compute_momentum_features(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Compute rolling momentum / stage metrics for every row in coded_df.
+
+    Ret3 / Ret5 / Ret10  — multi-day price returns in percent (vs N days ago Close)
+    Vol5Ratio            — today's Volume / 5-day trailing average Volume (shift-1)
+    VolExpanding         — True when today's Volume > yesterday's Volume
+    StageLabel           — rule-based stage from classify_stage()
+
+    Pos30 is recomputed internally (same formula as compute_position_features)
+    so this function has no dependency on pos_df.
+    All percentage values stored as percent units (e.g. 1.23 for +1.23%).
+    """
+    close  = df["Close"].astype(float)
+    high   = df["High"].astype(float)
+    low    = df["Low"].astype(float)
+    volume = df["Volume"].astype(float)
+
+    out = df[["Date"]].copy()
+
+    # Multi-day price returns
+    for n, label in [(3, "3"), (5, "5"), (10, "10")]:
+        out[f"Ret{label}"] = ((close / close.shift(n) - 1) * 100).round(2)
+
+    # Volume vs 5-day trailing average (excluding today — shift first, then roll)
+    vol5_ma = volume.shift(1).rolling(5).mean()
+    out["Vol5Ratio"]   = (volume / vol5_ma).round(3)
+    out["VolExpanding"] = volume > volume.shift(1)
+
+    # Pos30 recomputed inline for stage classification
+    roll_high30 = high.rolling(30).max()
+    roll_low30  = low.rolling(30).min()
+    rng30 = roll_high30 - roll_low30
+    pos30_ser = (close - roll_low30) / rng30.where(rng30 > 0) * 100
+
+    # Stage label — apply classify_stage row-by-row via a combined frame
+    stage_inputs = pd.DataFrame({
+        "pos30":   pos30_ser,
+        "ret3":    out["Ret3"],
+        "ret5":    out["Ret5"],
+        "vol5r":   out["Vol5Ratio"],
+        "volexp":  out["VolExpanding"],
+    })
+
+    def _classify_row(r: pd.Series) -> str:
+        return classify_stage(
+            r["pos30"], r["ret3"], r["ret5"], r["vol5r"],
+            bool(r["volexp"]) if pd.notna(r["volexp"]) else False,
+        )
+
+    out["StageLabel"] = stage_inputs.apply(_classify_row, axis=1)
+    return out
+
+
+def enrich_with_momentum(match_df: pd.DataFrame, mom_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Join momentum / stage features from mom_df onto each match row by MatchDate.
+    MatchVolState converts the raw VolExpanding bool to a readable '量增'/'量缩' label.
+    """
+    if match_df.empty:
+        return match_df
+
+    mom_cols = [c for c in [
+        "Ret3", "Ret5", "Ret10", "Vol5Ratio", "VolExpanding", "StageLabel",
+    ] if c in mom_df.columns]
+
+    lookup = mom_df.set_index("Date")[mom_cols]
+    out = match_df.copy()
+    match_dates = pd.to_datetime(out["MatchDate"])
+
+    for col in mom_cols:
+        out[f"Match{col}"] = match_dates.map(lookup[col])
+
+    # Convert bool VolExpanding → readable string
+    if "MatchVolExpanding" in out.columns:
+        out["MatchVolState"] = out["MatchVolExpanding"].apply(
+            lambda v: "量增" if (pd.notna(v) and bool(v)) else ("量缩" if pd.notna(v) else "—")
+        )
+        out = out.drop(columns=["MatchVolExpanding"])
+
+    return out
+
+
+def get_target_context(
+    target_date_str: str,
+    pos_df: pd.DataFrame,
+    prev_df: pd.DataFrame,
+    mom_df: pd.DataFrame,
+) -> dict:
+    """
+    Extract the target day's context features for use in compute_context_scores.
+    Returns a dict with keys: pos30, pos_label, prev_structure, prev_open_type,
+    prev_close_dir, stage_label, ret3, ret5.  Missing values are stored as None.
+    """
+    target_ts = pd.to_datetime(target_date_str)
+    ctx: dict = {}
+
+    if not pos_df.empty:
+        pr = pos_df[pos_df["Date"] == target_ts]
+        if not pr.empty:
+            row = pr.iloc[0]
+            ctx["pos30"]     = float(row["Pos30"])  if pd.notna(row.get("Pos30"))    else None
+            ctx["pos_label"] = str(row["PosLabel"]) if pd.notna(row.get("PosLabel")) else None
+
+    if not prev_df.empty:
+        pr2 = prev_df[prev_df["Date"] == target_ts]
+        if not pr2.empty:
+            row2 = pr2.iloc[0]
+            ctx["prev_structure"] = str(row2["PrevStructure"]) if pd.notna(row2.get("PrevStructure")) else None
+            ctx["prev_open_type"] = str(row2["PrevOpenType"])  if pd.notna(row2.get("PrevOpenType"))  else None
+            ctx["prev_close_dir"] = str(row2["PrevCloseDir"])  if pd.notna(row2.get("PrevCloseDir"))  else None
+
+    if not mom_df.empty:
+        pr3 = mom_df[mom_df["Date"] == target_ts]
+        if not pr3.empty:
+            row3 = pr3.iloc[0]
+            ctx["stage_label"] = str(row3["StageLabel"]) if pd.notna(row3.get("StageLabel")) else None
+            ctx["ret3"]        = float(row3["Ret3"])      if pd.notna(row3.get("Ret3"))       else None
+            ctx["ret5"]        = float(row3["Ret5"])      if pd.notna(row3.get("Ret5"))       else None
+
+    return ctx
+
+
+def compute_context_scores(match_df: pd.DataFrame, target_ctx: dict) -> pd.DataFrame:
+    """
+    Score each matched sample by contextual similarity to the target day.
+    Adds ContextScore (0–100) and ContextLabel (高相似/中相似/低相似) columns.
+    Sorts descending by ContextScore.
+
+    Scoring dimensions (max 100 pts total):
+      Position proximity   30 pts  max(0, 30 − 2 × |MatchPos30 − target_pos30|)
+      Position label       10 pts  exact label match
+      Prev-day structure   20 pts  exact=20, same open type=10, else 0
+      Prev-day close dir   10 pts  exact match
+      Stage label          20 pts  exact=20, same _STAGE_ADJACENCY group=10, else 0
+      Ret3 proximity        5 pts  |diff|<1%→5, <2%→3, <4%→1
+      Ret5 proximity        5 pts  same scale
+    """
+    if match_df.empty:
+        return match_df
+
+    out = match_df.copy()
+    scores: list[float] = []
+
+    t_pos30       = target_ctx.get("pos30")
+    t_pos_label   = target_ctx.get("pos_label")
+    t_prev_struct = target_ctx.get("prev_structure")
+    t_prev_open   = target_ctx.get("prev_open_type")
+    t_prev_close  = target_ctx.get("prev_close_dir")
+    t_stage       = target_ctx.get("stage_label")
+    t_ret3        = target_ctx.get("ret3")
+    t_ret5        = target_ctx.get("ret5")
+
+    for _, row in out.iterrows():
+        score = 0.0
+
+        # 1. Position proximity (0–30 pts)
+        m_pos30 = row.get("MatchPos30")
+        if t_pos30 is not None and pd.notna(m_pos30):
+            score += max(0.0, 30.0 - 2.0 * abs(float(m_pos30) - t_pos30))
+
+        # 2. Position label exact match (+10 pts)
+        m_pos_label = str(row.get("MatchPosLabel", "—"))
+        if t_pos_label and m_pos_label == t_pos_label:
+            score += 10.0
+
+        # 3. Prev-day structure (0–20 pts)
+        m_prev_struct = str(row.get("MatchPrevStructure", "—"))
+        if t_prev_struct and t_prev_struct not in ("—", "nan"):
+            if m_prev_struct == t_prev_struct:
+                score += 20.0
+            elif t_prev_open and str(row.get("MatchPrevOpenType", "—")) == t_prev_open:
+                score += 10.0
+
+        # 4. Prev-day close direction (0–10 pts)
+        m_prev_close = str(row.get("MatchPrevCloseDir", "—"))
+        if t_prev_close and t_prev_close not in ("—", "nan") and m_prev_close == t_prev_close:
+            score += 10.0
+
+        # 5. Stage label (0–20 pts)
+        m_stage = str(row.get("MatchStageLabel", "—"))
+        if t_stage and t_stage not in ("—", "nan"):
+            if m_stage == t_stage:
+                score += 20.0
+            elif (
+                _STAGE_ADJACENCY.get(m_stage) is not None
+                and _STAGE_ADJACENCY.get(m_stage) == _STAGE_ADJACENCY.get(t_stage)
+            ):
+                score += 10.0
+
+        # 6. Ret3 proximity (0–5 pts)
+        m_ret3 = row.get("MatchRet3")
+        if t_ret3 is not None and pd.notna(m_ret3):
+            diff3 = abs(float(m_ret3) - t_ret3)
+            if diff3 < 1.0:
+                score += 5.0
+            elif diff3 < 2.0:
+                score += 3.0
+            elif diff3 < 4.0:
+                score += 1.0
+
+        # 7. Ret5 proximity (0–5 pts)
+        m_ret5 = row.get("MatchRet5")
+        if t_ret5 is not None and pd.notna(m_ret5):
+            diff5 = abs(float(m_ret5) - t_ret5)
+            if diff5 < 1.0:
+                score += 5.0
+            elif diff5 < 2.0:
+                score += 3.0
+            elif diff5 < 4.0:
+                score += 1.0
+
+        scores.append(round(score, 1))
+
+    out["ContextScore"] = scores
+    out["ContextLabel"] = out["ContextScore"].apply(
+        lambda s: "高相似" if s >= 65 else ("中相似" if s >= 35 else "低相似")
+    )
+    out = out.sort_values("ContextScore", ascending=False).reset_index(drop=True)
+    return out
+
+
+def apply_context_filter(df: pd.DataFrame, ctx_filter: str) -> pd.DataFrame:
+    """
+    Filter a match result dataframe by ContextLabel.
+    Stacks on top of any position filter already applied.
+
+    ctx_filter options:
+      '全部相似度'   — return df unchanged
+      '仅高相似'     — keep rows where ContextLabel == '高相似'  (score ≥ 65)
+      '仅高+中相似'  — keep rows where ContextLabel in ['高相似', '中相似']  (score ≥ 35)
+    """
+    if df.empty or ctx_filter == "全部相似度" or "ContextLabel" not in df.columns:
+        return df
+    if ctx_filter == "仅高相似":
+        return df[df["ContextLabel"] == "高相似"].reset_index(drop=True)
+    if ctx_filter == "仅高+中相似":
+        return df[df["ContextLabel"].isin(["高相似", "中相似"])].reset_index(drop=True)
+    return df
+
+
+def apply_position_filter(
+    df: pd.DataFrame,
+    pos_filter: str,
+    target_pos30: float | None,
+    tolerance: float = 15.0,
+) -> pd.DataFrame:
+    """
+    Post-processing filter applied to an already-generated match result dataframe.
+    The underlying match algorithm (matcher.py) is never touched.
+
+    pos_filter options and their exact rules:
+      '全部样本'             — return df unchanged
+      '仅低位 (<33%)'       — keep rows where MatchPosLabel == '低位'
+      '仅中位 (33–67%)'     — keep rows where MatchPosLabel == '中位'
+      '仅高位 (≥67%)'       — keep rows where MatchPosLabel == '高位'
+      '仅位置相近 (±15%)'   — keep rows where |MatchPos30 − target_pos30| ≤ tolerance
+
+    Rows missing MatchPosLabel / MatchPos30 are dropped in all non-'全部样本' modes.
+    Returns a new dataframe (original is never mutated).
+    """
+    if df.empty or pos_filter == "全部样本":
+        return df
+
+    if "MatchPosLabel" not in df.columns:
+        return df
+
+    if pos_filter == "仅低位 (<33%)":
+        mask = df["MatchPosLabel"] == "低位"
+    elif pos_filter == "仅中位 (33–67%)":
+        mask = df["MatchPosLabel"] == "中位"
+    elif pos_filter == "仅高位 (≥67%)":
+        mask = df["MatchPosLabel"] == "高位"
+    elif pos_filter == "仅位置相近 (±15%)":
+        if "MatchPos30" not in df.columns or target_pos30 is None:
+            return df
+        mask = (df["MatchPos30"] - target_pos30).abs() <= tolerance
+    else:
+        return df
+
+    return df[mask].reset_index(drop=True)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -549,19 +1111,52 @@ def render_mini_cards(
         cols  = st.columns(len(batch))
         for col, (_, row) in zip(cols, batch):
             with col:
-                match_date  = str(row.get("MatchDate",  ""))
-                next_date   = str(row.get("NextDate",   ""))
-                match_code  = str(row.get("MatchCode",  ""))
-                t2_date     = str(row.get("T2Date", "")) or None
-                structure   = str(row.get("次日日内结构", "—"))
-                t2_struct   = str(row.get("T2结构",      "—"))
-                vcode_diff  = row.get("VCodeDiff", None)
+                match_date   = str(row.get("MatchDate",      ""))
+                next_date    = str(row.get("NextDate",       ""))
+                match_code   = str(row.get("MatchCode",      ""))
+                t2_date      = str(row.get("T2Date",    "")) or None
+                structure    = str(row.get("次日日内结构",     "—"))
+                t2_struct    = str(row.get("T2结构",          "—"))
+                vcode_diff   = row.get("VCodeDiff",   None)
+                stage_label  = str(row.get("MatchStageLabel", "—"))
+                pos_label    = str(row.get("MatchPosLabel",   "—"))
+                ret5_val     = row.get("MatchRet5",    None)
+                ctx_label    = str(row.get("ContextLabel",    ""))
+                ctx_score    = row.get("ContextScore",  None)
+
+                # ContextScore badge + left border colour highlight
+                if ctx_score is not None and pd.notna(ctx_score):
+                    if ctx_label == "高相似":
+                        _cl_color, _cl_bg = "#f1c40f", "#f1c40f22"
+                    elif ctx_label == "中相似":
+                        _cl_color, _cl_bg = "#2ecc71", "#2ecc7122"
+                    else:
+                        _cl_color, _cl_bg = "#888888", "#88888811"
+                    st.markdown(
+                        f'<div style="border-left:3px solid {_cl_color};'
+                        f'background:{_cl_bg};padding:1px 5px;margin-bottom:2px;border-radius:0 3px 3px 0">'
+                        f'<span style="color:{_cl_color};font-weight:bold;font-size:0.75em">'
+                        f'{ctx_label}  {int(ctx_score)}分</span></div>',
+                        unsafe_allow_html=True,
+                    )
 
                 # Compact caption: code + optional VCodeDiff
                 caption_parts = [f"`{match_code}`"]
                 if vcode_diff is not None and pd.notna(vcode_diff):
                     caption_parts.append(f"VDiff={int(vcode_diff)}")
                 st.caption("  ".join(caption_parts))
+
+                # Stage badge  |  position label  |  5-day return
+                _sc  = _STAGE_COLORS.get(stage_label, "#888888")
+                _plc = {"低位": "#3498db", "中位": "#f39c12", "高位": "#e74c3c"}.get(pos_label, "#888888")
+                _r5  = f" {ret5_val:+.1f}%" if (ret5_val is not None and pd.notna(ret5_val)) else ""
+                st.markdown(
+                    f'<span style="background:{_sc}22;color:{_sc};font-weight:bold;'
+                    f'padding:1px 5px;border-radius:3px;font-size:0.78em">{stage_label}</span>'
+                    f' <span style="color:{_plc};font-size:0.78em">{pos_label}</span>'
+                    f'<span style="color:#888888;font-size:0.78em">{_r5}</span>',
+                    unsafe_allow_html=True,
+                )
 
                 # T+1 / T+2 structure badges on one line
                 t1_color = _STRUCTURE_COLORS.get(structure, "#888888")
@@ -623,34 +1218,183 @@ def _multiply_pct(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def _render_match_tables(df: pd.DataFrame, has_vcode_diff: bool = False) -> None:
+def compute_inline_stats(df: pd.DataFrame) -> dict:
     """
-    Render three focused sub-tabs for a match result dataframe.
+    Compute next-day summary statistics directly from a match result dataframe.
+    Used by the Stats Summary tab so it can react to the active position filter.
+
+    The input df must contain the standard match columns produced by matcher.py
+    (NextOpenChange, NextHighMove, NextLowMove, NextCloseMove) plus the T+2 and
+    pattern-label columns added by the app-layer enrichment pipeline.
+
+    Returns a plain dict whose keys mirror the SUMMARY_COLUMNS used by
+    stats_reporter.summarize_match_df, plus three extra keys:
+      'T1Structure'   — pd.Series of 次日日内结构 value counts (may be absent)
+      'T2Structure'   — pd.Series of T2结构 value counts (may be absent)
+      'AvgT2CloseMove'    — float (raw ratio, may be absent)
+      'MedianT2CloseMove' — float (raw ratio, may be absent)
+    """
+    out: dict = {"SampleSize": 0, "DominantNextDayBias": "insufficient_sample"}
+    if df.empty:
+        return out
+
+    # Ensure pattern-label columns exist (次日日内结构, T2结构, etc.)
+    working = add_pattern_labels(df) if "次日日内结构" not in df.columns else df.copy()
+
+    n = len(working)
+    out["SampleSize"] = n
+
+    def _mean(col: str) -> float:
+        return working[col].mean() if col in working.columns else float("nan")
+
+    def _median(col: str) -> float:
+        return working[col].median() if col in working.columns else float("nan")
+
+    def _rate(col: str, op, threshold: float) -> float:
+        if col not in working.columns:
+            return float("nan")
+        return op(working[col], threshold).mean()
+
+    # Open
+    out["AvgNextOpenChange"]          = _mean("NextOpenChange")
+    out["MedianNextOpenChange"]       = _median("NextOpenChange")
+    out["PositiveNextOpenChangeRate"] = _rate("NextOpenChange", pd.Series.gt, 0)
+
+    # High / Low
+    out["AvgNextHighMove"]     = _mean("NextHighMove")
+    out["MedianNextHighMove"]  = _median("NextHighMove")
+    out["HighMoveOver1PctRate"] = _rate("NextHighMove", pd.Series.ge, 0.01)
+    out["HighMoveOver2PctRate"] = _rate("NextHighMove", pd.Series.ge, 0.02)
+
+    out["AvgNextLowMove"]    = _mean("NextLowMove")
+    out["MedianNextLowMove"] = _median("NextLowMove")
+    out["LowMoveOver1PctRate"] = _rate("NextLowMove", pd.Series.ge, 0.01)
+    out["LowMoveOver2PctRate"] = _rate("NextLowMove", pd.Series.ge, 0.02)
+
+    # Close
+    out["AvgNextCloseMove"]          = _mean("NextCloseMove")
+    out["MedianNextCloseMove"]       = _median("NextCloseMove")
+    pos_close = _rate("NextCloseMove", pd.Series.gt, 0)
+    neg_close = _rate("NextCloseMove", pd.Series.lt, 0)
+    out["PositiveNextCloseMoveRate"] = pos_close
+    out["NegativeNextCloseMoveRate"] = neg_close
+
+    # Bias
+    if n < 3:
+        out["DominantNextDayBias"] = "insufficient_sample"
+    elif not pd.isna(pos_close) and pos_close >= 0.6:
+        out["DominantNextDayBias"] = "up_bias"
+    elif not pd.isna(neg_close) and neg_close >= 0.6:
+        out["DominantNextDayBias"] = "down_bias"
+    else:
+        out["DominantNextDayBias"] = "mixed"
+
+    # T+1 structure distribution
+    if "次日日内结构" in working.columns:
+        out["T1Structure"] = working["次日日内结构"].value_counts()
+
+    # T+2 stats
+    if "T2CloseMove" in working.columns:
+        out["AvgT2CloseMove"]    = _mean("T2CloseMove")
+        out["MedianT2CloseMove"] = _median("T2CloseMove")
+    if "T2结构" in working.columns:
+        out["T2Structure"] = working["T2结构"].value_counts()
+
+    return out
+
+
+def _render_top_context_matches(df: pd.DataFrame, n: int = 5) -> None:
+    """
+    Show the top-n highest-scoring rows as a compact highlight table.
+    Columns: MatchDate, ContextScore, ContextLabel, position, prev-day structure,
+    stage, T+1 structure, T+2 structure.
+    """
+    if df.empty or "ContextScore" not in df.columns:
+        return
+    top = df.nlargest(n, "ContextScore")
+    cols = [c for c in [
+        "MatchDate", "ContextScore", "ContextLabel",
+        "MatchPosLabel", "MatchPos30",
+        "MatchPrevStructure", "MatchStageLabel",
+        "次日日内结构", "T2结构",
+    ] if c in top.columns]
+    cfg = {k: v for k, v in COL_CONFIG.items() if k in cols}
+    st.dataframe(top[cols], hide_index=True, use_container_width=True, column_config=cfg)
+
+
+def _render_match_tables(
+    df: pd.DataFrame,
+    has_vcode_diff: bool = False,
+    target_ctx: dict | None = None,
+) -> None:
+    """
+    Render four focused sub-tabs for a match result dataframe.
     All tables share the same row order; MatchDate is the left anchor column
     in every sub-tab so rows visually align when switching between them.
 
-      Sub-tab A  匹配日数据  — MatchDate full OHLCV + forward structure labels
+      Sub-tab A  匹配日数据  — MatchDate OHLCV + position context + compact prev-day + forward labels
       Sub-tab B  次日 T+1   — T+1 full OHLCV + moves + structure
       Sub-tab C  后天 T+2   — T+2 full OHLCV + moves + structure
+      Sub-tab D  前一日状态  — full previous-day OHLCV, code, structure, volume
     """
     # ── Pattern distribution bar chart (always visible, above sub-tabs) ──────
     st.markdown("**次日走势分布（T+1）**")
     render_pattern_bar_chart(df)
 
-    # ── Three sub-tabs ────────────────────────────────────────────────────────
-    sub_a, sub_b, sub_c = st.tabs(["匹配日数据", "次日 T+1", "后天 T+2"])
+    # ── Context scoring explanation (shown only when scores are present) ──────
+    if target_ctx and "ContextScore" in df.columns:
+        with st.expander("📊 相似度评分说明"):
+            t_pos30   = target_ctx.get("pos30")
+            t_pl      = target_ctx.get("pos_label",      "—")
+            t_ps      = target_ctx.get("prev_structure", "—")
+            t_pc      = target_ctx.get("prev_close_dir", "—")
+            t_stage   = target_ctx.get("stage_label",    "—")
+            t_r3      = target_ctx.get("ret3")
+            t_r5      = target_ctx.get("ret5")
+            pos_str   = f"{t_pos30:.1f}%" if t_pos30 is not None else "—"
+            r3_str    = f"{t_r3:+.2f}%" if t_r3 is not None else "—"
+            r5_str    = f"{t_r5:+.2f}%" if t_r5 is not None else "—"
+            st.caption(
+                f"目标日：阶段={t_stage}　位置={t_pl}（{pos_str}）　"
+                f"前日结构={t_ps}　前日收盘={t_pc}　Ret3={r3_str}　Ret5={r5_str}"
+            )
+            st.markdown(
+                "| 维度 | 最高分 | 规则 |\n"
+                "|---|---|---|\n"
+                "| 30日位置接近度 | 30 | max(0, 30 − 2 × \\|MatchPos30 − 目标Pos30\\|) |\n"
+                "| 位置标签一致 | 10 | 完全相同（低位/中位/高位）+10 |\n"
+                "| 前一日结构 | 20 | 完全相同+20；开盘类型相同+10 |\n"
+                "| 前一日收盘方向 | 10 | 完全相同+10 |\n"
+                "| 阶段标签 | 20 | 完全相同+20；同组（动能/稳态/风险）+10 |\n"
+                "| 3日涨跌接近度 | 5 | \\|差值\\|<1%→+5；<2%→+3；<4%→+1 |\n"
+                "| 5日涨跌接近度 | 5 | 同上 |\n"
+                "| **合计** | **100** | ≥65→高相似；≥35→中相似；<35→低相似 |"
+            )
+
+    # ── Four sub-tabs ─────────────────────────────────────────────────────────
+    sub_a, sub_b, sub_c, sub_d = st.tabs(["匹配日数据", "次日 T+1", "后天 T+2", "前一日状态"])
 
     # ── Section A: 匹配日数据 ─────────────────────────────────────────────────
     with sub_a:
         st.caption(
-            "匹配日（MatchDate）的完整 OHLCV，以及 T+1 / T+2 走势标签供快速核对。"
+            "匹配日（MatchDate）OHLCV、位置标签、前一日简况，以及 T+1 / T+2 走势标签。"
         )
         cols_a = ["MatchDate", "MatchCode"]
         if has_vcode_diff:
             cols_a.append("VCodeDiff")
+        # Context similarity score near front for quick ranking
+        cols_a += ["ContextScore", "ContextLabel"]
+        # Stage + position context near front for quick scanning
+        cols_a += ["MatchStageLabel", "MatchPosLabel", "MatchPos30"]
+        # Compact momentum numbers
+        cols_a += ["MatchRet3", "MatchRet5", "MatchVolState"]
+        # Compact prev-day context
+        cols_a += ["MatchPrevStructure", "MatchPrevCloseDir"]
+        # Full OHLCV
         cols_a += [
             "MatchOpen", "MatchHigh", "MatchLow", "MatchClose",
             "MatchVolume", "MatchTurnover",
+            "MatchPos15", "MatchVol5Ratio",
             "次日日内结构", "次日收盘方向",
             "T2结构",       "T2收盘方向",
         ]
@@ -701,6 +1445,26 @@ def _render_match_tables(df: pd.DataFrame, has_vcode_diff: bool = False) -> None
 
         st.dataframe(out_c, hide_index=True, use_container_width=True, column_config=cfg_c)
 
+    # ── Section D: 前一日状态 ─────────────────────────────────────────────────
+    with sub_d:
+        st.caption(
+            "匹配日（MatchDate）前一个交易日的完整状态：编码、结构、量能，"
+            "用于判断当前日型是否具备相同的启动或反转背景。"
+        )
+        cols_d = [
+            "MatchDate",
+            "MatchPrevDate", "MatchPrevCode",
+            "MatchPrevOpenType", "MatchPrevStructure", "MatchPrevCloseDir",
+            "MatchPrevCloseMove", "MatchPrevVolume", "MatchPrevTurnover", "MatchPrevVRatio",
+        ]
+        cfg_d = {k: v for k, v in COL_CONFIG.items() if k in cols_d}
+        st.dataframe(
+            _pick_cols(df, cols_d),
+            hide_index=True,
+            use_container_width=True,
+            column_config=cfg_d,
+        )
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Page config  (must be first Streamlit call)
@@ -728,6 +1492,39 @@ with st.sidebar:
     run_clicked = st.button("Run Analysis", type="primary", use_container_width=True)
     st.divider()
     st.caption("Data source: Yahoo Finance (yfinance)")
+    st.divider()
+    st.markdown("**位置过滤**")
+    pos_filter: str = st.radio(
+        "匹配样本范围",
+        options=[
+            "全部样本",
+            "仅低位 (<33%)",
+            "仅中位 (33–67%)",
+            "仅高位 (≥67%)",
+            "仅位置相近 (±15%)",
+        ],
+        index=0,
+        label_visibility="collapsed",
+        help=(
+            "按匹配日的 30 日价格位置百分位（MatchPos30）过滤。\n\n"
+            "「仅位置相近」= |MatchPos30 − 目标日 Pos30| ≤ 15 个百分点。\n\n"
+            "过滤仅作用于展示层，不修改底层匹配算法或原始 CSV 结果。"
+        ),
+    )
+    st.divider()
+    st.markdown("**相似度过滤**")
+    ctx_filter: str = st.radio(
+        "相似度范围",
+        options=["全部相似度", "仅高相似", "仅高+中相似"],
+        index=0,
+        label_visibility="collapsed",
+        help=(
+            "按 ContextScore 过滤匹配样本。\n\n"
+            "**高相似** ≥ 65 分（位置 + 阶段 + 前日结构高度一致）\n\n"
+            "**高+中相似** ≥ 35 分\n\n"
+            "与位置过滤叠加生效。"
+        ),
+    )
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Pipeline execution
@@ -773,6 +1570,18 @@ if run_clicked:
                 near_df  = enrich_with_match_ohlcv(near_df,  coded_df)
                 exact_df = add_turnovers(exact_df)
                 near_df  = add_turnovers(near_df)
+                pos_df   = compute_position_features(coded_df)
+                exact_df = enrich_with_position(exact_df, pos_df)
+                near_df  = enrich_with_position(near_df,  pos_df)
+                prev_df  = compute_prev_day_features(coded_df)
+                exact_df = enrich_with_prev_day(exact_df, prev_df)
+                near_df  = enrich_with_prev_day(near_df,  prev_df)
+                mom_df   = compute_momentum_features(coded_df)
+                exact_df = enrich_with_momentum(exact_df, mom_df)
+                near_df  = enrich_with_momentum(near_df,  mom_df)
+                _pipeline_ctx = get_target_context(target_date_str, pos_df, prev_df, mom_df)
+                exact_df = compute_context_scores(exact_df, _pipeline_ctx)
+                near_df  = compute_context_scores(near_df,  _pipeline_ctx)
             except Exception as exc:
                 run_error = f"Matching failed: {exc}"
 
@@ -794,6 +1603,9 @@ if run_clicked:
             exact_df=exact_df,
             near_df=near_df,
             summary_df=summary_df,
+            pos_df=pos_df,
+            prev_df=prev_df,
+            mom_df=mom_df,
         )
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -809,15 +1621,48 @@ coded_df: pd.DataFrame   = st.session_state["coded_df"]
 exact_df: pd.DataFrame   = st.session_state["exact_df"]
 near_df: pd.DataFrame    = st.session_state["near_df"]
 summary_df: pd.DataFrame = st.session_state["summary_df"]
+pos_df: pd.DataFrame     = st.session_state.get("pos_df",  pd.DataFrame())
+prev_df: pd.DataFrame    = st.session_state.get("prev_df", pd.DataFrame())
+mom_df: pd.DataFrame     = st.session_state.get("mom_df",  pd.DataFrame())
+
+# Target day context for context-score expander in match tables.
+target_ctx: dict = get_target_context(target_date_str, pos_df, prev_df, mom_df)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Position filter — display-layer only; raw matches in session_state untouched
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Resolve target day's Pos30 for the '位置相近' filter mode.
+_target_pos30: float | None = None
+if not pos_df.empty:
+    _tts = pd.to_datetime(target_date_str)
+    _pr  = pos_df[pos_df["Date"] == _tts]
+    if not _pr.empty:
+        _v = _pr.iloc[0].get("Pos30")
+        if pd.notna(_v):
+            _target_pos30 = float(_v)
+
+# Position filter applied first, then context filter stacked on top.
+disp_exact_df = apply_position_filter(exact_df, pos_filter, _target_pos30)
+disp_near_df  = apply_position_filter(near_df,  pos_filter, _target_pos30)
+disp_exact_df = apply_context_filter(disp_exact_df, ctx_filter)
+disp_near_df  = apply_context_filter(disp_near_df,  ctx_filter)
+
+_filter_active = pos_filter != "全部样本" or ctx_filter != "全部相似度"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Tabs
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _tab_label(name: str, filtered_n: int, total_n: int) -> str:
+    if _filter_active:
+        return f"{name}  ({filtered_n}/{total_n})"
+    return f"{name}  ({total_n})"
+
 tab1, tab2, tab3, tab4 = st.tabs([
     "Target Day",
-    f"Exact Matches  ({len(exact_df)})",
-    f"Near Matches  ({len(near_df)})",
+    _tab_label("Exact Matches", len(disp_exact_df), len(exact_df)),
+    _tab_label("Near Matches",  len(disp_near_df),  len(near_df)),
     "Stats Summary",
 ])
 
@@ -902,6 +1747,106 @@ with tab1:
             else:
                 st.write("No feature data available.")
 
+        # --- Position context ---
+        if not pos_df.empty:
+            target_ts = pd.to_datetime(target_date_str)
+            pos_rows = pos_df[pos_df["Date"] == target_ts]
+            if not pos_rows.empty:
+                tpos = pos_rows.iloc[0]
+                st.markdown("**Position Context**")
+
+                label = str(tpos.get("PosLabel", "—"))
+                _LABEL_COLOR = {"低位": "#3498db", "中位": "#f39c12", "高位": "#e74c3c"}
+                lcolor = _LABEL_COLOR.get(label, "#888888")
+                st.markdown(
+                    f'<span style="font-size:1.25em;font-weight:bold;color:{lcolor}">'
+                    f'{label}</span>',
+                    unsafe_allow_html=True,
+                )
+
+                pos_display: dict[str, list] = {}
+                if pd.notna(tpos.get("Pos15")):
+                    pos_display["15日位置%"] = [f"{tpos['Pos15']:.1f}"]
+                if pd.notna(tpos.get("Pos30")):
+                    pos_display["30日位置%"] = [f"{tpos['Pos30']:.1f}"]
+                if pd.notna(tpos.get("Rebound30")):
+                    pos_display["距30日低点反弹%"] = [f"{tpos['Rebound30']:.2f}"]
+                near_high = tpos.get("NearHigh30", False)
+                near_low  = tpos.get("NearLow30",  False)
+                pos_display["近30日高位"] = ["✅" if bool(near_high) else "—"]
+                pos_display["近30日低位"] = ["✅" if bool(near_low)  else "—"]
+
+                if pos_display:
+                    st.dataframe(pd.DataFrame(pos_display), hide_index=True)
+
+        # --- Previous-day state ---
+        if not prev_df.empty:
+            target_ts = pd.to_datetime(target_date_str)
+            prev_rows = prev_df[prev_df["Date"] == target_ts]
+            if not prev_rows.empty:
+                tp = prev_rows.iloc[0]
+                st.markdown("**前一日状态**")
+
+                prev_struct    = str(tp.get("PrevStructure", "—"))
+                prev_close_dir = str(tp.get("PrevCloseDir",  "—"))
+                pcolor = _STRUCTURE_COLORS.get(prev_struct, "#888888")
+                st.markdown(
+                    f'<span style="font-weight:bold;color:{pcolor}">{prev_struct}</span>'
+                    f'  <span style="color:#888888">{prev_close_dir}</span>',
+                    unsafe_allow_html=True,
+                )
+
+                pd_data: dict[str, list] = {}
+                pdate = tp.get("PrevDate", "—")
+                if pdate and pdate != "—":
+                    pd_data["日期"] = [str(pdate)]
+                pcode = tp.get("PrevCode", "—")
+                if pd.notna(pcode) and str(pcode) not in ("—", "nan", "<NA>"):
+                    pd_data["编码"] = [str(pcode)]
+                if pd.notna(tp.get("PrevOpenType")):
+                    pd_data["开盘类型"] = [str(tp["PrevOpenType"])]
+                if pd.notna(tp.get("PrevCloseMove")):
+                    pd_data["涨跌%"] = [f"{tp['PrevCloseMove']:+.2f}"]
+                if pd.notna(tp.get("PrevVolume")):
+                    pd_data["成交量"] = [f"{int(tp['PrevVolume']):,}"]
+                if pd.notna(tp.get("PrevTurnover")):
+                    pd_data["成交额"] = [f"{tp['PrevTurnover']:,.0f}"]
+                if pd.notna(tp.get("PrevVRatio")):
+                    pd_data["相对量能"] = [f"{tp['PrevVRatio']:.2f}×"]
+
+                if pd_data:
+                    st.dataframe(pd.DataFrame(pd_data), hide_index=True)
+
+        # --- Momentum / Stage ---
+        if not mom_df.empty:
+            target_ts = pd.to_datetime(target_date_str)
+            mom_rows = mom_df[mom_df["Date"] == target_ts]
+            if not mom_rows.empty:
+                tm = mom_rows.iloc[0]
+                st.markdown("**动能 / 阶段**")
+
+                stage = str(tm.get("StageLabel", "—"))
+                sc    = _STAGE_COLORS.get(stage, "#888888")
+                st.markdown(
+                    f'<span style="font-size:1.25em;font-weight:bold;color:{sc}">{stage}</span>',
+                    unsafe_allow_html=True,
+                )
+
+                mom_display: dict[str, list] = {}
+                if pd.notna(tm.get("Ret3")):
+                    mom_display["3日涨跌%"] = [f"{tm['Ret3']:+.2f}"]
+                if pd.notna(tm.get("Ret5")):
+                    mom_display["5日涨跌%"] = [f"{tm['Ret5']:+.2f}"]
+                if pd.notna(tm.get("Ret10")):
+                    mom_display["10日涨跌%"] = [f"{tm['Ret10']:+.2f}"]
+                if pd.notna(tm.get("Vol5Ratio")):
+                    mom_display["量/5日均"] = [f"{tm['Vol5Ratio']:.2f}×"]
+                vol_exp = tm.get("VolExpanding", False)
+                mom_display["量能方向"] = ["↑ 量增" if (pd.notna(vol_exp) and bool(vol_exp)) else "↓ 量缩"]
+
+                if mom_display:
+                    st.dataframe(pd.DataFrame(mom_display), hide_index=True)
+
 # ── Tab 2: Exact Matches ──────────────────────────────────────────────────────
 
 with tab2:
@@ -912,11 +1857,31 @@ with tab2:
     if exact_df.empty:
         st.info("No exact matches found for this date.")
     else:
-        labeled_exact = add_pattern_labels(exact_df)
-        _render_match_tables(labeled_exact, has_vcode_diff=False)
+        if _filter_active:
+            _tot = len(exact_df)
+            _fil = len(disp_exact_df)
+            _filter_desc = " + ".join(f for f in [
+                pos_filter if pos_filter != "全部样本" else "",
+                ctx_filter if ctx_filter != "全部相似度" else "",
+            ] if f)
+            if _fil == 0:
+                st.warning(
+                    f"过滤「**{_filter_desc}**」后无剩余样本。"
+                    f"原始共 {_tot} 条 — 请在侧栏调整过滤条件。"
+                )
+            else:
+                st.info(f"原始样本数：**{_tot}**　→　过滤后：**{_fil}**　（{_filter_desc}）")
 
-        with st.expander(f"逐笔 K 线预览（共 {len(labeled_exact)} 条）"):
-            render_mini_cards(labeled_exact, coded_df)
+        if not disp_exact_df.empty:
+            labeled_exact = add_pattern_labels(disp_exact_df)
+
+            st.markdown("**Top 相似样本**")
+            _render_top_context_matches(labeled_exact)
+
+            _render_match_tables(labeled_exact, has_vcode_diff=False, target_ctx=target_ctx)
+
+            with st.expander(f"逐笔 K 线预览（共 {len(labeled_exact)} 条）"):
+                render_mini_cards(labeled_exact, coded_df)
 
 # ── Tab 3: Near Matches ───────────────────────────────────────────────────────
 
@@ -929,81 +1894,223 @@ with tab3:
     if near_df.empty:
         st.info("No near matches found for this date.")
     else:
-        labeled_near = add_pattern_labels(near_df)
+        if _filter_active:
+            _tot = len(near_df)
+            _fil = len(disp_near_df)
+            _filter_desc = " + ".join(f for f in [
+                pos_filter if pos_filter != "全部样本" else "",
+                ctx_filter if ctx_filter != "全部相似度" else "",
+            ] if f)
+            if _fil == 0:
+                st.warning(
+                    f"过滤「**{_filter_desc}**」后无剩余样本。"
+                    f"原始共 {_tot} 条 — 请在侧栏调整过滤条件。"
+                )
+            else:
+                st.info(f"原始样本数：**{_tot}**　→　过滤后：**{_fil}**　（{_filter_desc}）")
 
-        # Sort by strongest similarity first (VCodeDiff 0 before 1), then date.
-        if "VCodeDiff" in labeled_near.columns:
-            labeled_near = labeled_near.sort_values(
-                ["VCodeDiff", "MatchDate"]
-            ).reset_index(drop=True)
+        if not disp_near_df.empty:
+            labeled_near = add_pattern_labels(disp_near_df)
 
-        _render_match_tables(labeled_near, has_vcode_diff=True)
+            # Sort by context score (most similar first); fall back to VCodeDiff.
+            if "ContextScore" in labeled_near.columns:
+                labeled_near = labeled_near.sort_values(
+                    "ContextScore", ascending=False
+                ).reset_index(drop=True)
+            elif "VCodeDiff" in labeled_near.columns:
+                labeled_near = labeled_near.sort_values(
+                    ["VCodeDiff", "MatchDate"]
+                ).reset_index(drop=True)
 
-        with st.expander(f"逐笔 K 线预览（共 {len(labeled_near)} 条）"):
-            render_mini_cards(labeled_near, coded_df)
+            st.markdown("**Top 相似样本**")
+            _render_top_context_matches(labeled_near)
+
+            _render_match_tables(labeled_near, has_vcode_diff=True, target_ctx=target_ctx)
+
+            with st.expander(f"逐笔 K 线预览（共 {len(labeled_near)} 条）"):
+                render_mini_cards(labeled_near, coded_df)
 
 # ── Tab 4: Stats Summary ──────────────────────────────────────────────────────
 
 with tab4:
     st.subheader("Next-Day Statistics")
-    st.caption("Aggregated from Exact and Near match tables above.")
+
+    # ── Shared stat sections definition ──────────────────────────────────────
+    _STAT_SECTIONS = [
+        ("Open — next-day open vs match close", [
+            ("Avg open change",   "AvgNextOpenChange"),
+            ("Median",            "MedianNextOpenChange"),
+            ("% positive opens",  "PositiveNextOpenChangeRate"),
+        ]),
+        ("High — next-day high from open", [
+            ("Avg high move",     "AvgNextHighMove"),
+            ("Median",            "MedianNextHighMove"),
+            ("Rate ≥ 1%",         "HighMoveOver1PctRate"),
+            ("Rate ≥ 2%",         "HighMoveOver2PctRate"),
+        ]),
+        ("Low — next-day low from open", [
+            ("Avg low move",      "AvgNextLowMove"),
+            ("Median",            "MedianNextLowMove"),
+            ("Rate ≥ 1%",         "LowMoveOver1PctRate"),
+            ("Rate ≥ 2%",         "LowMoveOver2PctRate"),
+        ]),
+        ("Close — next-day close vs open", [
+            ("Avg close move",    "AvgNextCloseMove"),
+            ("Median",            "MedianNextCloseMove"),
+            ("% positive closes", "PositiveNextCloseMoveRate"),
+            ("% negative closes", "NegativeNextCloseMoveRate"),
+        ]),
+    ]
 
     def _get_row(mtype: str) -> pd.Series | None:
         rows = summary_df[summary_df["MatchType"] == mtype]
         return rows.iloc[0] if not rows.empty else None
 
+    # ── Renderer for pre-computed stats_reporter rows (dict/Series) ──────────
     def _render_stats(container, row: pd.Series | None, label: str) -> None:
         with container:
             st.markdown(f"### {label}")
             if row is None:
                 st.info("No data.")
                 return
-
             sample_size = int(row["SampleSize"]) if pd.notna(row.get("SampleSize")) else 0
             if sample_size == 0:
                 st.info("No matches — statistics unavailable.")
                 return
-
             bias = str(row.get("DominantNextDayBias", "—"))
             st.metric("Sample Size", sample_size)
             st.markdown(f"**Dominant Bias:** {BIAS_ICONS.get(bias, f'⚪ {bias}')}")
             st.divider()
-
-            sections = [
-                ("Open — next-day open vs match close", [
-                    ("Avg open change",   "AvgNextOpenChange"),
-                    ("Median",            "MedianNextOpenChange"),
-                    ("% positive opens",  "PositiveNextOpenChangeRate"),
-                ]),
-                ("High — next-day high from open", [
-                    ("Avg high move",     "AvgNextHighMove"),
-                    ("Median",            "MedianNextHighMove"),
-                    ("Rate ≥ 1%",         "HighMoveOver1PctRate"),
-                    ("Rate ≥ 2%",         "HighMoveOver2PctRate"),
-                ]),
-                ("Low — next-day low from open", [
-                    ("Avg low move",      "AvgNextLowMove"),
-                    ("Median",            "MedianNextLowMove"),
-                    ("Rate ≥ 1%",         "LowMoveOver1PctRate"),
-                    ("Rate ≥ 2%",         "LowMoveOver2PctRate"),
-                ]),
-                ("Close — next-day close vs open", [
-                    ("Avg close move",    "AvgNextCloseMove"),
-                    ("Median",            "MedianNextCloseMove"),
-                    ("% positive closes", "PositiveNextCloseMoveRate"),
-                    ("% negative closes", "NegativeNextCloseMoveRate"),
-                ]),
-            ]
-
-            for section_title, fields in sections:
+            for section_title, fields in _STAT_SECTIONS:
                 st.markdown(f"**{section_title}**")
-                lines = [
-                    f"- {lbl}: **{fmt_pct(row.get(col, pd.NA))}**"
-                    for lbl, col in fields
-                ]
+                lines = [f"- {lbl}: **{fmt_pct(row.get(col, pd.NA))}**" for lbl, col in fields]
                 st.markdown("\n".join(lines))
                 st.write("")
 
-    col_l, col_r = st.columns(2)
-    _render_stats(col_l, _get_row("exact"), "Exact Matches")
-    _render_stats(col_r, _get_row("near"), "Near Matches")
+    # ── Renderer for inline-computed filtered stats (dict from compute_inline_stats) ──
+    def _render_inline_stats(container, stats: dict, label: str) -> None:
+        with container:
+            st.markdown(f"### {label}")
+            n = stats.get("SampleSize", 0)
+            if n == 0:
+                st.info("过滤后无匹配样本。")
+                return
+            bias = str(stats.get("DominantNextDayBias", "—"))
+            st.metric("Sample Size", n)
+            st.markdown(f"**Dominant Bias:** {BIAS_ICONS.get(bias, f'⚪ {bias}')}")
+            st.divider()
+
+            for section_title, fields in _STAT_SECTIONS:
+                st.markdown(f"**{section_title}**")
+                lines = [f"- {lbl}: **{fmt_pct(stats.get(col, float('nan')))}**" for lbl, col in fields]
+                st.markdown("\n".join(lines))
+                st.write("")
+
+            # T+1 structure distribution
+            t1 = stats.get("T1Structure")
+            if t1 is not None and len(t1) > 0:
+                st.markdown("**次日结构分布**")
+                for cat in STRUCTURE_ORDER:
+                    cnt = int(t1.get(cat, 0))
+                    pct = cnt / n * 100
+                    color = _STRUCTURE_COLORS.get(cat, "#888888")
+                    st.markdown(
+                        f'<span style="color:{color}">■</span> {cat}: **{cnt}** 次（{pct:.0f}%）',
+                        unsafe_allow_html=True,
+                    )
+                st.write("")
+
+            # T+2 stats
+            avg_t2 = stats.get("AvgT2CloseMove")
+            med_t2 = stats.get("MedianT2CloseMove")
+            if avg_t2 is not None and not pd.isna(avg_t2):
+                st.markdown("**T+2 收盘（vs 开盘）**")
+                st.markdown(
+                    f"- Avg: **{fmt_pct(avg_t2)}**\n"
+                    f"- Median: **{fmt_pct(med_t2)}**"
+                )
+                t2 = stats.get("T2Structure")
+                if t2 is not None and len(t2) > 0:
+                    st.markdown("**后天结构分布**")
+                    for cat in STRUCTURE_ORDER:
+                        cnt = int(t2.get(cat, 0))
+                        pct = cnt / n * 100
+                        color = _STRUCTURE_COLORS.get(cat, "#888888")
+                        st.markdown(
+                            f'<span style="color:{color}">■</span> {cat}: **{cnt}** 次（{pct:.0f}%）',
+                            unsafe_allow_html=True,
+                        )
+                st.write("")
+
+    # ── Stats mode selector ───────────────────────────────────────────────────
+    stats_mode: str = st.radio(
+        "统计范围",
+        options=["全量样本", "当前过滤样本", "高相似样本"],
+        index=0,
+        horizontal=True,
+        help=(
+            "**全量样本** — 全部原始匹配结果，不受任何过滤影响。\n\n"
+            "**当前过滤样本** — 应用侧栏「位置过滤」和「相似度过滤」后的样本。\n\n"
+            "**高相似样本** — ContextScore ≥ 65 的样本（忽略位置/相似度过滤器）。"
+        ),
+    )
+
+    # ── Main layout ──────────────────────────────────────────────────────────
+    if stats_mode == "全量样本":
+        st.caption("统计基于全量原始匹配样本（位置过滤和相似度过滤均不生效）。")
+        col_l, col_r = st.columns(2)
+        _render_stats(col_l, _get_row("exact"), "Exact Matches")
+        _render_stats(col_r, _get_row("near"),  "Near Matches")
+
+    elif stats_mode == "当前过滤样本":
+        if not _filter_active:
+            st.info("当前侧栏未启用任何过滤器，结果与「全量样本」相同。")
+        else:
+            active_filters = " + ".join(f for f in [
+                pos_filter if pos_filter != "全部样本" else "",
+                ctx_filter if ctx_filter != "全部相似度" else "",
+            ] if f)
+            st.markdown(
+                f'<span style="background:#3498db22;color:#3498db;font-weight:bold;'
+                f'padding:2px 8px;border-radius:4px">🔍 过滤后样本统计 — {active_filters}</span>',
+                unsafe_allow_html=True,
+            )
+            st.write("")
+        filt_exact_stats = compute_inline_stats(disp_exact_df) if not disp_exact_df.empty else {"SampleSize": 0}
+        filt_near_stats  = compute_inline_stats(disp_near_df)  if not disp_near_df.empty  else {"SampleSize": 0}
+        col_l, col_r = st.columns(2)
+        _render_inline_stats(col_l, filt_exact_stats, "Exact Matches（过滤后）")
+        _render_inline_stats(col_r, filt_near_stats,  "Near Matches（过滤后）")
+        with st.expander("全量样本对照（未过滤基准）"):
+            st.caption("以下统计基于全量原始匹配样本，供对照参考。")
+            col_l2, col_r2 = st.columns(2)
+            _render_stats(col_l2, _get_row("exact"), "Exact Matches（全量）")
+            _render_stats(col_r2, _get_row("near"),  "Near Matches（全量）")
+
+    elif stats_mode == "高相似样本":
+        high_exact = (
+            exact_df[exact_df["ContextLabel"] == "高相似"].reset_index(drop=True)
+            if "ContextLabel" in exact_df.columns else pd.DataFrame()
+        )
+        high_near = (
+            near_df[near_df["ContextLabel"] == "高相似"].reset_index(drop=True)
+            if "ContextLabel" in near_df.columns else pd.DataFrame()
+        )
+        st.markdown(
+            f'<span style="background:#f1c40f22;color:#c8971f;font-weight:bold;'
+            f'padding:2px 8px;border-radius:4px">'
+            f'★ 高相似样本 — Exact {len(high_exact)} 条 / Near {len(high_near)} 条</span>',
+            unsafe_allow_html=True,
+        )
+        st.caption("ContextScore ≥ 65 的样本（全量中筛选，不受侧栏过滤影响）。")
+        st.write("")
+        high_exact_stats = compute_inline_stats(high_exact) if not high_exact.empty else {"SampleSize": 0}
+        high_near_stats  = compute_inline_stats(high_near)  if not high_near.empty  else {"SampleSize": 0}
+        col_l, col_r = st.columns(2)
+        _render_inline_stats(col_l, high_exact_stats, "Exact 高相似")
+        _render_inline_stats(col_r, high_near_stats,  "Near 高相似")
+        with st.expander("全量样本对照"):
+            st.caption("以下统计基于全量原始匹配样本，供对照参考。")
+            col_l2, col_r2 = st.columns(2)
+            _render_stats(col_l2, _get_row("exact"), "Exact Matches（全量）")
+            _render_stats(col_r2, _get_row("near"),  "Near Matches（全量）")
