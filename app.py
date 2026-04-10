@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import os
+import shutil
+import json
+from datetime import datetime
 from pathlib import Path
 
 # Ensure the working directory is always the repo root so that all relative
@@ -69,6 +72,7 @@ from matcher import (
     save_near_match_results,
 )
 from stats_reporter import build_stats_summary, save_stats_summary
+from scanner import run_scan
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1467,6 +1471,54 @@ def _render_match_tables(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Dataset version / snapshot helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+_DATA_DIR      = Path("data")
+_ENRICHED_DIR  = Path("enriched_data")
+_CODED_DIR     = Path("coded_data")
+_SNAPSHOT_DIR  = Path("snapshots")
+
+
+def _file_mtime_str(p: Path) -> str:
+    """Return last-modified timestamp for *p*, or '—' if the file is missing."""
+    try:
+        return datetime.fromtimestamp(p.stat().st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+    except OSError:
+        return "—"
+
+
+def get_dataset_version_info() -> dict:
+    """Return paths and last-modified times for the three source files."""
+    raw_path   = _DATA_DIR     / "AVGO.csv"
+    feat_path  = _ENRICHED_DIR / "AVGO_features.csv"
+    coded_path = _CODED_DIR    / "AVGO_coded.csv"
+    return {
+        "raw":   {"path": str(raw_path),   "mtime": _file_mtime_str(raw_path)},
+        "feat":  {"path": str(feat_path),  "mtime": _file_mtime_str(feat_path)},
+        "coded": {"path": str(coded_path), "mtime": _file_mtime_str(coded_path)},
+    }
+
+
+def save_snapshot() -> str:
+    """
+    Copy the three source files into a timestamped snapshot folder.
+    Returns the snapshot id (e.g. '20260410_143022').
+    """
+    snap_id  = datetime.now().strftime("%Y%m%d_%H%M%S")
+    snap_dir = _SNAPSHOT_DIR / snap_id
+    snap_dir.mkdir(parents=True, exist_ok=True)
+    for src, dst_name in [
+        (_DATA_DIR     / "AVGO.csv",          "AVGO.csv"),
+        (_ENRICHED_DIR / "AVGO_features.csv", "AVGO_features.csv"),
+        (_CODED_DIR    / "AVGO_coded.csv",    "AVGO_coded.csv"),
+    ]:
+        if src.exists():
+            shutil.copy2(src, snap_dir / dst_name)
+    return snap_id
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Page config  (must be first Streamlit call)
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -1489,8 +1541,45 @@ with st.sidebar:
         value=pd.Timestamp("2026-04-08").date(),
         help="The AVGO trading day you want to analyze.",
     )
-    run_clicked = st.button("Run Analysis", type="primary", use_container_width=True)
+    scan_phase: str = st.selectbox(
+        "Scan phase",
+        options=["daily", "premarket", "open30", "midday", "preclose"],
+        index=0,
+        help=(
+            "Manual phase label for the Scan tab. Until intraday/minute data is "
+            "available, all phases use the existing daily OHLCV feature fallback."
+        ),
+    )
+    run_clicked = st.button(
+        "Run Analysis",
+        type="primary",
+        use_container_width=True,
+        help="Match patterns using the existing local CSV files. Does NOT fetch new data.",
+    )
+    refresh_clicked = st.button(
+        "Refresh Data",
+        type="secondary",
+        use_container_width=True,
+        help=(
+            "Fetch latest prices from Yahoo Finance, rebuild features and encoding, "
+            "then save a timestamped snapshot. Run this deliberately — it changes "
+            "the sample set and may alter match membership."
+        ),
+    )
     st.divider()
+
+    # ── Dataset version info ─────────────────────────────────────────────────
+    _dvi = st.session_state.get("data_version_info") or get_dataset_version_info()
+    _snap_id      = st.session_state.get("snapshot_id",     "—")
+    _refresh_ts   = st.session_state.get("last_refresh_ts", "—")
+    with st.expander("Dataset version", expanded=False):
+        st.caption(f"**Raw**  `{_dvi['raw']['path']}`\n\n{_dvi['raw']['mtime']}")
+        st.caption(f"**Features**  `{_dvi['feat']['path']}`\n\n{_dvi['feat']['mtime']}")
+        st.caption(f"**Coded**  `{_dvi['coded']['path']}`\n\n{_dvi['coded']['mtime']}")
+        if _snap_id != "—":
+            st.caption(f"**Snapshot**  `snapshots/{_snap_id}`\n\nRefreshed at {_refresh_ts}")
+        else:
+            st.caption("No refresh performed this session.")
     st.caption("Data source: Yahoo Finance (yfinance)")
     st.divider()
     st.markdown("**位置过滤**")
@@ -1527,66 +1616,81 @@ with st.sidebar:
     )
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Pipeline execution
+# Refresh Data — Steps 1–3 only (fetch / features / encode + snapshot)
+# ─────────────────────────────────────────────────────────────────────────────
+
+if refresh_clicked:
+    _ref_error: str | None = None
+
+    with st.spinner("Refresh 1/3  —  Fetching price data from Yahoo Finance…"):
+        try:
+            batch_update_all()
+        except Exception as exc:
+            _ref_error = f"Data fetch failed: {exc}"
+
+    if not _ref_error:
+        with st.spinner("Refresh 2/3  —  Building features…"):
+            try:
+                batch_build_features()
+            except Exception as exc:
+                _ref_error = f"Feature build failed: {exc}"
+
+    if not _ref_error:
+        with st.spinner("Refresh 3/3  —  Encoding…"):
+            try:
+                batch_encode_all()
+            except Exception as exc:
+                _ref_error = f"Encoding failed: {exc}"
+
+    if _ref_error:
+        st.error(_ref_error)
+    else:
+        _snap_id = save_snapshot()
+        _now_ts  = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        st.session_state["last_refresh_ts"]   = _now_ts
+        st.session_state["snapshot_id"]       = _snap_id
+        st.session_state["data_version_info"] = get_dataset_version_info()
+        st.success(f"Data refreshed at {_now_ts}. Snapshot saved: `snapshots/{_snap_id}`")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Run Analysis — Steps 4–5 only (matching + stats; no data refresh)
 # ─────────────────────────────────────────────────────────────────────────────
 
 if run_clicked:
     target_date_str = target_date.strftime("%Y-%m-%d")
     run_error: str | None = None
 
-    # Each step runs inside its own spinner so the user sees progress.
-    with st.spinner("Step 1 / 5  —  Fetching price data from Yahoo Finance…"):
+    with st.spinner("Step 1/2  —  Matching historical patterns…"):
         try:
-            batch_update_all()
+            coded_df = load_coded_avgo()
+            exact_df = build_next_day_match_table(coded_df, target_date_str)
+            save_match_results(exact_df, target_date_str)
+            near_df = build_near_match_table(coded_df, target_date_str)
+            save_near_match_results(near_df, target_date_str)
+            # All enrichments are app-layer only; core modules are untouched.
+            exact_df = enrich_with_t2(exact_df, coded_df)
+            near_df  = enrich_with_t2(near_df,  coded_df)
+            exact_df = enrich_with_match_ohlcv(exact_df, coded_df)
+            near_df  = enrich_with_match_ohlcv(near_df,  coded_df)
+            exact_df = add_turnovers(exact_df)
+            near_df  = add_turnovers(near_df)
+            pos_df   = compute_position_features(coded_df)
+            exact_df = enrich_with_position(exact_df, pos_df)
+            near_df  = enrich_with_position(near_df,  pos_df)
+            prev_df  = compute_prev_day_features(coded_df)
+            exact_df = enrich_with_prev_day(exact_df, prev_df)
+            near_df  = enrich_with_prev_day(near_df,  prev_df)
+            mom_df   = compute_momentum_features(coded_df)
+            exact_df = enrich_with_momentum(exact_df, mom_df)
+            near_df  = enrich_with_momentum(near_df,  mom_df)
+            _pipeline_ctx = get_target_context(target_date_str, pos_df, prev_df, mom_df)
+            exact_df = compute_context_scores(exact_df, _pipeline_ctx)
+            near_df  = compute_context_scores(near_df,  _pipeline_ctx)
         except Exception as exc:
-            run_error = f"Data fetch failed: {exc}"
+            run_error = f"Matching failed: {exc}"
 
     if not run_error:
-        with st.spinner("Step 2 / 5  —  Building features…"):
-            try:
-                batch_build_features()
-            except Exception as exc:
-                run_error = f"Feature build failed: {exc}"
-
-    if not run_error:
-        with st.spinner("Step 3 / 5  —  Encoding…"):
-            try:
-                batch_encode_all()
-            except Exception as exc:
-                run_error = f"Encoding failed: {exc}"
-
-    if not run_error:
-        with st.spinner("Step 4 / 5  —  Matching historical patterns…"):
-            try:
-                coded_df = load_coded_avgo()
-                exact_df = build_next_day_match_table(coded_df, target_date_str)
-                save_match_results(exact_df, target_date_str)
-                near_df = build_near_match_table(coded_df, target_date_str)
-                save_near_match_results(near_df, target_date_str)
-                # All enrichments are app-layer only; core modules are untouched.
-                exact_df = enrich_with_t2(exact_df, coded_df)
-                near_df  = enrich_with_t2(near_df,  coded_df)
-                exact_df = enrich_with_match_ohlcv(exact_df, coded_df)
-                near_df  = enrich_with_match_ohlcv(near_df,  coded_df)
-                exact_df = add_turnovers(exact_df)
-                near_df  = add_turnovers(near_df)
-                pos_df   = compute_position_features(coded_df)
-                exact_df = enrich_with_position(exact_df, pos_df)
-                near_df  = enrich_with_position(near_df,  pos_df)
-                prev_df  = compute_prev_day_features(coded_df)
-                exact_df = enrich_with_prev_day(exact_df, prev_df)
-                near_df  = enrich_with_prev_day(near_df,  prev_df)
-                mom_df   = compute_momentum_features(coded_df)
-                exact_df = enrich_with_momentum(exact_df, mom_df)
-                near_df  = enrich_with_momentum(near_df,  mom_df)
-                _pipeline_ctx = get_target_context(target_date_str, pos_df, prev_df, mom_df)
-                exact_df = compute_context_scores(exact_df, _pipeline_ctx)
-                near_df  = compute_context_scores(near_df,  _pipeline_ctx)
-            except Exception as exc:
-                run_error = f"Matching failed: {exc}"
-
-    if not run_error:
-        with st.spinner("Step 5 / 5  —  Computing statistics…"):
+        with st.spinner("Step 2/2  —  Computing statistics…"):
             try:
                 summary_df = build_stats_summary(target_date_str)
                 save_stats_summary(summary_df, target_date_str)
@@ -1596,6 +1700,11 @@ if run_clicked:
     if run_error:
         st.error(run_error)
     else:
+        scan_result = run_scan(
+            target_date_str, coded_df, exact_df, near_df,
+            summary_df, pos_df, prev_df, mom_df,
+            scan_phase=scan_phase,
+        )
         st.success(f"Analysis complete for {target_date_str}")
         st.session_state.update(
             target_date_str=target_date_str,
@@ -1606,6 +1715,8 @@ if run_clicked:
             pos_df=pos_df,
             prev_df=prev_df,
             mom_df=mom_df,
+            scan_result=scan_result,
+            data_version_info=get_dataset_version_info(),
         )
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1624,6 +1735,7 @@ summary_df: pd.DataFrame = st.session_state["summary_df"]
 pos_df: pd.DataFrame     = st.session_state.get("pos_df",  pd.DataFrame())
 prev_df: pd.DataFrame    = st.session_state.get("prev_df", pd.DataFrame())
 mom_df: pd.DataFrame     = st.session_state.get("mom_df",  pd.DataFrame())
+scan_result: dict | None = st.session_state.get("scan_result")
 
 # Target day context for context-score expander in match tables.
 target_ctx: dict = get_target_context(target_date_str, pos_df, prev_df, mom_df)
@@ -1659,12 +1771,162 @@ def _tab_label(name: str, filtered_n: int, total_n: int) -> str:
         return f"{name}  ({filtered_n}/{total_n})"
     return f"{name}  ({total_n})"
 
-tab1, tab2, tab3, tab4 = st.tabs([
+tab_scan, tab1, tab2, tab3, tab4 = st.tabs([
+    "Scan",
     "Target Day",
     _tab_label("Exact Matches", len(disp_exact_df), len(exact_df)),
     _tab_label("Near Matches",  len(disp_near_df),  len(near_df)),
     "Stats Summary",
 ])
+
+
+# ── Scan tab render helper ────────────────────────────────────────────────────
+
+def _render_scan_result(sr: dict) -> None:
+    """Render a ScanResult dict produced by scanner.run_scan()."""
+
+    # ── Color maps ────────────────────────────────────────────────────────────
+    _BIAS_COLORS = {"bullish": "#2ecc71", "bearish": "#e74c3c", "neutral": "#95a5a6"}
+    _CONF_COLORS = {"high": "#f39c12",    "medium": "#3498db",  "low": "#95a5a6"}
+    _CONF_LABELS_EN = {"confirmed": "✅ confirmed", "diverging": "⚡ diverging", "mixed": "〰 mixed"}
+    _STATE_ICONS = {
+        # gap
+        "gap_up":   "🔼 gap_up",
+        "flat":     "⬛ flat",
+        "gap_down": "🔽 gap_down",
+        # intraday
+        "high_go":  "📈 high_go",
+        "low_go":   "📉 low_go",
+        "range":    "↔ range",
+        # volume
+        "expanding": "🔊 expanding",
+        "normal":    "🔉 normal",
+        "shrinking": "🔈 shrinking",
+        # price
+        "bullish": "🟢 bullish",
+        "bearish": "🔴 bearish",
+        "neutral": "⚪ neutral",
+    }
+    _RS_ICONS = {
+        "stronger":    "▲ stronger",
+        "weaker":      "▼ weaker",
+        "neutral":     "= neutral",
+        "unavailable": "— n/a",
+    }
+
+    bias       = sr.get("scan_bias", "neutral")
+    confidence = sr.get("scan_confidence", "low")
+    conf_state = sr.get("confirmation_state", "mixed")
+    bias_color = _BIAS_COLORS.get(bias, "#888888")
+    conf_color = _CONF_COLORS.get(confidence, "#888888")
+
+    # ── Header ────────────────────────────────────────────────────────────────
+    st.markdown(
+        f'<span style="color:#888888;font-size:0.85em">'
+        f'{sr.get("symbol","AVGO")} · '
+        f'{sr.get("scan_phase","daily").upper()} · '
+        f'{sr.get("scan_timestamp","")}</span>',
+        unsafe_allow_html=True,
+    )
+    phase_note = sr.get("scan_phase_note")
+    if phase_note:
+        st.caption(phase_note)
+
+    # ── Bias badge ────────────────────────────────────────────────────────────
+    st.markdown(
+        f'<div style="margin:8px 0 4px 0">'
+        f'<span style="font-size:2em;font-weight:bold;color:{bias_color}">'
+        f'{bias.upper()}</span>'
+        f'&nbsp;&nbsp;'
+        f'<span style="font-size:1.1em;font-weight:bold;color:{conf_color};'
+        f'background:{conf_color}22;padding:2px 10px;border-radius:6px">'
+        f'{confidence.upper()}</span>'
+        f'&nbsp;&nbsp;'
+        f'<span style="font-size:0.9em;color:#aaaaaa">'
+        f'{_CONF_LABELS_EN.get(conf_state, conf_state)}</span>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(f"> {sr.get('notes', '')}")
+    st.divider()
+
+    # ── Two-column detail section ─────────────────────────────────────────────
+    col_l, col_r = st.columns(2)
+
+    with col_l:
+        st.markdown("**AVGO States**")
+        states_data = {
+            "Field":  ["Gap",       "Intraday",         "Volume",       "Price / Stage"],
+            "Value":  [
+                _STATE_ICONS.get(sr.get("avgo_gap_state",      ""), sr.get("avgo_gap_state",      "?")),
+                _STATE_ICONS.get(sr.get("avgo_intraday_state", ""), sr.get("avgo_intraday_state", "?")),
+                _STATE_ICONS.get(sr.get("avgo_volume_state",   ""), sr.get("avgo_volume_state",   "?")),
+                _STATE_ICONS.get(sr.get("avgo_price_state",    ""), sr.get("avgo_price_state",    "?")),
+            ],
+        }
+        st.dataframe(pd.DataFrame(states_data), hide_index=True, use_container_width=True)
+        st.caption(f"Pattern code: `{sr.get('avgo_pattern_code', '—')}`")
+
+    with col_r:
+        st.markdown("**Relative Strength vs Peers**")
+        rs_5d = sr.get("relative_strength_5d_summary", sr.get("relative_strength_summary", {}))
+        rs_same_day = sr.get("relative_strength_same_day_summary", {})
+        peers = list(rs_5d.keys() or rs_same_day.keys())
+        rs_data = {
+            "Peer": [s.replace("vs_", "").upper() for s in peers],
+            "5-day": [_RS_ICONS.get(rs_5d.get(s, "unavailable"), rs_5d.get(s, "unavailable")) for s in peers],
+            "Same-day": [
+                _RS_ICONS.get(rs_same_day.get(s, "unavailable"), rs_same_day.get(s, "unavailable"))
+                for s in peers
+            ],
+        }
+        st.dataframe(pd.DataFrame(rs_data), hide_index=True, use_container_width=True)
+
+        conf_label = _CONF_LABELS_EN.get(conf_state, conf_state)
+        st.caption(f"Confirmation: {conf_label}")
+
+    st.divider()
+
+    # ── Historical match summary ──────────────────────────────────────────────
+    st.markdown("**Historical Match Summary**")
+    hist = sr.get("historical_match_summary", {})
+    top_ctx = hist.get("top_context_score")
+    ctx_str = f"{top_ctx:.0f}" if top_ctx is not None else "—"
+    outcome = hist.get("dominant_historical_outcome", "—")
+    _OUTCOME_COLORS = {
+        "up_bias":            "#2ecc71",
+        "down_bias":          "#e74c3c",
+        "mixed":              "#f39c12",
+        "insufficient_sample": "#95a5a6",
+    }
+    outcome_color = _OUTCOME_COLORS.get(outcome, "#888888")
+
+    h1, h2, h3, h4 = st.columns(4)
+    h1.metric("Exact matches",  hist.get("exact_match_count", 0))
+    h2.metric("Near matches",   hist.get("near_match_count",  0))
+    h3.metric("Top ctx score",  ctx_str)
+    h4.markdown(
+        f'<div style="padding-top:8px">'
+        f'<span style="font-size:0.75em;color:#888888">Historical bias</span><br>'
+        f'<span style="font-weight:bold;color:{outcome_color}">{outcome}</span>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
+    # ── Raw JSON expander ─────────────────────────────────────────────────────
+    with st.expander("Raw scan JSON"):
+        st.json(sr)
+
+
+# ── Tab 0: Scan ───────────────────────────────────────────────────────────────
+
+with tab_scan:
+    st.subheader(f"Scan Result — {target_date_str}")
+    if scan_result is None:
+        st.info("Scan result not available. Re-run analysis to generate it.")
+    else:
+        _render_scan_result(scan_result)
 
 # ── Tab 1: Target Day ─────────────────────────────────────────────────────────
 
@@ -2114,3 +2376,45 @@ with tab4:
             col_l2, col_r2 = st.columns(2)
             _render_stats(col_l2, _get_row("exact"), "Exact Matches（全量）")
             _render_stats(col_r2, _get_row("near"),  "Near Matches（全量）")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Export current analysis snapshot
+# ─────────────────────────────────────────────────────────────────────────────
+
+st.divider()
+st.markdown("**Export current analysis snapshot**")
+
+_dvi_now    = st.session_state.get("data_version_info") or get_dataset_version_info()
+_snap_now   = st.session_state.get("snapshot_id", "—")
+_target_row = get_target_row(coded_df, target_date_str)
+_target_code = (
+    str(int(_target_row["Code"]))
+    if _target_row is not None and pd.notna(_target_row.get("Code"))
+    else "—"
+)
+
+_export_payload = {
+    "target_date":        target_date_str,
+    "target_code":        _target_code,
+    "snapshot_id":        _snap_now,
+    "dataset_timestamps": {
+        "raw":   _dvi_now["raw"]["mtime"],
+        "feat":  _dvi_now["feat"]["mtime"],
+        "coded": _dvi_now["coded"]["mtime"],
+    },
+    "exact_match_dates": (
+        sorted(exact_df["MatchDate"].astype(str).tolist())
+        if not exact_df.empty and "MatchDate" in exact_df.columns else []
+    ),
+    "near_match_dates": (
+        sorted(near_df["MatchDate"].astype(str).tolist())
+        if not near_df.empty and "MatchDate" in near_df.columns else []
+    ),
+}
+
+st.download_button(
+    label="Download snapshot JSON",
+    data=json.dumps(_export_payload, indent=2, ensure_ascii=False),
+    file_name=f"analysis_snapshot_{target_date_str}.json",
+    mime="application/json",
+)
