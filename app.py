@@ -73,6 +73,9 @@ from matcher import (
 )
 from stats_reporter import build_stats_summary, save_stats_summary
 from scanner import run_scan
+from ui.predict_tab import render_predict_tab
+from ui.research_tab import render_research_tab
+from ui.scan_tab import render_scan_tab
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1716,6 +1719,7 @@ if run_clicked:
             prev_df=prev_df,
             mom_df=mom_df,
             scan_result=scan_result,
+            research_result=None,
             data_version_info=get_dataset_version_info(),
         )
 
@@ -1724,7 +1728,9 @@ if run_clicked:
 # ─────────────────────────────────────────────────────────────────────────────
 
 if "target_date_str" not in st.session_state:
-    st.info("Select a target date in the sidebar and click **Run Analysis** to begin.")
+    tab_scan = st.tabs(["Scan"])[0]
+    with tab_scan:
+        st.info("Select a target date in the sidebar and click **Run Analysis** to begin.")
     st.stop()
 
 target_date_str: str     = st.session_state["target_date_str"]
@@ -1736,6 +1742,7 @@ pos_df: pd.DataFrame     = st.session_state.get("pos_df",  pd.DataFrame())
 prev_df: pd.DataFrame    = st.session_state.get("prev_df", pd.DataFrame())
 mom_df: pd.DataFrame     = st.session_state.get("mom_df",  pd.DataFrame())
 scan_result: dict | None = st.session_state.get("scan_result")
+research_result: dict | None = st.session_state.get("research_result")
 
 # Target day context for context-score expander in match tables.
 target_ctx: dict = get_target_context(target_date_str, pos_df, prev_df, mom_df)
@@ -1771,8 +1778,10 @@ def _tab_label(name: str, filtered_n: int, total_n: int) -> str:
         return f"{name}  ({filtered_n}/{total_n})"
     return f"{name}  ({total_n})"
 
-tab_scan, tab1, tab2, tab3, tab4 = st.tabs([
+tab_scan, tab_research, tab_predict, tab1, tab2, tab3, tab4 = st.tabs([
     "Scan",
+    "Research",
+    "Predict",
     "Target Day",
     _tab_label("Exact Matches", len(disp_exact_df), len(exact_df)),
     _tab_label("Near Matches",  len(disp_near_df),  len(near_df)),
@@ -1780,153 +1789,18 @@ tab_scan, tab1, tab2, tab3, tab4 = st.tabs([
 ])
 
 
-# ── Scan tab render helper ────────────────────────────────────────────────────
-
-def _render_scan_result(sr: dict) -> None:
-    """Render a ScanResult dict produced by scanner.run_scan()."""
-
-    # ── Color maps ────────────────────────────────────────────────────────────
-    _BIAS_COLORS = {"bullish": "#2ecc71", "bearish": "#e74c3c", "neutral": "#95a5a6"}
-    _CONF_COLORS = {"high": "#f39c12",    "medium": "#3498db",  "low": "#95a5a6"}
-    _CONF_LABELS_EN = {"confirmed": "✅ confirmed", "diverging": "⚡ diverging", "mixed": "〰 mixed"}
-    _STATE_ICONS = {
-        # gap
-        "gap_up":   "🔼 gap_up",
-        "flat":     "⬛ flat",
-        "gap_down": "🔽 gap_down",
-        # intraday
-        "high_go":  "📈 high_go",
-        "low_go":   "📉 low_go",
-        "range":    "↔ range",
-        # volume
-        "expanding": "🔊 expanding",
-        "normal":    "🔉 normal",
-        "shrinking": "🔈 shrinking",
-        # price
-        "bullish": "🟢 bullish",
-        "bearish": "🔴 bearish",
-        "neutral": "⚪ neutral",
-    }
-    _RS_ICONS = {
-        "stronger":    "▲ stronger",
-        "weaker":      "▼ weaker",
-        "neutral":     "= neutral",
-        "unavailable": "— n/a",
-    }
-
-    bias       = sr.get("scan_bias", "neutral")
-    confidence = sr.get("scan_confidence", "low")
-    conf_state = sr.get("confirmation_state", "mixed")
-    bias_color = _BIAS_COLORS.get(bias, "#888888")
-    conf_color = _CONF_COLORS.get(confidence, "#888888")
-
-    # ── Header ────────────────────────────────────────────────────────────────
-    st.markdown(
-        f'<span style="color:#888888;font-size:0.85em">'
-        f'{sr.get("symbol","AVGO")} · '
-        f'{sr.get("scan_phase","daily").upper()} · '
-        f'{sr.get("scan_timestamp","")}</span>',
-        unsafe_allow_html=True,
-    )
-    phase_note = sr.get("scan_phase_note")
-    if phase_note:
-        st.caption(phase_note)
-
-    # ── Bias badge ────────────────────────────────────────────────────────────
-    st.markdown(
-        f'<div style="margin:8px 0 4px 0">'
-        f'<span style="font-size:2em;font-weight:bold;color:{bias_color}">'
-        f'{bias.upper()}</span>'
-        f'&nbsp;&nbsp;'
-        f'<span style="font-size:1.1em;font-weight:bold;color:{conf_color};'
-        f'background:{conf_color}22;padding:2px 10px;border-radius:6px">'
-        f'{confidence.upper()}</span>'
-        f'&nbsp;&nbsp;'
-        f'<span style="font-size:0.9em;color:#aaaaaa">'
-        f'{_CONF_LABELS_EN.get(conf_state, conf_state)}</span>'
-        f'</div>',
-        unsafe_allow_html=True,
-    )
-
-    st.markdown(f"> {sr.get('notes', '')}")
-    st.divider()
-
-    # ── Two-column detail section ─────────────────────────────────────────────
-    col_l, col_r = st.columns(2)
-
-    with col_l:
-        st.markdown("**AVGO States**")
-        states_data = {
-            "Field":  ["Gap",       "Intraday",         "Volume",       "Price / Stage"],
-            "Value":  [
-                _STATE_ICONS.get(sr.get("avgo_gap_state",      ""), sr.get("avgo_gap_state",      "?")),
-                _STATE_ICONS.get(sr.get("avgo_intraday_state", ""), sr.get("avgo_intraday_state", "?")),
-                _STATE_ICONS.get(sr.get("avgo_volume_state",   ""), sr.get("avgo_volume_state",   "?")),
-                _STATE_ICONS.get(sr.get("avgo_price_state",    ""), sr.get("avgo_price_state",    "?")),
-            ],
-        }
-        st.dataframe(pd.DataFrame(states_data), hide_index=True, use_container_width=True)
-        st.caption(f"Pattern code: `{sr.get('avgo_pattern_code', '—')}`")
-
-    with col_r:
-        st.markdown("**Relative Strength vs Peers**")
-        rs_5d = sr.get("relative_strength_5d_summary", sr.get("relative_strength_summary", {}))
-        rs_same_day = sr.get("relative_strength_same_day_summary", {})
-        peers = list(rs_5d.keys() or rs_same_day.keys())
-        rs_data = {
-            "Peer": [s.replace("vs_", "").upper() for s in peers],
-            "5-day": [_RS_ICONS.get(rs_5d.get(s, "unavailable"), rs_5d.get(s, "unavailable")) for s in peers],
-            "Same-day": [
-                _RS_ICONS.get(rs_same_day.get(s, "unavailable"), rs_same_day.get(s, "unavailable"))
-                for s in peers
-            ],
-        }
-        st.dataframe(pd.DataFrame(rs_data), hide_index=True, use_container_width=True)
-
-        conf_label = _CONF_LABELS_EN.get(conf_state, conf_state)
-        st.caption(f"Confirmation: {conf_label}")
-
-    st.divider()
-
-    # ── Historical match summary ──────────────────────────────────────────────
-    st.markdown("**Historical Match Summary**")
-    hist = sr.get("historical_match_summary", {})
-    top_ctx = hist.get("top_context_score")
-    ctx_str = f"{top_ctx:.0f}" if top_ctx is not None else "—"
-    outcome = hist.get("dominant_historical_outcome", "—")
-    _OUTCOME_COLORS = {
-        "up_bias":            "#2ecc71",
-        "down_bias":          "#e74c3c",
-        "mixed":              "#f39c12",
-        "insufficient_sample": "#95a5a6",
-    }
-    outcome_color = _OUTCOME_COLORS.get(outcome, "#888888")
-
-    h1, h2, h3, h4 = st.columns(4)
-    h1.metric("Exact matches",  hist.get("exact_match_count", 0))
-    h2.metric("Near matches",   hist.get("near_match_count",  0))
-    h3.metric("Top ctx score",  ctx_str)
-    h4.markdown(
-        f'<div style="padding-top:8px">'
-        f'<span style="font-size:0.75em;color:#888888">Historical bias</span><br>'
-        f'<span style="font-weight:bold;color:{outcome_color}">{outcome}</span>'
-        f'</div>',
-        unsafe_allow_html=True,
-    )
-
-    # ── Raw JSON expander ─────────────────────────────────────────────────────
-    with st.expander("Raw scan JSON"):
-        st.json(sr)
-
-
 # ── Tab 0: Scan ───────────────────────────────────────────────────────────────
 
 with tab_scan:
-    st.subheader(f"Scan Result — {target_date_str}")
-    if scan_result is None:
-        st.info("Scan result not available. Re-run analysis to generate it.")
-    else:
-        _render_scan_result(scan_result)
+    render_scan_tab(target_date_str, scan_result)
+
+
+with tab_research:
+    research_result = render_research_tab(scan_result, research_result)
+
+
+with tab_predict:
+    render_predict_tab(scan_result, research_result)
 
 # ── Tab 1: Target Day ─────────────────────────────────────────────────────────
 
