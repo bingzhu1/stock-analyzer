@@ -7,3 +7,6 @@ enriched_data/
 coded_data/
 match_results/
 stats_results/
+.venv/
+avgo_agent.db
+snapshots/

@@ -1,9 +1,17 @@
 from __future__ import annotations
 
+import os
 import pandas as pd
 import streamlit as st
 
 from predict import run_predict
+from services.prediction_store import (
+    get_outcome_for_prediction,
+    get_review_for_prediction,
+    save_prediction,
+)
+from services.outcome_capture import capture_outcome
+from services.review_agent import generate_review
 
 
 def render_predict_result(pr: dict) -> None:
@@ -70,4 +78,125 @@ def render_predict_tab(scan_result: dict | None, research_result: dict | None) -
     if research_result is None:
         st.warning("No Research result found. Prediction is Scan-led until Research is run.")
     render_predict_result(predict_result)
+
+    # ── Research Loop ─────────────────────────────────────────────────────────
+    st.divider()
+    st.subheader("Research Loop")
+    st.caption("Save this prediction, then capture the actual outcome after market close to begin building memory.")
+
+    # prediction_for_date = the trading day being analyzed (from the date picker)
+    prediction_for_date: str = st.session_state.get("target_date_str", "")
+    snapshot_id: str = st.session_state.get("snapshot_id", "—")
+
+    # Track saved prediction per prediction_for_date to detect session-level saves
+    saved_pid: str | None = st.session_state.get("saved_prediction_id")
+    saved_date: str = st.session_state.get("saved_prediction_date", "")
+    already_saved = bool(saved_pid and saved_date == prediction_for_date)
+
+    col_save, col_outcome, col_review = st.columns(3)
+
+    # ── Step 1: Save Prediction ───────────────────────────────────────────────
+    with col_save:
+        st.markdown("**Step 1 — Save Prediction**")
+
+        def _do_save() -> None:
+            pid = save_prediction(
+                symbol=str(predict_result.get("symbol", "AVGO")),
+                prediction_for_date=prediction_for_date,
+                scan_result=scan_result,
+                research_result=research_result,
+                predict_result=predict_result,
+                snapshot_id=snapshot_id,
+            )
+            st.session_state["saved_prediction_id"] = pid
+            st.session_state["saved_prediction_date"] = prediction_for_date
+
+        if not already_saved:
+            if st.button("Save Today's Prediction", key="btn_save_prediction"):
+                try:
+                    _do_save()
+                    st.rerun()
+                except Exception as exc:
+                    st.error(f"Save failed: {exc}")
+        else:
+            st.success("Saved")
+            st.caption(f"ID: `{saved_pid[:8]}…`")
+            st.caption("Saving again creates a new record and resets outcome/review for this session.")
+            if st.button("Save New Version ↻", key="btn_save_new_version"):
+                try:
+                    _do_save()
+                    st.rerun()
+                except Exception as exc:
+                    st.error(f"Save failed: {exc}")
+
+    # Fetch outcome once — shared by Step 2 display and Step 3 precondition check
+    outcome = get_outcome_for_prediction(saved_pid) if already_saved else None
+
+    # ── Step 2: Capture Outcome ───────────────────────────────────────────────
+    with col_outcome:
+        st.markdown("**Step 2 — Capture Outcome**")
+        if not already_saved:
+            st.button("Capture Outcome", key="btn_capture_outcome_locked", disabled=True)
+            st.caption("Complete Step 1 first.")
+        elif outcome:
+            direction_ok = outcome.get("direction_correct")
+            close_chg = outcome.get("actual_close_change")
+            label = {1: "CORRECT", 0: "WRONG", None: "NEUTRAL"}.get(direction_ok, "?")
+            chg_str = f"{close_chg * 100:+.2f}%" if close_chg is not None else "N/A"
+            st.success(f"{label}  ({chg_str})")
+            actual_close_val = outcome.get("actual_close")
+            close_display = f"{actual_close_val:.2f}" if actual_close_val is not None else "N/A"
+            st.caption(f"Close: {close_display}")
+        else:
+            if st.button("Capture Outcome", key="btn_capture_outcome"):
+                with st.spinner("Fetching market data…"):
+                    try:
+                        capture_outcome(saved_pid)
+                        st.rerun()
+                    except ValueError as exc:
+                        st.error(str(exc))
+
+    # ── Step 3: Generate Review ───────────────────────────────────────────────
+    with col_review:
+        st.markdown("**Step 3 — AI Review**")
+        if not already_saved:
+            st.button("Generate Review", key="btn_generate_review_locked1", disabled=True)
+            st.caption("Complete Step 1 first.")
+        elif not outcome:
+            st.button("Generate Review", key="btn_generate_review_locked2", disabled=True)
+            st.caption("Complete Step 2 first.")
+        else:
+            review = get_review_for_prediction(saved_pid)
+            if review:
+                cat = review.get("error_category", "")
+                cat_colors = {
+                    "correct": "green",
+                    "wrong_direction": "red",
+                    "right_direction_wrong_magnitude": "orange",
+                    "false_confidence": "orange",
+                    "insufficient_data": "gray",
+                }
+                color = cat_colors.get(cat, "gray")
+                st.markdown(
+                    f'<span style="color:{color};font-weight:bold">{cat.replace("_", " ").upper()}</span>',
+                    unsafe_allow_html=True,
+                )
+                with st.expander("View Review"):
+                    st.markdown(f"**Root cause:** {review.get('root_cause', '')}")
+                    st.markdown(f"**Confidence:** {review.get('confidence_note', '')}")
+                    st.markdown(f"**Watch for next time:** {review.get('watch_for_next_time', '')}")
+                    if review.get("raw_llm_output"):
+                        with st.expander("Raw LLM output"):
+                            st.text(review["raw_llm_output"])
+            else:
+                has_key = bool(os.getenv("ANTHROPIC_API_KEY", "").strip())
+                label = "Generate AI Review" if has_key else "Generate Review (rule-based)"
+                if st.button(label, key="btn_generate_review"):
+                    with st.spinner("Generating review…"):
+                        try:
+                            generate_review(saved_pid)
+                            st.rerun()
+                        except ValueError as exc:
+                            st.error(str(exc))
+
     return predict_result

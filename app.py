@@ -73,6 +73,7 @@ from matcher import (
 )
 from stats_reporter import build_stats_summary, save_stats_summary
 from scanner import run_scan
+from ui.history_tab import render_history_tab
 from ui.predict_tab import render_predict_tab
 from ui.research_tab import render_research_tab
 from ui.scan_tab import render_scan_tab
@@ -1778,10 +1779,11 @@ def _tab_label(name: str, filtered_n: int, total_n: int) -> str:
         return f"{name}  ({filtered_n}/{total_n})"
     return f"{name}  ({total_n})"
 
-tab_scan, tab_research, tab_predict, tab1, tab2, tab3, tab4 = st.tabs([
+tab_scan, tab_research, tab_predict, tab_history, tab1, tab2, tab3, tab4 = st.tabs([
     "Scan",
     "Research",
     "Predict",
+    "History",
     "Target Day",
     _tab_label("Exact Matches", len(disp_exact_df), len(exact_df)),
     _tab_label("Near Matches",  len(disp_near_df),  len(near_df)),
@@ -1801,6 +1803,9 @@ with tab_research:
 
 with tab_predict:
     render_predict_tab(scan_result, research_result)
+
+with tab_history:
+    render_history_tab()
 
 # ── Tab 1: Target Day ─────────────────────────────────────────────────────────
 
