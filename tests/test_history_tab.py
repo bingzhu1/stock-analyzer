@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import unittest
 
 try:
@@ -68,6 +69,50 @@ class HistoryTabHelperTests(unittest.TestCase):
         }
         self.assertEqual(_prediction_summary(prediction), "A useful summary.")
         self.assertEqual(_prediction_summary({"predict_result_json": "{}"}), "")
+
+    def test_history_rows_include_scenario_match_label(self) -> None:
+        scenario_json = json.dumps({
+            "exact_match_count": 3,
+            "near_match_count": 2,
+            "dominant_historical_outcome": "bullish",
+        })
+        rows = _history_rows([{
+            "id": "p1",
+            "prediction_for_date": "2026-04-11",
+            "final_bias": "bullish",
+            "final_confidence": "medium",
+            "status": "review_generated",
+            "direction_correct": 1,
+            "actual_close_change": 0.01,
+            "scenario_match": scenario_json,
+        }])
+        self.assertEqual(rows[0]["scenario_match"], "exact 3 / near 2 / bullish")
+
+    def test_history_rows_scenario_match_blank_when_absent(self) -> None:
+        rows = _history_rows([{
+            "id": "p1",
+            "prediction_for_date": "2026-04-11",
+            "final_bias": "bearish",
+            "final_confidence": "low",
+            "status": "saved",
+            "direction_correct": None,
+            "actual_close_change": None,
+        }])
+        self.assertEqual(rows[0]["scenario_match"], "")
+
+    def test_history_rows_scenario_match_blank_for_empty_dict(self) -> None:
+        """Empty {} historical_match_summary produces blank scenario display, not an error."""
+        rows = _history_rows([{
+            "id": "p1",
+            "prediction_for_date": "2026-04-11",
+            "final_bias": "neutral",
+            "final_confidence": "low",
+            "status": "outcome_captured",
+            "direction_correct": None,
+            "actual_close_change": 0.001,
+            "scenario_match": "{}",
+        }])
+        self.assertEqual(rows[0]["scenario_match"], "")
 
 
 if __name__ == "__main__":

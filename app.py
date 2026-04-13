@@ -73,6 +73,7 @@ from matcher import (
 )
 from stats_reporter import build_stats_summary, save_stats_summary
 from scanner import run_scan
+from ui.command_bar import render_command_bar
 from ui.history_tab import render_history_tab
 from ui.predict_tab import render_predict_tab
 from ui.research_tab import render_research_tab
@@ -1533,6 +1534,8 @@ st.markdown(
     "Encode a selected trading day, find historical days with matching or similar "
     "patterns, and inspect next-day price outcomes."
 )
+
+render_command_bar()
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Sidebar

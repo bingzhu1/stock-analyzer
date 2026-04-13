@@ -27,6 +27,10 @@ import os
 import re
 from typing import Any
 
+from services.error_taxonomy import (
+    classify_error_category,
+    normalize_error_category,
+)
 from services.prediction_store import (
     get_outcome_for_prediction,
     get_prediction,
@@ -57,14 +61,6 @@ try:
     _ANTHROPIC_OK = True
 except ImportError:
     _ANTHROPIC_OK = False
-
-_VALID_CATEGORIES = frozenset({
-    "wrong_direction",
-    "right_direction_wrong_magnitude",
-    "correct",
-    "false_confidence",
-    "insufficient_data",
-})
 
 _LLM_MODEL = "claude-haiku-4-5-20251001"
 
@@ -170,16 +166,12 @@ def _extract_json(raw: str) -> dict:
     return json.loads(text)
 
 
-def _normalize_category(cat: str) -> str:
-    return cat if cat in _VALID_CATEGORIES else "insufficient_data"
-
-
 def _validate(parsed: dict) -> dict:
     """Validate parsed LLM output. Returns normalized dict or raises."""
     if _PYDANTIC_OK:
         output = ReviewOutput(**parsed)
         return {
-            "error_category": _normalize_category(output.error_category),
+            "error_category": normalize_error_category(output.error_category),
             "root_cause": output.root_cause,
             "confidence_note": output.confidence_note,
             "watch_for_next_time": output.watch_for_next_time,
@@ -189,7 +181,7 @@ def _validate(parsed: dict) -> dict:
         if field not in parsed or not isinstance(parsed[field], str):
             raise ValueError(f"Missing or invalid field: {field}")
     return {
-        "error_category": _normalize_category(parsed["error_category"]),
+        "error_category": normalize_error_category(parsed["error_category"]),
         "root_cause": parsed["root_cause"],
         "confidence_note": parsed["confidence_note"],
         "watch_for_next_time": parsed["watch_for_next_time"],
@@ -206,23 +198,19 @@ def _rule_based_fallback(prediction: dict, outcome: dict) -> dict:
     bias = prediction.get("final_bias", "neutral")
     confidence = prediction.get("final_confidence", "low")
 
-    if direction_ok == 1:
-        category = (
-            "correct" if abs(close_chg) >= 0.01
-            else "right_direction_wrong_magnitude"
-        )
+    category = classify_error_category(direction_ok, close_chg)
+
+    if category in {"correct", "right_direction_wrong_magnitude"}:
         root = (
             f"Prediction ({bias}) was directionally correct; "
             f"actual close change was {close_chg * 100:.2f}%."
         )
-    elif direction_ok == 0:
-        category = "wrong_direction"
+    elif category == "wrong_direction":
         root = (
             f"Prediction ({bias}) was directionally wrong; "
             f"actual close change was {close_chg * 100:.2f}%."
         )
     else:
-        category = "insufficient_data"
         root = (
             f"Move was too small or prediction was neutral — "
             f"cannot classify direction. Close change: {close_chg * 100:.2f}%."

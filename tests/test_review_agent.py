@@ -16,6 +16,7 @@ from services.review_agent import (
     _build_user_prompt,
     _extract_json,
     _rule_based_fallback,
+    _validate,
     generate_review,
 )
 
@@ -144,6 +145,38 @@ class BuildUserPromptTests(unittest.TestCase):
         prompt = _build_user_prompt(prediction, outcome)
         self.assertIn("3.12", prompt)
 
+    def test_scenario_match_values_appear_in_prompt_when_present(self) -> None:
+        scenario_json = json.dumps({
+            "exact_match_count": 3,
+            "near_match_count": 2,
+            "dominant_historical_outcome": "bullish",
+            "top_context_score": 87.5,
+        })
+        prediction = _make_prediction()
+        outcome = _make_outcome()
+        outcome["scenario_match"] = scenario_json
+        prompt = _build_user_prompt(prediction, outcome)
+        self.assertIn("exact=3", prompt)
+        self.assertIn("near=2", prompt)
+        self.assertIn("dominant=bullish", prompt)
+        self.assertIn("top_context_score=87.5", prompt)
+
+    def test_scenario_match_is_na_when_absent(self) -> None:
+        prediction = _make_prediction()
+        outcome = _make_outcome()
+        # no scenario_match key in outcome
+        prompt = _build_user_prompt(prediction, outcome)
+        self.assertIn("Scenario Match: N/A", prompt)
+
+    def test_scenario_match_shows_na_fields_for_empty_dict(self) -> None:
+        """Empty {} scenario_match produces N/A fields in the prompt, not an error."""
+        prediction = _make_prediction()
+        outcome = _make_outcome()
+        outcome["scenario_match"] = "{}"
+        prompt = _build_user_prompt(prediction, outcome)
+        self.assertIn("exact=N/A", prompt)
+        self.assertIn("near=N/A", prompt)
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # _extract_json
@@ -168,6 +201,32 @@ class ExtractJsonTests(unittest.TestCase):
     def test_raises_on_invalid_json(self) -> None:
         with self.assertRaises(json.JSONDecodeError):
             _extract_json("not valid json")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# _validate
+# ─────────────────────────────────────────────────────────────────────────────
+
+class ValidateTests(unittest.TestCase):
+    def test_normalizes_error_category_to_taxonomy_value(self) -> None:
+        parsed = {
+            "error_category": "Wrong Direction",
+            "root_cause": "The move went the other way.",
+            "confidence_note": "Confidence was too high.",
+            "watch_for_next_time": "Watch the opening move.",
+        }
+        validated = _validate(parsed)
+        self.assertEqual(validated["error_category"], "wrong_direction")
+
+    def test_unknown_error_category_falls_back_to_insufficient_data(self) -> None:
+        parsed = {
+            "error_category": "mystery_bucket",
+            "root_cause": "No clear category.",
+            "confidence_note": "Confidence cannot be assessed.",
+            "watch_for_next_time": "Review manually.",
+        }
+        validated = _validate(parsed)
+        self.assertEqual(validated["error_category"], "insufficient_data")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

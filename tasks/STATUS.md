@@ -15,7 +15,20 @@
 - 006 — `fix_task001_blockers`
 - 007 — `research_loop_ui_apptest`
 - 008 — `history_tab`
-- 009 — `scenario_match_wiring`
+- 009 — `scenario_matching_wiring`
+- 010 — `task_naming_and_scenario_test_cleanup`
+- 011 — `cn_ui_command_parser_mvp`
+- 012 — `error_taxonomy`
+- 013 — `experience_memory_store`
+- 014 — `memory_feedback`
+- 015 — `projection_memory_briefing`
+- 016 — `projection_preflight`
+- 017 — `projection_orchestrator_preflight`
+- 018 — `projection_orchestrator_mvp`
+- 019 — `projection_entrypoint`
+- 020 — `command_projection_wiring`
+- 021 — `command_center_stability_fix`
+- 022 — `data_workbench_mvp`
 
 ## Handoff status rules
 
@@ -23,6 +36,13 @@
 - reviewer 通过后，通常更新为 `in-test`
 - tester 通过后，通常更新为 `done`
 - 任何 agent 发现 blocker，更新为 `blocked` 并在 notes 写清楚原因
+
+## Handoff recording rules
+
+- every agent must record what it actually did in its handoff
+- builder handoff should include: context scanned, changed files, implementation summary, validation steps, remaining risks
+- reviewer handoff should include: context scanned, findings, why it matters, suggested fix, validation gaps
+- tester handoff should include: context scanned, commands run, result, failed cases, manual test suggestions, coverage gaps
 
 | task_id | title | owner | status | last updated | notes |
 |---------|-------|-------|--------|--------------|-------|
@@ -34,4 +54,17 @@
 | 006 | fix_task001_blockers | tester | done | 2026-04-12 | Tester verified deterministic lookup, FK/orphan guards, forward-only status machine, and 60 focused regression tests |
 | 007 | research_loop_ui_apptest | tester | done | 2026-04-12 | Tester verified AppTest runs, covers Research Loop preconditions/main flow, and keeps Task 007 implementation test-only |
 | 008 | history_tab | tester | done | 2026-04-12 | Tester verified History tab render, recent predictions table, detail view, helper tests, and minimal app wiring |
-| 009 | scenario_match_wiring | tester | done | 2026-04-12 | Tester verified scenario_match persistence, no-scenario fallback, review/history compatibility, and 67 focused regressions |
+| 009 | scenario_matching_wiring | tester | done | 2026-04-12 | Tester verified scenario_match persistence, no-scenario fallback, review/history compatibility, and 67 focused regressions |
+| 010 | task_naming_and_scenario_test_cleanup | tester | done | 2026-04-12 | Naming fixed, task file created, 6 new scenario tests pass (33/33); forbidden files clean |
+| 011 | cn_ui_command_parser_mvp | tester | done | 2026-04-12 | 52/52 tests pass (45 unit + 7 AppTest); 24 spot-checks PASS; no forbidden files touched |
+| 012 | error_taxonomy | tester | done | 2026-04-12 | Tester unblock confirmed: canonical task file complete, tolerant normalization documented, focused 35/35 tests and Git Bash check pass |
+| 013 | experience_memory_store | tester | done | 2026-04-12 | Tester verified memory store module, save/get/list/empty behavior, py_compile, and 7/7 focused tests |
+| 014 | memory_feedback | tester | done | 2026-04-12 | Tester verified memory feedback helper, store reads, symbol/category filtering, safe empty state, py_compile, and 11/11 focused tests |
+| 015 | projection_memory_briefing | tester | done | 2026-04-12 | Tester verified briefing helper, stable advisory output, caution levels, safe empty state, py_compile, and 15/15 focused tests |
+| 016 | projection_preflight | tester | done | 2026-04-12 | Tester verified preflight helper, stable briefing package, ready/matched_count/reminder_lines behavior, safe empty state, py_compile, and 20/20 focused tests |
+| 017 | projection_orchestrator_preflight | tester | done | 2026-04-12 | Tester verified orchestrator preflight helper, advisory block structure, ready/matched_count/reminder_lines/caution_level behavior, safe empty state, py_compile, and 24/24 focused tests |
+| 018 | projection_orchestrator_mvp | tester | done | 2026-04-12 | Tester verified orchestrator module, stable request/advisory package, advisory path, ready/notes/request behavior, safe empty state, py_compile, and 28/28 focused tests |
+| 019 | projection_entrypoint | tester | done | 2026-04-12 | Tester verified entrypoint module, single stable orchestrator interface, stable output structure, safe empty state, py_compile, and 32/32 focused tests |
+| 020 | command_projection_wiring | tester | done | 2026-04-12 | 60/60 tests pass (53 focused + 7 AppTest); 5 wiring spot-checks PASS; no forbidden files touched |
+| 021 | command_center_stability_fix | tester | done | 2026-04-12 | 70/70 tests pass; 6 stability AppTest scenarios verified; exception guard, session-state, staleness clear all confirmed |
+| 022 | data_workbench_mvp | tester | done | 2026-04-12 | 132/132 tests pass; real-data query/compare/stats spot-checks PASS; distribution_by_label not wired (noted gap) |

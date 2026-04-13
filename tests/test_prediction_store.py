@@ -145,8 +145,8 @@ class PredictionStoreTests(unittest.TestCase):
             prediction_id=pid,
             prediction_for_date="2026-04-11",
             actual_open=175.0,
-            actual_high=178.0,
-            actual_low=174.0,
+            actual_high=188.0,
+            actual_low=144.0,
             actual_close=177.0,
             actual_prev_close=174.0,
             direction_correct=1,
@@ -163,7 +163,7 @@ class PredictionStoreTests(unittest.TestCase):
         # open_change and close_change computed automatically
         self.assertAlmostEqual(outcome["close_change"] if "close_change" in outcome
                                else outcome["actual_close_change"],
-                               (177.0 - 174.0) / 174.0, places=6)
+                               (180.0 - 144.0) / 174.0, places=6)
 
     def test_get_outcome_returns_none_for_missing(self) -> None:
         self.assertIsNone(ps.get_outcome_for_prediction("nonexistent-id"))
@@ -173,9 +173,9 @@ class PredictionStoreTests(unittest.TestCase):
             ps.save_outcome(
                 prediction_id="nonexistent-id",
                 prediction_for_date="2026-04-11",
-                actual_open=175.0,
-                actual_high=178.0,
-                actual_low=174.0,
+                actual_open=170.0,
+                actual_high=188.0,
+                actual_low=144.0,
                 actual_close=177.0,
                 actual_prev_close=174.0,
                 direction_correct=1,
