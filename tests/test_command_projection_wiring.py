@@ -19,7 +19,7 @@ class CommandProjectionWiringTests(unittest.TestCase):
         expected = {
             "symbol": "AVGO",
             "request": {"symbol": "AVGO"},
-            "advisory": {"matched_count": 0},
+            "projection_report": {"kind": "final_projection_report"},
             "ready": True,
         }
 
@@ -29,6 +29,21 @@ class CommandProjectionWiringTests(unittest.TestCase):
         self.assertIsNone(error)
         self.assertEqual(result, expected)
         mocked.assert_called_once_with(symbol="AVGO")
+
+    def test_projection_with_lookback_phrase_forwards_window(self) -> None:
+        parsed = parse_command("根据博通20天数据推演下一个交易日走势")
+        expected = {
+            "symbol": "AVGO",
+            "projection_report": {"kind": "final_projection_report"},
+            "ready": True,
+        }
+
+        with patch("ui.command_bar.run_projection_entrypoint", return_value=expected) as mocked:
+            result, error = run_projection_command(parsed)
+
+        self.assertIsNone(error)
+        self.assertEqual(result, expected)
+        mocked.assert_called_once_with(symbol="AVGO", lookback_days=20)
 
     def test_projection_without_symbol_fails_safely(self) -> None:
         parsed = parse_command("推演下一个交易日走势")

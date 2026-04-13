@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import sys
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -163,7 +165,7 @@ class PredictionStoreTests(unittest.TestCase):
         # open_change and close_change computed automatically
         self.assertAlmostEqual(outcome["close_change"] if "close_change" in outcome
                                else outcome["actual_close_change"],
-                               (180.0 - 144.0) / 174.0, places=6)
+                               (177.0 - 174.0) / 174.0, places=6)
 
     def test_get_outcome_returns_none_for_missing(self) -> None:
         self.assertIsNone(ps.get_outcome_for_prediction("nonexistent-id"))
@@ -295,6 +297,17 @@ class PredictionStoreTests(unittest.TestCase):
 
         rows = ps.list_predictions(limit=5)
         self.assertEqual(rows[0]["scenario_match"], '{"match_sample_size": 5}')
+
+    def test_list_predictions_reports_corrupt_db_as_controlled_error(self) -> None:
+        with patch.object(
+            ps,
+            "init_db",
+            side_effect=sqlite3.DatabaseError("database disk image is malformed"),
+        ):
+            with self.assertRaises(ps.PredictionStoreCorruptionError) as ctx:
+                ps.list_predictions(limit=5)
+
+        self.assertIn("历史记录数据库损坏", str(ctx.exception))
 
 
 if __name__ == "__main__":

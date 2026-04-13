@@ -7,6 +7,7 @@ import pandas as pd
 import streamlit as st
 
 from services.prediction_store import (
+    PredictionStoreCorruptionError,
     get_outcome_for_prediction,
     get_prediction,
     get_review_for_prediction,
@@ -147,11 +148,21 @@ def _render_review_detail(review: dict[str, Any] | None) -> None:
         st.json(_json_or_empty(review.get("review_json")))
 
 
+def _render_history_store_unavailable(error: PredictionStoreCorruptionError) -> None:
+    st.warning(str(error))
+    st.caption("当前不会自动覆盖旧库；请先备份 avgo_agent.db，再按需删除该文件让应用重建空历史库。")
+
+
 def render_history_tab() -> None:
     st.subheader("History")
     st.caption("Review saved predictions, captured outcomes, and generated reviews.")
 
-    predictions = list_predictions(limit=100)
+    try:
+        predictions = list_predictions(limit=100)
+    except PredictionStoreCorruptionError as exc:
+        _render_history_store_unavailable(exc)
+        return
+
     if not predictions:
         st.info("No saved predictions yet.")
         return
@@ -167,13 +178,17 @@ def render_history_tab() -> None:
     selected_label = st.selectbox("Inspect record", list(options.keys()))
     selected_id = options[selected_label]
 
-    prediction = get_prediction(selected_id)
+    try:
+        prediction = get_prediction(selected_id)
+        outcome = get_outcome_for_prediction(selected_id)
+        review = get_review_for_prediction(selected_id)
+    except PredictionStoreCorruptionError as exc:
+        _render_history_store_unavailable(exc)
+        return
+
     if not prediction:
         st.warning("Selected prediction was not found.")
         return
-
-    outcome = get_outcome_for_prediction(selected_id)
-    review = get_review_for_prediction(selected_id)
 
     st.divider()
     st.markdown(f"### {prediction.get('symbol', 'AVGO')} — {prediction.get('prediction_for_date', '')}")

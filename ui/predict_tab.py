@@ -5,6 +5,7 @@ import pandas as pd
 import streamlit as st
 
 from predict import run_predict
+from services.predict_summary import build_predict_readable_summary
 from services.prediction_store import (
     get_outcome_for_prediction,
     get_review_for_prediction,
@@ -12,6 +13,36 @@ from services.prediction_store import (
 )
 from services.outcome_capture import capture_outcome
 from services.review_agent import generate_review
+
+
+def render_readable_predict_summary(summary: dict) -> None:
+    """Render the rule-based Chinese summary block for Predict."""
+    st.markdown("**明日基准判断**")
+    base = summary.get("baseline_judgment", {})
+    b1, b2, b3 = st.columns(3)
+    b1.metric("方向", base.get("direction", "中性"))
+    b2.metric("强度", base.get("strength", "弱"))
+    b3.metric("风险", base.get("risk_level", "高"))
+    st.write(base.get("text", "中性（强度：弱，风险：高，confidence：low）"))
+
+    open_block = summary.get("open_projection", {})
+    close_block = summary.get("close_projection", {})
+    st.markdown("**开盘推演**")
+    st.write(open_block.get("text", "更可能平开；等待开盘确认。"))
+    st.markdown("**收盘推演**")
+    st.write(close_block.get("text", "更可能震荡；等待盘中确认。"))
+
+    st.markdown("**为什么这样判断**")
+    for line in summary.get("rationale", []) or []:
+        st.caption(f"- {line}")
+
+    st.markdown("**风险提醒**")
+    for line in summary.get("risk_reminders", []) or []:
+        st.caption(f"- {line}")
+
+    if summary.get("ai_polish"):
+        st.markdown("**AI polish**")
+        st.write(summary["ai_polish"])
 
 
 def render_predict_result(pr: dict) -> None:
@@ -47,6 +78,11 @@ def render_predict_result(pr: dict) -> None:
     st.write(pr.get("prediction_summary", ""))
     st.info(pr.get("notes", ""))
 
+    readable_summary = pr.get("readable_summary")
+    if not isinstance(readable_summary, dict):
+        readable_summary = build_predict_readable_summary(pr)
+    render_readable_predict_summary(readable_summary)
+
     col_l, col_r = st.columns(2)
     with col_l:
         st.markdown("**Supporting factors**")
@@ -75,6 +111,10 @@ def render_predict_tab(scan_result: dict | None, research_result: dict | None) -
         return None
 
     predict_result = run_predict(scan_result, research_result)
+    predict_result["readable_summary"] = build_predict_readable_summary(
+        predict_result,
+        scan_result=scan_result,
+    )
     if research_result is None:
         st.warning("No Research result found. Prediction is Scan-led until Research is run.")
     render_predict_result(predict_result)

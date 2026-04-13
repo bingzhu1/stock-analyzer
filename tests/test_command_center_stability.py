@@ -89,7 +89,7 @@ class ExceptionGuardTests(unittest.TestCase):
             result, error = run_projection_command(task)
         self.assertIsNone(result)
         self.assertIsNotNone(error)
-        self.assertIn("推演预检执行失败", error)
+        self.assertIn("推演执行失败", error)
 
     def test_entrypoint_exception_message_included(self) -> None:
         task = _projection_task()

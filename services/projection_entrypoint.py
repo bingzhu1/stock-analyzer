@@ -12,15 +12,17 @@ def run_projection_entrypoint(
     symbol: str,
     error_category: str | None = None,
     limit: int = 5,
+    lookback_days: int | None = None,
 ) -> dict[str, Any]:
     """
     Call the current projection orchestrator through one stable interface.
 
-    This is packaging-only. It does not call scanner/predict, compute a
-    projection, or adjust scores, confidence, or weights.
+    This delegates to existing projection, scan, and predict helpers. It does
+    not change scanner or predict scoring rules.
     """
     return build_projection_orchestrator_result(
         symbol=symbol,
         error_category=error_category,
         limit=limit,
+        lookback_days=lookback_days,
     )

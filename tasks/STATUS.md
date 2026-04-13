@@ -29,6 +29,11 @@
 - 020 — `command_projection_wiring`
 - 021 — `command_center_stability_fix`
 - 022 — `data_workbench_mvp`
+- 023 — `command_parser_enhancement`
+- 024 — `advanced_stats_output`
+- 025 — `projection_final_wiring`
+- 026a — `predict_readable_summary_and_ai_polish`
+- 028 — `polish_and_guardrails_pack`
 
 ## Handoff status rules
 
@@ -68,3 +73,8 @@
 | 020 | command_projection_wiring | tester | done | 2026-04-12 | 60/60 tests pass (53 focused + 7 AppTest); 5 wiring spot-checks PASS; no forbidden files touched |
 | 021 | command_center_stability_fix | tester | done | 2026-04-12 | 70/70 tests pass; 6 stability AppTest scenarios verified; exception guard, session-state, staleness clear all confirmed |
 | 022 | data_workbench_mvp | tester | done | 2026-04-12 | 132/132 tests pass; real-data query/compare/stats spot-checks PASS; distribution_by_label not wired (noted gap) |
+| 023 | command_parser_enhancement | tester | done | 2026-04-13 | 71/71 parser tests + 40 regression pass; 15/15 spot-checks PASS; stat_request parsed but not yet wired (tracked gap) |
+| 024 | advanced_stats_output | tester | done | 2026-04-13 | 151/151 tests pass; invariant 高+中+低=matched verified on real data (2+4+7=13); safety fallbacks clean |
+| 025 | projection_final_wiring | reviewer | done | 2026-04-13 | Scoped reviewer pass: final_projection_report command path verified; 28 focused + 122 regression tests pass; merge only Task 025-owned files and exclude unrelated dirty core/workflow changes |
+| 026A | predict_readable_summary_and_ai_polish | tester | done | 2026-04-13 | Covers original Task 026 and Task 027; readable Predict/projection summary landed, optional AI polish included, main paths regression-safe |
+| 028 | polish_and_guardrails_pack | reviewer | blocked | 2026-04-13 | Review found external-confirmation None-value guardrail gap; tests otherwise pass (30 focused + 108 regression + scripts/check.sh) |

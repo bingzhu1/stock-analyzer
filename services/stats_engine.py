@@ -10,6 +10,10 @@ compute_match_stats(comparison_df) -> dict
 
 distribution_by_label(comparison_df, label_col) -> dict[str, dict]
     Breaks down match stats by a categorical label column.
+
+position_distribution(comparison_df, aligned_df, symbol) -> dict
+    Counts high / mid / low position days among matched rows.
+    Label source priority: {symbol}_PosLabel → {symbol}_Pos30 (bucketed).
 """
 from __future__ import annotations
 
@@ -76,3 +80,85 @@ def distribution_by_label(
         key = str(label) if not pd.isna(label) else "—"
         result[key] = compute_match_stats(group)
     return result
+
+
+def position_distribution(
+    comparison_df: pd.DataFrame,
+    aligned_df: pd.DataFrame,
+    symbol: str,
+) -> dict:
+    """
+    Count high / mid / low position days among matched rows only.
+
+    Label source priority
+    ---------------------
+    1. ``{symbol}_PosLabel`` — string labels "高位" / "中位" / "低位"
+    2. ``{symbol}_Pos30``    — numeric percentile; bucketed:
+                               >= 67 → "高位", 34–66 → "中位", <= 33 → "低位"
+
+    Parameters
+    ----------
+    comparison_df : pd.DataFrame
+        Must contain ``Date`` and boolean ``match`` columns.
+    aligned_df : pd.DataFrame
+        Must contain ``Date`` and the position column(s) for ``symbol``.
+    symbol : str
+        Symbol whose position distribution to compute (e.g. ``"AVGO"``).
+
+    Returns
+    -------
+    dict with keys:
+        高位, 中位, 低位 (int),
+        total_matched (int) — equals 高位 + 中位 + 低位 by construction,
+        label_source ("PosLabel" | "Pos30" | "none")
+    """
+    _EMPTY: dict = {
+        "高位": 0, "中位": 0, "低位": 0,
+        "total_matched": 0, "label_source": "none",
+    }
+
+    if comparison_df.empty or "match" not in comparison_df.columns:
+        return dict(_EMPTY)
+
+    if "Date" not in comparison_df.columns or "Date" not in aligned_df.columns:
+        return dict(_EMPTY)
+
+    matched = comparison_df[comparison_df["match"] == True]
+    if matched.empty:
+        return dict(_EMPTY)
+
+    pos_label_col = f"{symbol}_PosLabel"
+    pos30_col     = f"{symbol}_Pos30"
+
+    if pos_label_col in aligned_df.columns:
+        label_source = "PosLabel"
+        merged = matched[["Date"]].merge(
+            aligned_df[["Date", pos_label_col]], on="Date", how="left"
+        )
+        labels = merged[pos_label_col].fillna("")
+
+    elif pos30_col in aligned_df.columns:
+        label_source = "Pos30"
+        merged = matched[["Date"]].merge(
+            aligned_df[["Date", pos30_col]], on="Date", how="left"
+        )
+        pos30  = pd.to_numeric(merged[pos30_col], errors="coerce")
+        labels = pd.Series("中位", index=merged.index, dtype=object)
+        labels[pos30 >= 67] = "高位"
+        labels[pos30 <= 33] = "低位"
+        labels[pos30.isna()] = ""
+
+    else:
+        return dict(_EMPTY)
+
+    high = int((labels == "高位").sum())
+    mid  = int((labels == "中位").sum())
+    low  = int((labels == "低位").sum())
+
+    return {
+        "高位":          high,
+        "中位":          mid,
+        "低位":          low,
+        "total_matched": high + mid + low,
+        "label_source":  label_source,
+    }

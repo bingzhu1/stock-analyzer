@@ -29,10 +29,17 @@ class ProjectionEntrypointTests(unittest.TestCase):
         self.assertEqual(result["symbol"], "AVGO")
         self.assertEqual(
             result["request"],
-            {"symbol": "AVGO", "error_category": None, "limit": 5},
+            {"symbol": "AVGO", "error_category": None, "limit": 5, "lookback_days": None},
         )
         self.assertTrue(result["ready"])
-        self.assertTrue(result["advisory_only"])
+        self.assertFalse(result["advisory_only"])
+        self.assertEqual(result["projection_report"]["kind"], "final_projection_report")
+        self.assertEqual(
+            result["projection_report"]["readable_summary"]["kind"],
+            "predict_readable_summary",
+        )
+        self.assertIn("明日方向：", result["projection_report"]["report_text"])
+        self.assertIn("明日基准判断：", result["projection_report"]["report_text"])
         self.assertEqual(result["advisory"]["matched_count"], 0)
         self.assertEqual(result["advisory"]["caution_level"], "none")
         self.assertEqual(result["advisory"]["reminder_lines"], [])
@@ -58,7 +65,10 @@ class ProjectionEntrypointTests(unittest.TestCase):
         self.assertEqual(result["advisory"]["matched_count"], 2)
         self.assertEqual(result["advisory"]["caution_level"], "low")
         self.assertIn("Respect failed breakouts.", result["advisory"]["reminder_lines"][0])
-        self.assertIn("advisory package only", result["notes"][0])
+        self.assertIn("Scan + Predict", result["notes"][0])
+        self.assertTrue(
+            any("Respect failed breakouts." in line for line in result["projection_report"]["risk_reminders"])
+        )
 
     def test_error_category_and_limit_are_forwarded(self) -> None:
         for index in range(4):
@@ -81,15 +91,17 @@ class ProjectionEntrypointTests(unittest.TestCase):
             symbol="avgo",
             error_category="wrong-direction",
             limit=3,
+            lookback_days=20,
         )
 
         self.assertEqual(
             result["request"],
-            {"symbol": "AVGO", "error_category": "wrong-direction", "limit": 3},
+            {"symbol": "AVGO", "error_category": "wrong-direction", "limit": 3, "lookback_days": 20},
         )
         self.assertEqual(result["advisory"]["matched_count"], 3)
         self.assertEqual(result["advisory"]["caution_level"], "medium")
         self.assertEqual(len(result["advisory"]["reminder_lines"]), 3)
+        self.assertIn("最近 20 天", result["projection_report"]["basis_summary"][-1])
 
     def test_symbol_validation_is_preserved(self) -> None:
         with self.assertRaises(ValueError):

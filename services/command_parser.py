@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -61,7 +61,11 @@ DEFAULT_WINDOW = 20
 _REVIEW_KW    = ("复盘",)
 _PROJECT_KW   = ("推演", "预测")
 _COMPARE_KW   = ("比较", "对比")
-_QUERY_KW     = ("调出", "查询", "显示", "看看")
+# Extended with natural-language query triggers:
+#   只看  — "只看博通最近20天"
+#   并排  — "把博通、英伟达、纳指最近20天数据并排"
+#   查看  — "查看英伟达最近20天数据"
+_QUERY_KW     = ("调出", "查询", "显示", "看看", "只看", "并排", "查看")
 
 VALID_TASK_TYPES = frozenset({
     "query_data",
@@ -97,6 +101,19 @@ class ParsedTask:
 
     parse_error: str | None = None
     """Human-readable Chinese error message; None when parsing succeeded."""
+
+    stat_request: dict | None = None
+    """
+    Optional supplementary statistics request parsed from the command.
+
+    Populated for commands like "一致里博通高位、中位、低位各多少天".
+    Possible shapes:
+      {"type": "distribution_by_label", "symbol": "AVGO", "field": "PosLabel"}
+      {"type": "match_rate"}
+      {"type": "matched_count"}
+      {"type": "mismatched_count"}
+    None when no supplementary stat was requested.
+    """
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -138,15 +155,29 @@ def _extract_fields(text: str) -> list[str]:
 
 
 def _extract_window(text: str) -> int:
-    """Return the time-window as an integer number of days."""
+    """Return the time-window as an integer number of days.
+
+    Priority order:
+    1. Fixed phrase table (最近20天, 明天, 下一个交易日, etc.)
+    2. Regex: 最近N天  (any N)
+    3. Regex: bare N天 (N >= 5, to avoid noise from small ordinals)
+    4. DEFAULT_WINDOW
+    """
     for pattern, days in _WINDOW_PATTERNS:
         if pattern in text:
             return days
-    # Fallback: match "最近N天" with any integer N
+    # Fallback 1: "最近N天" with any N
     m = re.search(r"最近(\d+)天", text)
     if m:
         n = int(m.group(1))
         return n if n > 0 else DEFAULT_WINDOW
+    # Fallback 2: bare "N天" without "最近" (e.g. "根据博通20天数据")
+    # Require N >= 5 to avoid matching noise like "第1天".
+    m = re.search(r"(\d+)天", text)
+    if m:
+        n = int(m.group(1))
+        if n >= 5:
+            return n
     return DEFAULT_WINDOW
 
 
@@ -165,6 +196,65 @@ def _detect_task_type(text: str) -> str:
         if kw in text:
             return "query_data"
     return "unknown"
+
+
+def _extract_stat_request(text: str, symbols: list[str]) -> dict | None:
+    """
+    Extract an optional supplementary statistics request.
+
+    Detects patterns like:
+    - "高位、中位、低位各多少天" → distribution_by_label (PosLabel)
+    - "一致率"                  → match_rate
+    - "不一致天数"              → mismatched_count
+    - "一致天数"                → matched_count
+
+    The symbol used for distribution is the one whose Chinese name appears
+    immediately before position-level labels (e.g. "博通高位" → AVGO).
+    Falls back to the first symbol in the extracted list when ambiguous.
+    """
+    # Distribution-by-label: "各多少天" with position labels
+    if "各多少天" in text:
+        # Identify the symbol that appears closest (and most recently) before
+        # the first position label ("高位"/"中位"/"低位").  This handles sentences
+        # like "一致里博通高位、中位、低位各多少天" where the symbol to group by
+        # immediately precedes the labels, even if another symbol appears earlier.
+        pos_label_positions = [
+            text.find(lbl) for lbl in ("高位", "中位", "低位")
+            if text.find(lbl) >= 0
+        ]
+        # Upper bound: search for symbols before the first position label
+        ceiling = min(pos_label_positions) if pos_label_positions else len(text)
+
+        best_sym: str | None = None
+        best_pos: int = -1
+        for cn in sorted(SYMBOL_MAP, key=len, reverse=True):
+            sym = SYMBOL_MAP[cn]
+            if sym not in symbols:
+                continue
+            # rfind: last occurrence of cn strictly before the ceiling index
+            idx = text.rfind(cn, 0, ceiling)
+            if idx >= 0 and idx > best_pos:
+                best_pos = idx
+                best_sym = sym
+
+        dist_sym: str | None = best_sym if best_sym is not None else (symbols[0] if symbols else None)
+
+        return {
+            "type":   "distribution_by_label",
+            "symbol": dist_sym,
+            "field":  "PosLabel",
+        }
+
+    if "一致率" in text:
+        return {"type": "match_rate"}
+
+    if "不一致天数" in text:
+        return {"type": "mismatched_count"}
+
+    if "一致天数" in text:
+        return {"type": "matched_count"}
+
+    return None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -195,12 +285,13 @@ def parse_command(text: str) -> ParsedTask:
     symbols   = _extract_symbols(text)
     fields    = _extract_fields(text)
     window    = _extract_window(text)
+    stat_req  = _extract_stat_request(text, symbols)
 
     error: str | None = None
     if task_type == "unknown":
         error = (
             "无法识别指令类型，请使用以下关键词开头："
-            "调出、比较、对比、推演、预测、复盘。"
+            "调出、只看、并排、比较、对比、推演、预测、复盘。"
         )
     elif task_type in ("query_data", "compare_data") and not symbols:
         error = (
@@ -214,4 +305,5 @@ def parse_command(text: str) -> ParsedTask:
         window=window,
         raw_text=text,
         parse_error=error,
+        stat_request=stat_req,
     )

@@ -27,7 +27,7 @@ import uuid
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 
 DB_PATH = Path("avgo_agent.db")
 
@@ -91,6 +91,29 @@ CREATE INDEX IF NOT EXISTS idx_outcome_prediction_id
 CREATE INDEX IF NOT EXISTS idx_review_prediction_id
     ON review_log (prediction_id);
 """
+
+_CORRUPT_DB_MESSAGES = (
+    "database disk image is malformed",
+    "file is not a database",
+)
+
+
+class PredictionStoreCorruptionError(RuntimeError):
+    """Raised when the local prediction history database cannot be read safely."""
+
+
+def _is_corrupt_db_error(exc: BaseException) -> bool:
+    if not isinstance(exc, sqlite3.DatabaseError):
+        return False
+    message = str(exc).lower()
+    return any(fragment in message for fragment in _CORRUPT_DB_MESSAGES)
+
+
+def _raise_corrupt_db_error(exc: BaseException) -> NoReturn:
+    raise PredictionStoreCorruptionError(
+        "历史记录数据库损坏，暂时无法读取。请先备份 avgo_agent.db；"
+        "确认安全后可删除该文件并重启应用重建空历史库。"
+    ) from exc
 
 
 @contextmanager
@@ -188,24 +211,34 @@ def save_prediction(
 
 def get_prediction(prediction_id: str) -> dict | None:
     """Fetch one prediction_log row by id. Returns None if not found."""
-    init_db()
-    with _get_conn() as conn:
-        row = conn.execute(
-            "SELECT * FROM prediction_log WHERE id = ?", (prediction_id,)
-        ).fetchone()
+    try:
+        init_db()
+        with _get_conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM prediction_log WHERE id = ?", (prediction_id,)
+            ).fetchone()
+    except sqlite3.DatabaseError as exc:
+        if _is_corrupt_db_error(exc):
+            _raise_corrupt_db_error(exc)
+        raise
     return dict(row) if row else None
 
 
 def get_prediction_by_date(symbol: str, prediction_for_date: str) -> dict | None:
     """Return the most recent prediction for (symbol, prediction_for_date), or None."""
-    init_db()
-    with _get_conn() as conn:
-        row = conn.execute(
-            """SELECT * FROM prediction_log
-               WHERE symbol = ? AND prediction_for_date = ?
-               ORDER BY created_at DESC, rowid DESC LIMIT 1""",
-            (symbol, prediction_for_date),
-        ).fetchone()
+    try:
+        init_db()
+        with _get_conn() as conn:
+            row = conn.execute(
+                """SELECT * FROM prediction_log
+                   WHERE symbol = ? AND prediction_for_date = ?
+                   ORDER BY created_at DESC, rowid DESC LIMIT 1""",
+                (symbol, prediction_for_date),
+            ).fetchone()
+    except sqlite3.DatabaseError as exc:
+        if _is_corrupt_db_error(exc):
+            _raise_corrupt_db_error(exc)
+        raise
     return dict(row) if row else None
 
 
@@ -224,20 +257,25 @@ def update_prediction_status(prediction_id: str, new_status: str) -> None:
 
 def list_predictions(limit: int = 30) -> list[dict]:
     """Return up to `limit` predictions newest-first, joined with outcome if present."""
-    init_db()
-    with _get_conn() as conn:
-        rows = conn.execute(
-            """SELECT p.id, p.symbol, p.analysis_date, p.prediction_for_date,
-                      p.created_at, p.final_bias, p.final_confidence,
-                      p.status, p.snapshot_id,
-                      o.direction_correct, o.actual_close_change,
-                      o.scenario_match
-               FROM prediction_log p
-               LEFT JOIN outcome_log o ON o.prediction_id = p.id
-               ORDER BY p.prediction_for_date DESC
-               LIMIT ?""",
-            (limit,),
-        ).fetchall()
+    try:
+        init_db()
+        with _get_conn() as conn:
+            rows = conn.execute(
+                """SELECT p.id, p.symbol, p.analysis_date, p.prediction_for_date,
+                          p.created_at, p.final_bias, p.final_confidence,
+                          p.status, p.snapshot_id,
+                          o.direction_correct, o.actual_close_change,
+                          o.scenario_match
+                   FROM prediction_log p
+                   LEFT JOIN outcome_log o ON o.prediction_id = p.id
+                   ORDER BY p.prediction_for_date DESC
+                   LIMIT ?""",
+                (limit,),
+            ).fetchall()
+    except sqlite3.DatabaseError as exc:
+        if _is_corrupt_db_error(exc):
+            _raise_corrupt_db_error(exc)
+        raise
     return [dict(r) for r in rows]
 
 
@@ -299,14 +337,19 @@ def save_outcome(
 
 def get_outcome_for_prediction(prediction_id: str) -> dict | None:
     """Return the most recent outcome for a prediction, or None."""
-    init_db()
-    with _get_conn() as conn:
-        row = conn.execute(
-            """SELECT * FROM outcome_log
-               WHERE prediction_id = ?
-               ORDER BY captured_at DESC LIMIT 1""",
-            (prediction_id,),
-        ).fetchone()
+    try:
+        init_db()
+        with _get_conn() as conn:
+            row = conn.execute(
+                """SELECT * FROM outcome_log
+                   WHERE prediction_id = ?
+                   ORDER BY captured_at DESC LIMIT 1""",
+                (prediction_id,),
+            ).fetchone()
+    except sqlite3.DatabaseError as exc:
+        if _is_corrupt_db_error(exc):
+            _raise_corrupt_db_error(exc)
+        raise
     return dict(row) if row else None
 
 
@@ -355,12 +398,17 @@ def save_review(
 
 def get_review_for_prediction(prediction_id: str) -> dict | None:
     """Return the most recent review for a prediction, or None."""
-    init_db()
-    with _get_conn() as conn:
-        row = conn.execute(
-            """SELECT * FROM review_log
-               WHERE prediction_id = ?
-               ORDER BY created_at DESC LIMIT 1""",
-            (prediction_id,),
-        ).fetchone()
+    try:
+        init_db()
+        with _get_conn() as conn:
+            row = conn.execute(
+                """SELECT * FROM review_log
+                   WHERE prediction_id = ?
+                   ORDER BY created_at DESC LIMIT 1""",
+                (prediction_id,),
+            ).fetchone()
+    except sqlite3.DatabaseError as exc:
+        if _is_corrupt_db_error(exc):
+            _raise_corrupt_db_error(exc)
+        raise
     return dict(row) if row else None

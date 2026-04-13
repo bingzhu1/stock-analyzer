@@ -2,14 +2,17 @@ from __future__ import annotations
 
 import json
 import unittest
+from unittest.mock import patch
 
 try:
+    from services.prediction_store import PredictionStoreCorruptionError
     from ui.history_tab import (
         _direction_label,
         _format_pct,
         _history_rows,
         _json_or_empty,
         _prediction_summary,
+        render_history_tab,
     )
 except ModuleNotFoundError:
     _direction_label = None
@@ -17,6 +20,22 @@ except ModuleNotFoundError:
     _history_rows = None
     _json_or_empty = None
     _prediction_summary = None
+    render_history_tab = None
+    PredictionStoreCorruptionError = None
+
+
+class _FakeStreamlit:
+    def __init__(self) -> None:
+        self.messages: list[tuple[str, str]] = []
+
+    def subheader(self, message: str) -> None:
+        self.messages.append(("subheader", message))
+
+    def caption(self, message: str) -> None:
+        self.messages.append(("caption", message))
+
+    def warning(self, message: str) -> None:
+        self.messages.append(("warning", message))
 
 
 @unittest.skipIf(_history_rows is None, "streamlit or pandas is not installed")
@@ -113,6 +132,24 @@ class HistoryTabHelperTests(unittest.TestCase):
             "scenario_match": "{}",
         }])
         self.assertEqual(rows[0]["scenario_match"], "")
+
+    def test_render_history_tab_handles_corrupt_prediction_store(self) -> None:
+        fake_st = _FakeStreamlit()
+        error = PredictionStoreCorruptionError("历史记录数据库损坏，暂时无法读取。")
+
+        with patch("ui.history_tab.st", fake_st), patch(
+            "ui.history_tab.list_predictions",
+            side_effect=error,
+        ):
+            render_history_tab()
+
+        self.assertIn(("warning", "历史记录数据库损坏，暂时无法读取。"), fake_st.messages)
+        self.assertTrue(
+            any(
+                kind == "caption" and "备份 avgo_agent.db" in message
+                for kind, message in fake_st.messages
+            )
+        )
 
 
 if __name__ == "__main__":

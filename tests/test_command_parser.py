@@ -265,5 +265,199 @@ class EdgeCaseTests(unittest.TestCase):
             self.assertIn(result.task_type, VALID_TASK_TYPES, msg=f"input: {text!r}")
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Task 023 — natural language sentence coverage
+# ─────────────────────────────────────────────────────────────────────────────
+
+class NaturalLanguageSentenceTests(unittest.TestCase):
+    """
+    Verify that the 7 target sentences from Task 023 parse correctly.
+    Each test maps one sentence to its expected (task_type, symbols, fields, window).
+    """
+
+    # Sentence 1: "把博通、英伟达、费城、纳指最近20天数据并排"
+    def test_s1_parallel_multi_symbol_query(self) -> None:
+        result = parse_command("把博通、英伟达、费城、纳指最近20天数据并排")
+        self.assertEqual(result.task_type, "query_data")
+        self.assertIsNone(result.parse_error)
+        for sym in ("AVGO", "NVDA", "SOXX", "QQQ"):
+            self.assertIn(sym, result.symbols)
+        self.assertEqual(result.window, 20)
+
+    # Sentence 2: "只看博通最近20天"
+    def test_s2_只看_single_symbol(self) -> None:
+        result = parse_command("只看博通最近20天")
+        self.assertEqual(result.task_type, "query_data")
+        self.assertIsNone(result.parse_error)
+        self.assertIn("AVGO", result.symbols)
+        self.assertEqual(result.window, 20)
+
+    # Sentence 3: "只看英伟达最近20天最高价"
+    def test_s3_只看_with_field(self) -> None:
+        result = parse_command("只看英伟达最近20天最高价")
+        self.assertEqual(result.task_type, "query_data")
+        self.assertIsNone(result.parse_error)
+        self.assertIn("NVDA", result.symbols)
+        self.assertIn("High", result.fields)
+        self.assertEqual(result.window, 20)
+
+    # Sentence 4: "调出博通最近20天收盘价和成交量"
+    def test_s4_multi_field_query(self) -> None:
+        result = parse_command("调出博通最近20天收盘价和成交量")
+        self.assertEqual(result.task_type, "query_data")
+        self.assertIsNone(result.parse_error)
+        self.assertIn("AVGO", result.symbols)
+        self.assertIn("Close", result.fields)
+        self.assertIn("Volume", result.fields)
+        self.assertEqual(result.window, 20)
+
+    # Sentence 5: "比较英伟达和博通最近20天最高价走势"
+    def test_s5_compare_two_symbols_with_field(self) -> None:
+        result = parse_command("比较英伟达和博通最近20天最高价走势")
+        self.assertEqual(result.task_type, "compare_data")
+        self.assertIsNone(result.parse_error)
+        self.assertIn("NVDA", result.symbols)
+        self.assertIn("AVGO", result.symbols)
+        self.assertIn("High", result.fields)
+        self.assertEqual(result.window, 20)
+
+    # Sentence 6: "比较英伟达和博通最近20天最高价走势，一致里博通高位、中位、低位各多少天"
+    def test_s6_compare_with_stat_request(self) -> None:
+        result = parse_command(
+            "比较英伟达和博通最近20天最高价走势，一致里博通高位、中位、低位各多少天"
+        )
+        self.assertEqual(result.task_type, "compare_data")
+        self.assertIsNone(result.parse_error)
+        self.assertIn("NVDA", result.symbols)
+        self.assertIn("AVGO", result.symbols)
+        self.assertIn("High", result.fields)
+        self.assertEqual(result.window, 20)
+        self.assertIsNotNone(result.stat_request)
+        self.assertEqual(result.stat_request["type"], "distribution_by_label")
+        self.assertEqual(result.stat_request["symbol"], "AVGO")
+        self.assertEqual(result.stat_request["field"], "PosLabel")
+
+    # Sentence 7: "根据博通20天数据推演下一个交易日走势"
+    def test_s7_projection_with_lookback_phrase(self) -> None:
+        result = parse_command("根据博通20天数据推演下一个交易日走势")
+        self.assertEqual(result.task_type, "run_projection")
+        self.assertIsNone(result.parse_error)
+        self.assertIn("AVGO", result.symbols)
+        # "下一个交易日" takes priority → window = -1
+        self.assertEqual(result.window, -1)
+
+
+class StatRequestExtractionTests(unittest.TestCase):
+    """Unit tests for _extract_stat_request via parse_command()."""
+
+    def test_no_stat_request_for_simple_query(self) -> None:
+        result = parse_command("调出博通最近20天数据")
+        self.assertIsNone(result.stat_request)
+
+    def test_no_stat_request_for_simple_compare(self) -> None:
+        result = parse_command("比较博通和英伟达最近20天收盘价")
+        self.assertIsNone(result.stat_request)
+
+    def test_no_stat_request_for_projection(self) -> None:
+        result = parse_command("推演博通下一个交易日走势")
+        self.assertIsNone(result.stat_request)
+
+    def test_distribution_by_label_detected(self) -> None:
+        result = parse_command("比较博通和英伟达最近20天最高价，高位、中位、低位各多少天")
+        self.assertIsNotNone(result.stat_request)
+        self.assertEqual(result.stat_request["type"], "distribution_by_label")
+        self.assertEqual(result.stat_request["field"], "PosLabel")
+
+    def test_distribution_symbol_inferred_from_nearby_label(self) -> None:
+        # "博通高位" → AVGO should be the distribution symbol
+        result = parse_command(
+            "比较英伟达和博通最近20天收盘价走势，一致里博通高位、中位、低位各多少天"
+        )
+        self.assertIsNotNone(result.stat_request)
+        self.assertEqual(result.stat_request["symbol"], "AVGO")
+
+    def test_match_rate_request(self) -> None:
+        result = parse_command("比较博通和英伟达最近20天收盘价一致率")
+        self.assertIsNotNone(result.stat_request)
+        self.assertEqual(result.stat_request["type"], "match_rate")
+
+    def test_matched_count_request(self) -> None:
+        result = parse_command("比较博通和英伟达最近20天一致天数")
+        self.assertIsNotNone(result.stat_request)
+        self.assertEqual(result.stat_request["type"], "matched_count")
+
+    def test_mismatched_count_request(self) -> None:
+        result = parse_command("比较博通和英伟达最近20天不一致天数")
+        self.assertIsNotNone(result.stat_request)
+        self.assertEqual(result.stat_request["type"], "mismatched_count")
+
+    def test_stat_request_is_dict_or_none(self) -> None:
+        for text in [
+            "调出博通最近20天",
+            "比较博通和英伟达最近20天最高价走势，一致里博通高位各多少天",
+        ]:
+            result = parse_command(text)
+            self.assertTrue(
+                result.stat_request is None or isinstance(result.stat_request, dict),
+                msg=f"stat_request should be dict or None for: {text!r}",
+            )
+
+
+class WindowExtensionTests(unittest.TestCase):
+    """Tests for the bare 'N天' (without 最近) window fallback."""
+
+    def test_bare_n_tian_extracted(self) -> None:
+        result = parse_command("只看博通20天")
+        self.assertEqual(result.window, 20)
+
+    def test_bare_n_tian_30(self) -> None:
+        result = parse_command("只看博通30天最高价")
+        self.assertEqual(result.window, 30)
+
+    def test_最近_prefix_still_takes_priority(self) -> None:
+        # "最近20天" is a fixed pattern and should still resolve correctly
+        result = parse_command("调出博通最近20天数据")
+        self.assertEqual(result.window, 20)
+
+    def test_small_n_does_not_match(self) -> None:
+        # "3天" (N < 5) should not be extracted; falls back to DEFAULT_WINDOW
+        result = parse_command("只看博通3天")
+        self.assertEqual(result.window, DEFAULT_WINDOW)
+
+    def test_下一个交易日_still_overrides_bare_n_tian(self) -> None:
+        # "下一个交易日" in _WINDOW_PATTERNS fires before the bare fallback
+        result = parse_command("根据博通20天数据推演下一个交易日走势")
+        self.assertEqual(result.window, -1)
+
+
+class NewQueryKeywordTests(unittest.TestCase):
+    """Tests for the new query-intent keywords: 只看, 并排, 查看."""
+
+    def test_只看_triggers_query(self) -> None:
+        result = parse_command("只看博通最近20天")
+        self.assertEqual(result.task_type, "query_data")
+
+    def test_并排_triggers_query(self) -> None:
+        result = parse_command("博通和英伟达最近20天数据并排")
+        self.assertEqual(result.task_type, "query_data")
+
+    def test_查看_triggers_query(self) -> None:
+        result = parse_command("查看博通最近20天最高价")
+        self.assertEqual(result.task_type, "query_data")
+        self.assertIsNone(result.parse_error)
+
+    def test_只看_with_no_symbol_sets_error(self) -> None:
+        # query intent detected but no symbol → error
+        result = parse_command("只看最近20天数据")
+        self.assertEqual(result.task_type, "query_data")
+        self.assertIsNotNone(result.parse_error)
+
+    def test_compare_keyword_still_wins_over_只看(self) -> None:
+        # Priority: review > projection > compare > query
+        # This sentence has both 比较 (compare) — compare should win
+        result = parse_command("比较博通和英伟达只看最高价")
+        self.assertEqual(result.task_type, "compare_data")
+
+
 if __name__ == "__main__":
     unittest.main()
