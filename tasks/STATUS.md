@@ -34,6 +34,8 @@
 - 025 — `projection_final_wiring`
 - 026a — `predict_readable_summary_and_ai_polish`
 - 028 — `polish_and_guardrails_pack`
+- 034 — `conversation_result_renderer_mvp`
+- 035 — `projection_evidence_trace_mvp`
 
 ## Handoff status rules
 
@@ -78,3 +80,7 @@
 | 025 | projection_final_wiring | reviewer | done | 2026-04-13 | Scoped reviewer pass: final_projection_report command path verified; 28 focused + 122 regression tests pass; merge only Task 025-owned files and exclude unrelated dirty core/workflow changes |
 | 026A | predict_readable_summary_and_ai_polish | tester | done | 2026-04-13 | Covers original Task 026 and Task 027; readable Predict/projection summary landed, optional AI polish included, main paths regression-safe |
 | 028 | polish_and_guardrails_pack | reviewer | blocked | 2026-04-13 | Review found external-confirmation None-value guardrail gap; tests otherwise pass (30 focused + 108 regression + scripts/check.sh) |
+| 032 | freeform_intent_planner_mvp | reviewer | done | 2026-04-13 | 110/110 tests pass; 7/7 spot-checks PASS; reviewer passed with minor finding: F1 — stats steps render empty symbol/field in Command Center table (singular vs plural key mismatch in _render_intent_plan); suggest fix in follow-up |
+| 033 | multi_step_tool_router_mvp | reviewer | done | 2026-04-13 | 137/137 tests pass; reviewer finding F1: parser/planner mismatch hides projection result for "看看...明天" inputs (query_data parsed but projection planned, _render_stored_result dispatches on wrong type); suggest fix in follow-up |
+| 034 | conversation_result_renderer_mvp | reviewer | blocked | 2026-04-13 | Review blocked: builder handoff missing and fixed answer-card sections not implemented; tests pass but do not cover required card structure |
+| 035 | projection_evidence_trace_mvp | tester | done | 2026-04-13 | Evidence trace added for projection/predict; reviewer follow-up fixes landed for memory_feedback gating and safe None handling; focused tests pass |

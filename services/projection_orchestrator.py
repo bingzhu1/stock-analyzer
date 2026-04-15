@@ -18,6 +18,7 @@ from services.projection_orchestrator_preflight import (
     build_projection_orchestrator_preflight,
 )
 from services.data_query import load_symbol_data
+from services.evidence_trace import build_projection_evidence_trace
 from services.predict_summary import build_predict_readable_summary
 from stats_reporter import SUMMARY_COLUMNS, summarize_match_df
 
@@ -116,6 +117,12 @@ def format_projection_report(
         "readable_summary": readable,
     }
     report["report_text"] = readable["summary_text"]
+    report["evidence_trace"] = build_projection_evidence_trace(
+        predict_result=predict_result,
+        scan_result=scan_result,
+        projection_report=report,
+        advisory=advisory,
+    )
     return report
 
 

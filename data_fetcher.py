@@ -5,7 +5,6 @@ from pathlib import Path
 import pandas as pd
 import yfinance as yf
 
-
 DATA_DIR = Path("data")
 SYMBOLS = {
     "AVGO": "2016-05-18",
@@ -26,11 +25,14 @@ def clean_price_data(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
         return pd.DataFrame(columns=KEEP_COLUMNS)
 
-    cleaned = df.reset_index().copy()
+    cleaned = df.copy()
 
+    # yfinance returns Date as DatetimeIndex — bring it into a column
     if "Date" not in cleaned.columns:
-        first_col = cleaned.columns[0]
-        cleaned = cleaned.rename(columns={first_col: "Date"})
+        cleaned = cleaned.reset_index()
+        if "Date" not in cleaned.columns:
+            first_col = cleaned.columns[0]
+            cleaned = cleaned.rename(columns={first_col: "Date"})
 
     cleaned["Date"] = pd.to_datetime(cleaned["Date"]).dt.strftime("%Y-%m-%d")
 
@@ -75,8 +77,25 @@ def download_full_history(symbol: str, start_date: str) -> pd.DataFrame:
     return df
 
 
+def _has_complete_bar(df: pd.DataFrame, date_str: str) -> bool:
+    """Return True if df contains a valid, non-zero Close for date_str."""
+    if df.empty:
+        return False
+    rows = df[df["Date"] == date_str]
+    if rows.empty:
+        return False
+    close = rows.iloc[0].get("Close")
+    return pd.notna(close) and float(close) > 0
+
+
 def update_local_csv(symbol: str) -> pd.DataFrame:
-    """Create the CSV if missing, otherwise append only new rows."""
+    """Create the CSV if missing, otherwise append only new rows.
+
+    When next_date == today, attempts to fetch today's bar and accepts it only
+    if the data source returns a complete row (valid Close > 0).  This allows
+    same-day refresh once the daily close bar is available without waiting until
+    the following calendar day.
+    """
     csv_path = get_csv_path(symbol)
     start_date = SYMBOLS[symbol]
 
@@ -91,12 +110,24 @@ def update_local_csv(symbol: str) -> pd.DataFrame:
     last_date = pd.to_datetime(local_df["Date"]).max()
     next_date = (last_date + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
     today = pd.Timestamp.today().normalize()
+    next_ts = pd.to_datetime(next_date)
 
-    if pd.to_datetime(next_date) >= today:
+    # next_date is strictly in the future — nothing to fetch yet
+    if next_ts > today:
         print(f"[SKIP] {symbol}: already up to date through {last_date.strftime('%Y-%m-%d')}")
         return local_df
 
     new_df = fetch_history_from_yahoo(symbol, next_date)
+
+    # next_date == today: accept only if the source returned a complete bar for today
+    if next_ts == today:
+        today_str = today.strftime("%Y-%m-%d")
+        if not _has_complete_bar(new_df, today_str):
+            print(
+                f"[SKIP] {symbol}: today's bar ({today_str}) not yet available "
+                "from data source"
+            )
+            return local_df
 
     if new_df.empty:
         print(f"[UPDATE] {symbol}: added 0 new rows, total {len(local_df)} rows")

@@ -72,6 +72,7 @@ VALID_TASK_TYPES = frozenset({
     "compare_data",
     "run_projection",
     "run_review",
+    "ai_explanation",
     "unknown",
 })
 
@@ -113,6 +114,16 @@ class ParsedTask:
       {"type": "matched_count"}
       {"type": "mismatched_count"}
     None when no supplementary stat was requested.
+    """
+
+    ai_request: dict | None = None
+    """
+    Optional AI explanation request parsed from commands like:
+      {"focus": "projection"}
+      {"focus": "direction", "direction": "偏空"}
+      {"focus": "compare"}
+      {"focus": "risk"}
+    None when the command is not an AI explanation request.
     """
 
 
@@ -181,8 +192,35 @@ def _extract_window(text: str) -> int:
     return DEFAULT_WINDOW
 
 
+def _extract_ai_request(text: str) -> dict | None:
+    """
+    Detect optional AI explanation intents.
+
+    This never asks AI to execute query/compare/projection; it only routes to
+    explanation over already stored structured results.
+    """
+    lower = text.lower()
+    if "ai" not in lower:
+        return None
+    if "解释" not in text and "总结" not in text:
+        return None
+
+    if "比较" in text or "对比" in text:
+        return {"focus": "compare"}
+    if "风险" in text:
+        return {"focus": "risk"}
+    for direction in ("偏多", "偏空", "中性"):
+        if direction in text:
+            return {"focus": "direction", "direction": direction}
+    if "推演" in text or "预测" in text:
+        return {"focus": "projection"}
+    return {"focus": "projection"}
+
+
 def _detect_task_type(text: str) -> str:
     """Identify the task type from keyword presence (priority order)."""
+    if _extract_ai_request(text):
+        return "ai_explanation"
     for kw in _REVIEW_KW:
         if kw in text:
             return "run_review"
@@ -286,12 +324,13 @@ def parse_command(text: str) -> ParsedTask:
     fields    = _extract_fields(text)
     window    = _extract_window(text)
     stat_req  = _extract_stat_request(text, symbols)
+    ai_req    = _extract_ai_request(text) if task_type == "ai_explanation" else None
 
     error: str | None = None
     if task_type == "unknown":
         error = (
             "无法识别指令类型，请使用以下关键词开头："
-            "调出、只看、并排、比较、对比、推演、预测、复盘。"
+            "调出、只看、并排、比较、对比、推演、预测、复盘，或用 AI 解释/总结。"
         )
     elif task_type in ("query_data", "compare_data") and not symbols:
         error = (
@@ -306,4 +345,5 @@ def parse_command(text: str) -> ParsedTask:
         raw_text=text,
         parse_error=error,
         stat_request=stat_req,
+        ai_request=ai_req,
     )

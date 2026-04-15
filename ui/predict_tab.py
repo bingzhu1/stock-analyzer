@@ -5,6 +5,9 @@ import pandas as pd
 import streamlit as st
 
 from predict import run_predict
+from services.ai_summary import build_projection_ai_summary, build_review_ai_summary
+from services.evidence_trace import build_projection_evidence_trace
+from services.openai_client import OpenAIClientError
 from services.predict_summary import build_predict_readable_summary
 from services.prediction_store import (
     get_outcome_for_prediction,
@@ -13,6 +16,109 @@ from services.prediction_store import (
 )
 from services.outcome_capture import capture_outcome
 from services.review_agent import generate_review
+
+
+def _projection_ai_payload(
+    predict_result: dict,
+    scan_result: dict | None,
+    research_result: dict | None,
+) -> dict:
+    readable = predict_result.get("readable_summary")
+    if not isinstance(readable, dict):
+        readable = build_predict_readable_summary(predict_result, scan_result=scan_result)
+    return {
+        "kind": "projection_ai_summary",
+        "symbol": predict_result.get("symbol", "AVGO"),
+        "final_bias": predict_result.get("final_bias"),
+        "final_confidence": predict_result.get("final_confidence"),
+        "open_tendency": predict_result.get("open_tendency"),
+        "close_tendency": predict_result.get("close_tendency"),
+        "prediction_summary": predict_result.get("prediction_summary"),
+        "readable_summary": readable,
+        "supporting_factors": predict_result.get("supporting_factors", []),
+        "conflicting_factors": predict_result.get("conflicting_factors", []),
+        "scan_result": scan_result or {},
+        "research_result": research_result or {},
+    }
+
+
+def _review_ai_payload(
+    *,
+    prediction_id: str,
+    predict_result: dict,
+    outcome: dict,
+    review: dict | None,
+) -> dict:
+    return {
+        "kind": "review_ai_summary",
+        "prediction_id": prediction_id,
+        "symbol": predict_result.get("symbol", "AVGO"),
+        "final_bias": predict_result.get("final_bias"),
+        "final_confidence": predict_result.get("final_confidence"),
+        "prediction_summary": predict_result.get("prediction_summary"),
+        "readable_summary": predict_result.get("readable_summary") or {},
+        "outcome": outcome,
+        "rule_review": review or {},
+    }
+
+
+def _show_ai_summary_error(kind: str, exc: Exception) -> None:
+    if isinstance(exc, OpenAIClientError):
+        st.warning(str(exc))
+        return
+    st.warning(f"{kind}生成失败，已保留规则层结果：{exc}")
+
+
+def _render_projection_ai_summary_entry(
+    predict_result: dict,
+    scan_result: dict | None,
+    research_result: dict | None,
+) -> None:
+    st.markdown("**AI 推演总结**")
+    if st.button("生成 AI 推演总结", key="btn_generate_ai_projection_summary"):
+        payload = _projection_ai_payload(predict_result, scan_result, research_result)
+        with st.spinner("正在生成 AI 推演总结…"):
+            try:
+                st.session_state["ai_projection_summary_text"] = build_projection_ai_summary(payload)
+            except Exception as exc:
+                _show_ai_summary_error("AI 推演总结", exc)
+
+    if st.session_state.get("ai_projection_summary_text"):
+        st.write(st.session_state["ai_projection_summary_text"])
+
+
+def _render_review_ai_summary_entry(
+    *,
+    prediction_id: str | None,
+    predict_result: dict,
+    outcome: dict | None,
+    review: dict | None,
+) -> None:
+    st.markdown("**AI 复盘总结**")
+    if not prediction_id:
+        st.button("生成 AI 复盘总结", key="btn_generate_ai_review_summary_locked1", disabled=True)
+        st.caption("Complete Step 1 first.")
+        return
+    if not outcome:
+        st.button("生成 AI 复盘总结", key="btn_generate_ai_review_summary_locked2", disabled=True)
+        st.caption("Complete Step 2 first.")
+        return
+
+    if st.button("生成 AI 复盘总结", key="btn_generate_ai_review_summary"):
+        payload = _review_ai_payload(
+            prediction_id=prediction_id,
+            predict_result=predict_result,
+            outcome=outcome,
+            review=review,
+        )
+        with st.spinner("正在生成 AI 复盘总结…"):
+            try:
+                st.session_state["ai_review_summary_text"] = build_review_ai_summary(payload)
+            except Exception as exc:
+                _show_ai_summary_error("AI 复盘总结", exc)
+
+    if st.session_state.get("ai_review_summary_text"):
+        st.write(st.session_state["ai_review_summary_text"])
 
 
 def render_readable_predict_summary(summary: dict) -> None:
@@ -43,6 +149,38 @@ def render_readable_predict_summary(summary: dict) -> None:
     if summary.get("ai_polish"):
         st.markdown("**AI polish**")
         st.write(summary["ai_polish"])
+
+
+def render_evidence_trace(trace: dict) -> None:
+    """Render deterministic evidence trace blocks for Predict / projection."""
+    if not isinstance(trace, dict):
+        return
+
+    st.markdown("**Evidence trace**")
+
+    st.markdown("**tool_trace**")
+    for item in trace.get("tool_trace", []) or []:
+        st.caption(f"- {item}")
+
+    st.markdown("**key_observations**")
+    for line in trace.get("key_observations", []) or []:
+        st.caption(f"- {line}")
+
+    st.markdown("**decision_steps**")
+    for line in trace.get("decision_steps", []) or []:
+        st.caption(f"- {line}")
+
+    st.markdown("**final_conclusion**")
+    final = trace.get("final_conclusion", {}) or {}
+    cols = st.columns(4)
+    cols[0].metric("明日方向", final.get("direction", "中性"))
+    cols[1].metric("开盘倾向", final.get("open_tendency", "平开"))
+    cols[2].metric("收盘倾向", final.get("close_tendency", "震荡"))
+    cols[3].metric("confidence", final.get("confidence", "low"))
+
+    st.markdown("**verification_points**")
+    for line in trace.get("verification_points", []) or []:
+        st.caption(f"- {line}")
 
 
 def render_predict_result(pr: dict) -> None:
@@ -83,6 +221,10 @@ def render_predict_result(pr: dict) -> None:
         readable_summary = build_predict_readable_summary(pr)
     render_readable_predict_summary(readable_summary)
 
+    trace = pr.get("evidence_trace")
+    if isinstance(trace, dict):
+        render_evidence_trace(trace)
+
     col_l, col_r = st.columns(2)
     with col_l:
         st.markdown("**Supporting factors**")
@@ -115,9 +257,14 @@ def render_predict_tab(scan_result: dict | None, research_result: dict | None) -
         predict_result,
         scan_result=scan_result,
     )
+    predict_result["evidence_trace"] = build_projection_evidence_trace(
+        predict_result=predict_result,
+        scan_result=scan_result,
+    )
     if research_result is None:
         st.warning("No Research result found. Prediction is Scan-led until Research is run.")
     render_predict_result(predict_result)
+    _render_projection_ai_summary_entry(predict_result, scan_result, research_result)
 
     # ── Research Loop ─────────────────────────────────────────────────────────
     st.divider()
@@ -199,6 +346,7 @@ def render_predict_tab(scan_result: dict | None, research_result: dict | None) -
     # ── Step 3: Generate Review ───────────────────────────────────────────────
     with col_review:
         st.markdown("**Step 3 — AI Review**")
+        review = None
         if not already_saved:
             st.button("Generate Review", key="btn_generate_review_locked1", disabled=True)
             st.caption("Complete Step 1 first.")
@@ -238,5 +386,11 @@ def render_predict_tab(scan_result: dict | None, research_result: dict | None) -
                             st.rerun()
                         except ValueError as exc:
                             st.error(str(exc))
+        _render_review_ai_summary_entry(
+            prediction_id=saved_pid,
+            predict_result=predict_result,
+            outcome=outcome,
+            review=review,
+        )
 
     return predict_result

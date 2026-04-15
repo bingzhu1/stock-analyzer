@@ -459,5 +459,32 @@ class NewQueryKeywordTests(unittest.TestCase):
         self.assertEqual(result.task_type, "compare_data")
 
 
+class AIExplanationIntentTests(unittest.TestCase):
+    def test_ai_explain_projection_intent(self) -> None:
+        result = parse_command("用 AI 解释这次推演")
+        self.assertEqual(result.task_type, "ai_explanation")
+        self.assertIsNone(result.parse_error)
+        self.assertEqual(result.ai_request, {"focus": "projection"})
+
+    def test_ai_explain_direction_intent(self) -> None:
+        result = parse_command("用 AI 解释为什么偏空")
+        self.assertEqual(result.task_type, "ai_explanation")
+        self.assertEqual(result.ai_request, {"focus": "direction", "direction": "偏空"})
+
+    def test_ai_summarize_compare_intent(self) -> None:
+        result = parse_command("用 AI 总结这次比较结果")
+        self.assertEqual(result.task_type, "ai_explanation")
+        self.assertEqual(result.ai_request, {"focus": "compare"})
+
+    def test_ai_explain_risk_intent(self) -> None:
+        result = parse_command("用 AI 解释这次风险提醒")
+        self.assertEqual(result.task_type, "ai_explanation")
+        self.assertEqual(result.ai_request, {"focus": "risk"})
+
+    def test_ai_intent_takes_priority_over_projection_keyword(self) -> None:
+        result = parse_command("用 AI 解释这次推演，不要重新预测")
+        self.assertEqual(result.task_type, "ai_explanation")
+
+
 if __name__ == "__main__":
     unittest.main()

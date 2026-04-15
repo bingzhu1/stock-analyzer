@@ -44,5 +44,6 @@ TASK_TYPE_LABELS: dict[str, str] = {
     "compare_data":   "数据对比",
     "run_projection": "走势推演",
     "run_review":     "复盘回顾",
+    "ai_explanation": "AI 解释",
     "unknown":        "未识别",
 }

@@ -45,6 +45,15 @@ class ProjectionOrchestratorTests(unittest.TestCase):
             result["projection_report"]["readable_summary"]["kind"],
             "predict_readable_summary",
         )
+        self.assertEqual(
+            result["projection_report"]["evidence_trace"]["kind"],
+            "projection_evidence_trace",
+        )
+        self.assertEqual(
+            result["projection_report"]["evidence_trace"]["final_conclusion"]["direction"],
+            result["projection_report"]["direction"],
+        )
+        self.assertTrue(result["projection_report"]["evidence_trace"]["tool_trace"])
         self.assertTrue(result["projection_report"]["basis_summary"])
         self.assertTrue(result["projection_report"]["risk_reminders"])
         self.assertIn("明日方向：", result["projection_report"]["report_text"])
@@ -133,6 +142,8 @@ class ProjectionOrchestratorTests(unittest.TestCase):
         self.assertEqual(report["close_tendency"], "震荡")
         self.assertEqual(report["confidence"], "low")
         self.assertEqual(report["readable_summary"]["kind"], "predict_readable_summary")
+        self.assertEqual(report["evidence_trace"]["kind"], "projection_evidence_trace")
+        self.assertEqual(report["evidence_trace"]["final_conclusion"]["direction"], "中性")
         self.assertTrue(report["basis_summary"])
         self.assertTrue(report["risk_reminders"])
 

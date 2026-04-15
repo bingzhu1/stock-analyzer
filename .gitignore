@@ -10,3 +10,6 @@ stats_results/
 .venv/
 avgo_agent.db
 snapshots/
+.env
+!.env.example
+.tmp_test_env/

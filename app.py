@@ -11,6 +11,10 @@ from pathlib import Path
 # regardless of where `streamlit run` is invoked from.
 os.chdir(Path(__file__).parent)
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 import matplotlib
 matplotlib.use("Agg")   # non-interactive backend — must be set before pyplot import
 import matplotlib.pyplot as plt
@@ -73,6 +77,11 @@ from matcher import (
 )
 from stats_reporter import build_stats_summary, save_stats_summary
 from scanner import run_scan
+from services.analysis_context import (
+    friendly_analysis_error,
+    reset_analysis_context_state,
+    validate_target_code_for_analysis,
+)
 from ui.command_bar import render_command_bar
 from ui.history_tab import render_history_tab
 from ui.predict_tab import render_predict_tab
@@ -252,9 +261,9 @@ def _classify_close(close_move: float) -> str:
 def _classify_structure(open_chg: float, close_move: float) -> str:
     ot = _classify_open(open_chg)
     if ot == "高开":
-        return "高开高走" if close_move >= 0 else "高开低走"
+        return "高开高走" if close_move >= 10 else "高开低走"
     if ot == "低开":
-        return "低开高走" if close_move >= 0 else "低开低走"
+        return "低开高走" if close_move >= -10 else "低开低走"
     return "平开震荡"
 
 
@@ -1535,8 +1544,6 @@ st.markdown(
     "patterns, and inspect next-day price outcomes."
 )
 
-render_command_bar()
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Sidebar
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1665,36 +1672,49 @@ if refresh_clicked:
 
 if run_clicked:
     target_date_str = target_date.strftime("%Y-%m-%d")
+    reset_analysis_context_state(st.session_state, target_date_str)
     run_error: str | None = None
 
     with st.spinner("Step 1/2  —  Matching historical patterns…"):
         try:
             coded_df = load_coded_avgo()
-            exact_df = build_next_day_match_table(coded_df, target_date_str)
-            save_match_results(exact_df, target_date_str)
-            near_df = build_near_match_table(coded_df, target_date_str)
-            save_near_match_results(near_df, target_date_str)
-            # All enrichments are app-layer only; core modules are untouched.
-            exact_df = enrich_with_t2(exact_df, coded_df)
-            near_df  = enrich_with_t2(near_df,  coded_df)
-            exact_df = enrich_with_match_ohlcv(exact_df, coded_df)
-            near_df  = enrich_with_match_ohlcv(near_df,  coded_df)
-            exact_df = add_turnovers(exact_df)
-            near_df  = add_turnovers(near_df)
-            pos_df   = compute_position_features(coded_df)
-            exact_df = enrich_with_position(exact_df, pos_df)
-            near_df  = enrich_with_position(near_df,  pos_df)
-            prev_df  = compute_prev_day_features(coded_df)
-            exact_df = enrich_with_prev_day(exact_df, prev_df)
-            near_df  = enrich_with_prev_day(near_df,  prev_df)
-            mom_df   = compute_momentum_features(coded_df)
-            exact_df = enrich_with_momentum(exact_df, mom_df)
-            near_df  = enrich_with_momentum(near_df,  mom_df)
-            _pipeline_ctx = get_target_context(target_date_str, pos_df, prev_df, mom_df)
-            exact_df = compute_context_scores(exact_df, _pipeline_ctx)
-            near_df  = compute_context_scores(near_df,  _pipeline_ctx)
+            target_row, target_code, target_error = validate_target_code_for_analysis(
+                coded_df, target_date_str
+            )
+            st.session_state["coded_df"] = coded_df
+            st.session_state["target_row"] = (
+                target_row.to_dict() if target_row is not None else None
+            )
+            st.session_state["target_code"] = target_code
+
+            if target_error:
+                run_error = target_error
+            else:
+                exact_df = build_next_day_match_table(coded_df, target_date_str)
+                save_match_results(exact_df, target_date_str)
+                near_df = build_near_match_table(coded_df, target_date_str)
+                save_near_match_results(near_df, target_date_str)
+                # All enrichments are app-layer only; core modules are untouched.
+                exact_df = enrich_with_t2(exact_df, coded_df)
+                near_df  = enrich_with_t2(near_df,  coded_df)
+                exact_df = enrich_with_match_ohlcv(exact_df, coded_df)
+                near_df  = enrich_with_match_ohlcv(near_df,  coded_df)
+                exact_df = add_turnovers(exact_df)
+                near_df  = add_turnovers(near_df)
+                pos_df   = compute_position_features(coded_df)
+                exact_df = enrich_with_position(exact_df, pos_df)
+                near_df  = enrich_with_position(near_df,  pos_df)
+                prev_df  = compute_prev_day_features(coded_df)
+                exact_df = enrich_with_prev_day(exact_df, prev_df)
+                near_df  = enrich_with_prev_day(near_df,  prev_df)
+                mom_df   = compute_momentum_features(coded_df)
+                exact_df = enrich_with_momentum(exact_df, mom_df)
+                near_df  = enrich_with_momentum(near_df,  mom_df)
+                _pipeline_ctx = get_target_context(target_date_str, pos_df, prev_df, mom_df)
+                exact_df = compute_context_scores(exact_df, _pipeline_ctx)
+                near_df  = compute_context_scores(near_df,  _pipeline_ctx)
         except Exception as exc:
-            run_error = f"Matching failed: {exc}"
+            run_error = friendly_analysis_error("Matching", exc, target_date_str)
 
     if not run_error:
         with st.spinner("Step 2/2  —  Computing statistics…"):
@@ -1702,34 +1722,53 @@ if run_clicked:
                 summary_df = build_stats_summary(target_date_str)
                 save_stats_summary(summary_df, target_date_str)
             except Exception as exc:
-                run_error = f"Stats failed: {exc}"
+                run_error = friendly_analysis_error("Stats", exc, target_date_str)
 
     if run_error:
-        st.error(run_error)
+        st.session_state["analysis_error"] = run_error
+        st.session_state["data_version_info"] = get_dataset_version_info()
     else:
-        scan_result = run_scan(
-            target_date_str, coded_df, exact_df, near_df,
-            summary_df, pos_df, prev_df, mom_df,
-            scan_phase=scan_phase,
-        )
-        st.success(f"Analysis complete for {target_date_str}")
-        st.session_state.update(
-            target_date_str=target_date_str,
-            coded_df=coded_df,
-            exact_df=exact_df,
-            near_df=near_df,
-            summary_df=summary_df,
-            pos_df=pos_df,
-            prev_df=prev_df,
-            mom_df=mom_df,
-            scan_result=scan_result,
-            research_result=None,
-            data_version_info=get_dataset_version_info(),
-        )
+        try:
+            scan_result = run_scan(
+                target_date_str, coded_df, exact_df, near_df,
+                summary_df, pos_df, prev_df, mom_df,
+                scan_phase=scan_phase,
+            )
+        except Exception as exc:
+            run_error = friendly_analysis_error("Scan", exc, target_date_str)
+            st.session_state["analysis_error"] = run_error
+            st.session_state["data_version_info"] = get_dataset_version_info()
+        else:
+            st.success(f"Analysis complete for {target_date_str}")
+            st.session_state.update(
+                target_date_str=target_date_str,
+                coded_df=coded_df,
+                exact_df=exact_df,
+                near_df=near_df,
+                summary_df=summary_df,
+                pos_df=pos_df,
+                prev_df=prev_df,
+                mom_df=mom_df,
+                target_ctx=_pipeline_ctx,
+                match_context=_pipeline_ctx,
+                scan_result=scan_result,
+                research_result=None,
+                analysis_error=None,
+                data_version_info=get_dataset_version_info(),
+            )
+
+render_command_bar()
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Guard — nothing to show until first run completes
 # ─────────────────────────────────────────────────────────────────────────────
+
+if st.session_state.get("analysis_error") and "scan_result" not in st.session_state:
+    tab_scan = st.tabs(["Scan"])[0]
+    with tab_scan:
+        st.subheader(f"Scan Result — {st.session_state.get('target_date_str', target_date.strftime('%Y-%m-%d'))}")
+        st.warning(st.session_state["analysis_error"])
+    st.stop()
 
 if "target_date_str" not in st.session_state:
     tab_scan = st.tabs(["Scan"])[0]
@@ -1749,7 +1788,9 @@ scan_result: dict | None = st.session_state.get("scan_result")
 research_result: dict | None = st.session_state.get("research_result")
 
 # Target day context for context-score expander in match tables.
-target_ctx: dict = get_target_context(target_date_str, pos_df, prev_df, mom_df)
+target_ctx: dict = st.session_state.get("target_ctx") or get_target_context(
+    target_date_str, pos_df, prev_df, mom_df
+)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Position filter — display-layer only; raw matches in session_state untouched

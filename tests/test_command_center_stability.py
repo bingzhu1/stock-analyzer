@@ -16,6 +16,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pandas as pd
+
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -23,10 +25,21 @@ if str(ROOT) not in sys.path:
 from services.command_parser import ParsedTask, parse_command
 from ui.command_bar import (
     _PROJECTION_ERROR_NO_SYMBOL,
+    _RESPONSE_CARD_SECTION_HEADINGS,
     _SS_LAST_INPUT,
+    _SS_LAST_COMP_CTX,
+    _SS_LAST_PROJ_CTX,
     _SS_PARSED,
     _SS_PROJ_ERROR,
     _SS_PROJ_RESULT,
+    _build_compare_response_card,
+    _build_projection_response_card,
+    _build_query_response_card,
+    _build_stats_response_card,
+    _render_intent_plan,
+    _render_projection_result,
+    _render_response_card,
+    run_ai_explanation_command,
     run_projection_command,
 )
 
@@ -74,6 +87,92 @@ def _script() -> str:
         render_command_bar()
         """
     )
+
+
+class _FakeColumn:
+    def __init__(self, fake_st: "_FakeStreamlit") -> None:
+        self._fake_st = fake_st
+
+    def __enter__(self) -> "_FakeStreamlit":
+        return self._fake_st
+
+    def __exit__(self, *_: object) -> None:
+        return None
+
+
+class _FakeContainer:
+    def __enter__(self) -> "_FakeContainer":
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        return None
+
+
+class _FakeExpander:
+    def __init__(self, fake_st: "_FakeStreamlit") -> None:
+        self._fake_st = fake_st
+
+    def __enter__(self) -> "_FakeStreamlit":
+        self._fake_st.in_expander += 1
+        return self._fake_st
+
+    def __exit__(self, *_: object) -> None:
+        self._fake_st.in_expander -= 1
+        return None
+
+
+class _FakeStreamlit:
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+        self.in_expander = 0
+
+    def info(self, text: str) -> None:
+        self.calls.append(f"info:{text}")
+
+    def columns(self, count: int) -> list[_FakeColumn]:
+        self.calls.append(f"columns:{count}")
+        return [_FakeColumn(self) for _ in range(count)]
+
+    def metric(self, label: str, value: object) -> None:
+        self.calls.append(f"metric:{label}:{value}")
+
+    def markdown(self, text: str) -> None:
+        self.calls.append(f"markdown:{text}")
+
+    def write(self, text: object) -> None:
+        self.calls.append(f"write:{text}")
+
+    def caption(self, text: str) -> None:
+        self.calls.append(f"caption:{text}")
+
+    def dataframe(self, value: object, **_: object) -> None:
+        where = "expander" if self.in_expander else "main"
+        self.calls.append(f"dataframe:{where}")
+
+    def warning(self, text: str) -> None:
+        self.calls.append(f"warning:{text}")
+
+    def container(self) -> _FakeContainer:
+        self.calls.append("container")
+        return _FakeContainer()
+
+    def json(self, value: object) -> None:
+        self.calls.append("json")
+
+    def expander(self, label: str, **__: object) -> _FakeExpander:
+        self.calls.append(f"expander:{label}")
+        return _FakeExpander(self)
+
+
+def _section_headings(fake_st: _FakeStreamlit) -> list[str]:
+    headings = []
+    for call in fake_st.calls:
+        if not call.startswith("markdown:**"):
+            continue
+        text = call.removeprefix("markdown:**").removesuffix("**")
+        if text in _RESPONSE_CARD_SECTION_HEADINGS:
+            headings.append(text)
+    return headings
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -149,8 +248,255 @@ class SessionStateKeyTests(unittest.TestCase):
             self.assertIsInstance(key, str)
 
     def test_session_state_keys_are_unique(self) -> None:
-        keys = [_SS_PARSED, _SS_PROJ_RESULT, _SS_PROJ_ERROR, _SS_LAST_INPUT]
+        keys = [
+            _SS_PARSED,
+            _SS_PROJ_RESULT,
+            _SS_PROJ_ERROR,
+            _SS_LAST_INPUT,
+            _SS_LAST_PROJ_CTX,
+            _SS_LAST_COMP_CTX,
+        ]
         self.assertEqual(len(keys), len(set(keys)))
+
+
+class AIExplanationCommandTests(unittest.TestCase):
+    def test_projection_ai_explanation_requires_context(self) -> None:
+        task = parse_command("用 AI 解释这次推演")
+        result, error = run_ai_explanation_command(task)
+        self.assertIsNone(result)
+        self.assertIn("请先运行一次推演命令", error or "")
+
+    def test_compare_ai_explanation_requires_context(self) -> None:
+        task = parse_command("用 AI 总结这次比较结果")
+        result, error = run_ai_explanation_command(task)
+        self.assertIsNone(result)
+        self.assertIn("请先运行一次比较", error or "")
+
+    def test_projection_ai_explanation_uses_existing_projection_result(self) -> None:
+        task = parse_command("用 AI 解释为什么偏多")
+        projection_result = {
+            "ready": True,
+            "projection_report": {
+                "direction": "偏多",
+                "confidence": "low",
+                "readable_summary": {"risk_reminders": ["样本不足"]},
+            },
+        }
+
+        def fake_builder(payload):
+            self.assertEqual(payload["ai_request"]["direction"], "偏多")
+            self.assertEqual(payload["projection_report"]["direction"], "偏多")
+            return "规则层偏多，因为..."
+
+        result, error = run_ai_explanation_command(
+            task,
+            projection_result=projection_result,
+            _projection_builder=fake_builder,
+        )
+        self.assertEqual(result, "规则层偏多，因为...")
+        self.assertIsNone(error)
+
+    def test_compare_ai_explanation_uses_existing_compare_result(self) -> None:
+        task = parse_command("用 AI 总结这次比较结果")
+        compare_result = {
+            "symbols": ["AVGO", "NVDA"],
+            "field": "Close",
+            "stats": {"total": 20, "matched": 13},
+            "comparison_df": None,
+            "aligned_df": None,
+        }
+
+        def fake_builder(payload):
+            self.assertEqual(payload["symbols"], ["AVGO", "NVDA"])
+            self.assertEqual(payload["stats"]["matched"], 13)
+            return "比较结果总结"
+
+        result, error = run_ai_explanation_command(
+            task,
+            compare_result=compare_result,
+            _compare_builder=fake_builder,
+        )
+        self.assertEqual(result, "比较结果总结")
+        self.assertIsNone(error)
+
+    def test_risk_ai_explanation_uses_projection_risk_context(self) -> None:
+        task = parse_command("用 AI 解释这次风险提醒")
+        projection_result = {
+            "projection_report": {
+                "direction": "中性",
+                "readable_summary": {"risk_reminders": ["外部确认不足"]},
+            },
+        }
+
+        def fake_builder(payload):
+            self.assertIn("外部确认不足", payload["readable_summary"]["risk_reminders"])
+            return "风险解释"
+
+        result, error = run_ai_explanation_command(
+            task,
+            projection_result=projection_result,
+            _risk_builder=fake_builder,
+        )
+        self.assertEqual(result, "风险解释")
+        self.assertIsNone(error)
+
+
+class ResponseCardRendererTests(unittest.TestCase):
+    def test_required_section_headings_are_fixed(self) -> None:
+        self.assertEqual(
+            list(_RESPONSE_CARD_SECTION_HEADINGS),
+            ["任务理解", "执行步骤", "核心结论", "依据摘要", "风险 / 提示", "原始结果"],
+        )
+
+    def test_section_order_is_fixed(self) -> None:
+        from ui import command_bar
+
+        fake_st = _FakeStreamlit()
+        card = _build_stats_response_card({
+            "symbol": "AVGO",
+            "field": "Volume",
+            "lookback_days": 20,
+            "operation": "today_vs_average",
+            "today_value": 100.0,
+            "average_value": 90.0,
+            "absolute_diff": 10.0,
+            "pct_diff": 11.11,
+        })
+
+        with patch.object(command_bar, "st", fake_st):
+            _render_response_card(card)
+
+        self.assertEqual(_section_headings(fake_st), list(_RESPONSE_CARD_SECTION_HEADINGS))
+
+    def test_projection_compare_query_stats_use_same_outer_card_structure(self) -> None:
+        from ui import command_bar
+
+        projection_card = _build_projection_response_card({
+            "ready": True,
+            "projection_report": {
+                "kind": "final_projection_report",
+                "direction": "中性",
+                "open_tendency": "平开",
+                "close_tendency": "震荡",
+                "confidence": "low",
+            },
+        })
+        compare_card = _build_compare_response_card({
+            "symbols": ["AVGO", "NVDA"],
+            "field": "Close",
+            "stats": {"total": 20, "matched": 12, "mismatched": 8, "match_rate": 60.0},
+        })
+        query_card = _build_query_response_card([])
+        stats_card = _build_stats_response_card({
+            "symbol": "AVGO",
+            "field": "Volume",
+            "lookback_days": 20,
+            "operation": "today_vs_average",
+            "today_value": 100.0,
+            "average_value": 90.0,
+            "absolute_diff": 10.0,
+            "pct_diff": 11.11,
+        })
+
+        for card in (projection_card, compare_card, query_card, stats_card):
+            fake_st = _FakeStreamlit()
+            with patch.object(command_bar, "st", fake_st):
+                _render_response_card(card)
+            self.assertEqual(_section_headings(fake_st), list(_RESPONSE_CARD_SECTION_HEADINGS))
+            self.assertIn("container", fake_st.calls)
+            self.assertIn("expander:展开原始结果", fake_st.calls)
+            self.assertIn("json", fake_st.calls)
+
+    def test_query_card_renders_table_outside_raw_expander(self) -> None:
+        from ui import command_bar
+
+        fake_st = _FakeStreamlit()
+        df = pd.DataFrame({
+            "Date": ["2026-01-01", "2026-01-02"],
+            "Volume": [100.0, 110.0],
+        })
+        card = _build_query_response_card([("AVGO", df)])
+
+        with patch.object(command_bar, "st", fake_st):
+            _render_response_card(card)
+
+        self.assertIn("markdown:**表格输出**", fake_st.calls)
+        self.assertIn("dataframe:main", fake_st.calls)
+        self.assertNotIn("dataframe:expander", fake_st.calls)
+
+    def test_stats_card_renders_raw_table_outside_raw_expander(self) -> None:
+        from ui import command_bar
+
+        fake_st = _FakeStreamlit()
+        df = pd.DataFrame({
+            "Date": ["2026-01-01", "2026-01-02"],
+            "Volume": [100.0, 110.0],
+        })
+        card = _build_stats_response_card({
+            "symbol": "AVGO",
+            "field": "Volume",
+            "lookback_days": 20,
+            "operation": "today_vs_average",
+            "today_value": 110.0,
+            "average_value": 100.0,
+            "absolute_diff": 10.0,
+            "pct_diff": 10.0,
+            "raw_table": df,
+        })
+
+        with patch.object(command_bar, "st", fake_st):
+            _render_response_card(card)
+
+        self.assertIn("markdown:**表格输出**", fake_st.calls)
+        self.assertIn("dataframe:main", fake_st.calls)
+        self.assertNotIn("dataframe:expander", fake_st.calls)
+
+
+class ProjectionRenderTests(unittest.TestCase):
+    def test_final_projection_details_use_container_not_expander(self) -> None:
+        from ui import command_bar
+
+        fake_st = _FakeStreamlit()
+        result = {
+            "ready": True,
+            "projection_report": {
+                "kind": "final_projection_report",
+                "direction": "中性",
+                "open_tendency": "平开",
+                "close_tendency": "震荡",
+                "confidence": "low",
+                "readable_summary": {
+                    "baseline_judgment": {"text": "中性（强度：弱，风险：高，置信度：低）"},
+                    "open_projection": {"text": "更可能平开。"},
+                    "close_projection": {"text": "更可能震荡。"},
+                    "rationale": ["结构化依据"],
+                    "risk_reminders": ["样本不足"],
+                },
+                "evidence_trace": {
+                    "tool_trace": ["scan", "predict_summary"],
+                    "key_observations": ["结构观察"],
+                    "decision_steps": ["观察：gap state = flat → 结论影响：开盘倾向保持为 平开。"],
+                    "final_conclusion": {
+                        "direction": "中性",
+                        "open_tendency": "平开",
+                        "close_tendency": "震荡",
+                        "confidence": "low",
+                    },
+                    "verification_points": ["观察开盘后 30 分钟。"],
+                },
+            },
+        }
+
+        with patch.object(command_bar, "st", fake_st):
+            _render_projection_result(result)
+
+        self.assertEqual(_section_headings(fake_st), list(_RESPONSE_CARD_SECTION_HEADINGS))
+        self.assertNotIn("markdown:**推演详情**", fake_st.calls)
+        self.assertIn("container", fake_st.calls)
+        self.assertIn("expander:展开原始结果", fake_st.calls)
+        self.assertIn("json", fake_st.calls)
+        self.assertTrue(any("tool_trace" in call for call in fake_st.calls))
+        self.assertTrue(any("decision_steps" in call for call in fake_st.calls))
 
 
 # ─────────────────────────────────────────────────────────────────────────────

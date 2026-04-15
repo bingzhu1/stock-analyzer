@@ -6,6 +6,9 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+from ui.command_bar import _RESPONSE_CARD_SECTION_HEADINGS
 
 try:
     import pandas  # noqa: F401
@@ -34,6 +37,20 @@ def _get_button(at, key: str):
         if btn.key == key:
             return btn
     raise AssertionError(f"Button with key {key!r} not found")
+
+
+def _response_section_headings(at) -> list[str]:
+    headings = []
+    for item in at.markdown:
+        value = str(item.value).strip()
+        normalized = value.strip("*")
+        if normalized in _RESPONSE_CARD_SECTION_HEADINGS:
+            headings.append(normalized)
+    return headings
+
+
+def _markdown_texts(at) -> list[str]:
+    return [str(item.value) for item in at.markdown]
 
 
 @unittest.skipIf(AppTest is None, "streamlit AppTest or pandas is not installed")
@@ -70,6 +87,16 @@ class CommandBarAppTests(unittest.TestCase):
             msg=f"Expected success text not found. Successes: {success_texts}",
         )
 
+    def test_parse_query_renders_fixed_response_sections(self) -> None:
+        at = AppTest.from_string(_script()).run()
+        at.text_input(key="cn_command_input").input("调出博通最近20天数据")
+        at = _get_button(at, "cn_parse_btn").click().run()
+        self.assertFalse(at.exception)
+        self.assertEqual(
+            _response_section_headings(at),
+            list(_RESPONSE_CARD_SECTION_HEADINGS),
+        )
+
     def test_parse_unknown_command_shows_error(self) -> None:
         at = AppTest.from_string(_script()).run()
         at.text_input(key="cn_command_input").input("帮我查一下今天天气")
@@ -93,6 +120,29 @@ class CommandBarAppTests(unittest.TestCase):
             any("解析结果" in t for t in success_texts),
             msg=f"Expected success not found. Successes: {success_texts}",
         )
+
+    def test_compare_strength_command_does_not_crash(self) -> None:
+        at = AppTest.from_string(_script()).run()
+        at.text_input(key="cn_command_input").input("比较一下博通和英伟达最近20天强弱")
+        at = _get_button(at, "cn_parse_btn").click().run()
+        self.assertFalse(at.exception)
+        self.assertTrue(any("表格输出" in t for t in _markdown_texts(at)))
+
+    def test_query_volume_command_renders_table_output(self) -> None:
+        at = AppTest.from_string(_script()).run()
+        at.text_input(key="cn_command_input").input("只看博通最近20天成交量")
+        at = _get_button(at, "cn_parse_btn").click().run()
+        self.assertFalse(at.exception)
+        self.assertTrue(any("表格输出" in t for t in _markdown_texts(at)))
+
+    def test_stats_volume_average_command_renders_table_output(self) -> None:
+        at = AppTest.from_string(_script()).run()
+        at.text_input(key="cn_command_input").input("博通今天和最近20天平均成交量比怎么样")
+        at = _get_button(at, "cn_parse_btn").click().run()
+        self.assertFalse(at.exception)
+        text = "\n".join(_markdown_texts(at))
+        self.assertIn("表格输出", text)
+        self.assertIn("原始结果", text)
 
     def test_parse_review_command_shows_success(self) -> None:
         at = AppTest.from_string(_script()).run()
