@@ -8,7 +8,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-from ui.command_bar import _RESPONSE_CARD_SECTION_HEADINGS
+from ui.command_bar import (
+    _RESPONSE_CARD_SECTION_HEADINGS,
+    _SS_COMPARE_RESULT,
+    _SS_ROUTER_RESULT,
+)
 
 try:
     import pandas  # noqa: F401
@@ -51,6 +55,14 @@ def _response_section_headings(at) -> list[str]:
 
 def _markdown_texts(at) -> list[str]:
     return [str(item.value) for item in at.markdown]
+
+
+def _all_texts(at) -> str:
+    values = []
+    for collection_name in ("markdown", "caption", "success", "warning", "error"):
+        for item in getattr(at, collection_name, []):
+            values.append(str(item.value))
+    return "\n".join(values)
 
 
 @unittest.skipIf(AppTest is None, "streamlit AppTest or pandas is not installed")
@@ -143,6 +155,61 @@ class CommandBarAppTests(unittest.TestCase):
         text = "\n".join(_markdown_texts(at))
         self.assertIn("表格输出", text)
         self.assertIn("原始结果", text)
+
+    def test_stats_close_command_renders_stats_result(self) -> None:
+        at = AppTest.from_string(_script()).run()
+        at.text_input(key="cn_command_input").input("博通今天收盘价和最近20天平均收盘价对比")
+        at = _get_button(at, "cn_parse_btn").click().run()
+        self.assertFalse(at.exception)
+        self.assertEqual(at.session_state[_SS_ROUTER_RESULT]["primary_result"]["type"], "stats")
+        text = _all_texts(at)
+        self.assertIn("表格输出", text)
+        self.assertIn("最近 20 天均值样本", text)
+        self.assertNotIn("逐日对比", text)
+        self.assertNotIn("对齐数据", text)
+
+    def test_compare_then_stats_close_does_not_render_compare_payload(self) -> None:
+        at = AppTest.from_string(_script()).run()
+        at.text_input(key="cn_command_input").input("比较博通和英伟达最近20天收盘价走势")
+        at = _get_button(at, "cn_parse_btn").click().run()
+        self.assertFalse(at.exception)
+        self.assertIn(_SS_COMPARE_RESULT, at.session_state)
+
+        at.text_input(key="cn_command_input").input("博通今天收盘价和最近20天平均收盘价对比")
+        at = _get_button(at, "cn_parse_btn").click().run()
+        self.assertFalse(at.exception)
+        self.assertEqual(at.session_state[_SS_ROUTER_RESULT]["primary_result"]["type"], "stats")
+        self.assertNotIn(_SS_COMPARE_RESULT, at.session_state)
+        text = _all_texts(at)
+        self.assertIn("最近 20 天均值样本", text)
+        self.assertNotIn("比较对象", text)
+        self.assertNotIn("逐日对比", text)
+        self.assertNotIn("对齐数据", text)
+
+    def test_compare_then_stats_volume_does_not_render_compare_payload(self) -> None:
+        at = AppTest.from_string(_script()).run()
+        at.text_input(key="cn_command_input").input("比较一下博通和英伟达最近20天强弱")
+        at = _get_button(at, "cn_parse_btn").click().run()
+        self.assertFalse(at.exception)
+        self.assertIn(_SS_COMPARE_RESULT, at.session_state)
+
+        at.text_input(key="cn_command_input").input("博通今天和最近20天平均成交量比怎么样")
+        at = _get_button(at, "cn_parse_btn").click().run()
+        self.assertFalse(at.exception)
+        self.assertEqual(at.session_state[_SS_ROUTER_RESULT]["primary_result"]["type"], "stats")
+        self.assertNotIn(_SS_COMPARE_RESULT, at.session_state)
+        text = _all_texts(at)
+        self.assertIn("最近 20 天均值样本", text)
+        self.assertNotIn("比较对象", text)
+        self.assertNotIn("逐日对比", text)
+        self.assertNotIn("对齐数据", text)
+
+    def test_projection_command_still_renders_without_error(self) -> None:
+        at = AppTest.from_string(_script()).run()
+        at.text_input(key="cn_command_input").input("根据博通20天数据推演下一个交易日走势")
+        at = _get_button(at, "cn_parse_btn").click().run()
+        self.assertFalse(at.exception)
+        self.assertEqual(at.session_state[_SS_ROUTER_RESULT]["primary_result"]["type"], "projection")
 
     def test_parse_review_command_shows_success(self) -> None:
         at = AppTest.from_string(_script()).run()

@@ -36,6 +36,7 @@
 - 028 — `polish_and_guardrails_pack`
 - 034 — `conversation_result_renderer_mvp`
 - 035 — `projection_evidence_trace_mvp`
+- 037 — `ai_intent_parser_fallback_mvp`
 
 ## Handoff status rules
 
@@ -84,3 +85,4 @@
 | 033 | multi_step_tool_router_mvp | reviewer | done | 2026-04-13 | 137/137 tests pass; reviewer finding F1: parser/planner mismatch hides projection result for "看看...明天" inputs (query_data parsed but projection planned, _render_stored_result dispatches on wrong type); suggest fix in follow-up |
 | 034 | conversation_result_renderer_mvp | reviewer | blocked | 2026-04-13 | Review blocked: builder handoff missing and fixed answer-card sections not implemented; tests pass but do not cover required card structure |
 | 035 | projection_evidence_trace_mvp | tester | done | 2026-04-13 | Evidence trace added for projection/predict; reviewer follow-up fixes landed for memory_feedback gating and safe None handling; focused tests pass |
+| 037 | ai_intent_parser_fallback_mvp | builder | in-review | 2026-04-14 | 36 new tests pass; all 7 validation cases covered; safe degradation verified; see task_037_builder.md |

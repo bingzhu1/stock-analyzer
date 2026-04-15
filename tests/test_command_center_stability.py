@@ -26,12 +26,15 @@ from services.command_parser import ParsedTask, parse_command
 from ui.command_bar import (
     _PROJECTION_ERROR_NO_SYMBOL,
     _RESPONSE_CARD_SECTION_HEADINGS,
+    _SS_COMPARE_RESULT,
     _SS_LAST_INPUT,
     _SS_LAST_COMP_CTX,
     _SS_LAST_PROJ_CTX,
     _SS_PARSED,
+    _SS_PLAN,
     _SS_PROJ_ERROR,
     _SS_PROJ_RESULT,
+    _SS_ROUTER_RESULT,
     _build_compare_response_card,
     _build_projection_response_card,
     _build_query_response_card,
@@ -39,9 +42,12 @@ from ui.command_bar import (
     _render_intent_plan,
     _render_projection_result,
     _render_response_card,
+    _render_stored_result,
+    _sync_router_to_session,
     run_ai_explanation_command,
     run_projection_command,
 )
+from services.intent_planner import plan_intent
 
 try:
     import pandas  # noqa: F401
@@ -125,9 +131,16 @@ class _FakeStreamlit:
     def __init__(self) -> None:
         self.calls: list[str] = []
         self.in_expander = 0
+        self.session_state: dict[str, object] = {}
 
     def info(self, text: str) -> None:
         self.calls.append(f"info:{text}")
+
+    def success(self, text: str) -> None:
+        self.calls.append(f"success:{text}")
+
+    def error(self, text: str) -> None:
+        self.calls.append(f"error:{text}")
 
     def columns(self, count: int) -> list[_FakeColumn]:
         self.calls.append(f"columns:{count}")
@@ -257,6 +270,95 @@ class SessionStateKeyTests(unittest.TestCase):
             _SS_LAST_COMP_CTX,
         ]
         self.assertEqual(len(keys), len(set(keys)))
+
+
+class CommandResultIsolationTests(unittest.TestCase):
+    def test_sync_does_not_rehydrate_prior_compare_context_for_stats(self) -> None:
+        from ui import command_bar
+
+        fake_st = _FakeStreamlit()
+        old_compare = {
+            "symbols": ["NVDA", "AVGO"],
+            "field": "Close",
+            "stats": {"total": 20, "matched": 10, "mismatched": 10, "match_rate": 50.0},
+        }
+        stats_data = {
+            "symbol": "AVGO",
+            "field": "Close",
+            "lookback_days": 20,
+            "operation": "today_vs_average",
+            "today_value": 730.0,
+            "average_value": 720.0,
+            "absolute_diff": 10.0,
+            "pct_diff": 1.39,
+        }
+        router_result = {
+            "steps_executed": [
+                {"step": 1, "type": "stats", "status": "success", "result": stats_data},
+            ],
+            "primary_result": {"type": "stats", "data": stats_data},
+            "session_ctx": {
+                "latest_compare_result": old_compare,
+                "latest_stats_result": stats_data,
+            },
+            "warnings": [],
+        }
+
+        with patch.object(command_bar, "st", fake_st):
+            _sync_router_to_session(router_result)
+
+        self.assertNotIn(_SS_COMPARE_RESULT, fake_st.session_state)
+        self.assertEqual(fake_st.session_state.get(_SS_LAST_COMP_CTX), None)
+
+    def test_router_primary_stats_wins_over_compare_parsed_type(self) -> None:
+        from ui import command_bar
+
+        fake_st = _FakeStreamlit()
+        old_compare = {
+            "symbols": ["NVDA", "AVGO"],
+            "field": "Close",
+            "stats": {"total": 20, "matched": 10, "mismatched": 10, "match_rate": 50.0},
+            "comparison_df": pd.DataFrame({"Date": ["2026-01-01"], "match": [True]}),
+            "aligned_df": pd.DataFrame({"Date": ["2026-01-01"], "AVGO_Close": [1.0], "NVDA_Close": [2.0]}),
+        }
+        stats_data = {
+            "symbol": "AVGO",
+            "field": "Close",
+            "lookback_days": 20,
+            "operation": "today_vs_average",
+            "today_value": 730.0,
+            "average_value": 720.0,
+            "absolute_diff": 10.0,
+            "pct_diff": 1.39,
+            "raw_table": pd.DataFrame({"Date": ["2026-01-01"], "Close": [730.0]}),
+            "raw_table_label": "最近 20 天均值样本 + 今日原始表格",
+        }
+        text = "博通今天收盘价和最近20天平均收盘价对比"
+        fake_st.session_state.update({
+            _SS_PARSED: parse_command(text),
+            _SS_PLAN: plan_intent(text),
+            _SS_ROUTER_RESULT: {
+                "steps_executed": [
+                    {"step": 1, "type": "stats", "status": "success", "result": stats_data},
+                ],
+                "primary_result": {"type": "stats", "data": stats_data},
+                "aux_results": {},
+                "session_ctx": {"latest_compare_result": old_compare, "latest_stats_result": stats_data},
+                "warnings": [],
+            },
+            _SS_COMPARE_RESULT: old_compare,
+        })
+
+        with patch.object(command_bar, "st", fake_st):
+            _render_stored_result()
+
+        rendered = "\n".join(fake_st.calls)
+        self.assertIn("AVGO 收盘价 今日值", rendered)
+        self.assertIn("近 20 日均值", rendered)
+        self.assertIn("最近 20 天均值样本 + 今日原始表格", rendered)
+        self.assertNotIn("比较对象", rendered)
+        self.assertNotIn("逐日对比", rendered)
+        self.assertNotIn("对齐数据", rendered)
 
 
 class AIExplanationCommandTests(unittest.TestCase):

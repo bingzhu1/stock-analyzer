@@ -13,10 +13,10 @@ from services.ai_summary import (
     build_projection_ai_explanation,
     build_risk_ai_explanation,
 )
-from services.command_parser import ParsedTask, parse_command
+from services.command_parser import ParsedTask
 from services.comparison_engine import compare_field, is_categorical_field
 from services.data_query import load_symbol_data
-from services.intent_planner import plan_intent
+from services.ai_intent_parser import parse_with_ai_fallback
 from services.openai_client import OpenAIClientError
 from services.tool_router import route_plan
 from services.multi_symbol_view import build_aligned_view
@@ -428,14 +428,14 @@ def _base_understanding(
     if not raw_text and isinstance(plan, dict):
         raw_text = str(plan.get("raw_text", ""))
     task_label = TASK_TYPE_LABELS.get(task_type, task_type)
-    plan_intent = plan.get("primary_intent") if isinstance(plan, dict) else None
+    plan_display = (plan.get("planner") or plan.get("primary_intent")) if isinstance(plan, dict) else None
     parsed_symbols = list(getattr(parsed, "symbols", []) or []) if parsed is not None else []
     parsed_fields = list(getattr(parsed, "fields", []) or []) if parsed is not None else []
     syms = symbols or parsed_symbols or (plan.get("symbols", []) if isinstance(plan, dict) else [])
     flds = fields or parsed_fields or (plan.get("fields", []) if isinstance(plan, dict) else [])
     lines = [
         f"原始输入：{raw_text or '—'}",
-        f"识别任务：{task_label}" + (f" / planner: {plan_intent}" if plan_intent else ""),
+        f"识别任务：{task_label}" + (f" / planner: {plan_display}" if plan_display else ""),
         f"标的：{'、'.join(syms) if syms else '—'}",
         f"时间窗口：{_window_display(parsed, plan)}",
         f"字段：{_field_display(flds)}",
@@ -968,21 +968,30 @@ def _sync_router_to_session(router_result: dict[str, Any]) -> None:
     """Sync router session_ctx results back to individual session-state keys."""
     if not isinstance(router_result, dict):
         return
-    ctx = router_result.get("session_ctx") or {}
-    if ctx.get("latest_projection_result") is not None:
-        st.session_state[_SS_PROJ_RESULT]   = ctx["latest_projection_result"]
-        st.session_state[_SS_PROJ_ERROR]     = None
-        st.session_state[_SS_LAST_PROJ_CTX] = ctx["latest_projection_result"]
-    if ctx.get("latest_query_result") is not None:
-        st.session_state[_SS_QUERY_RESULT]  = ctx["latest_query_result"]
-        st.session_state[_SS_QUERY_ERROR]    = None
-    if ctx.get("latest_compare_result") is not None:
-        st.session_state[_SS_COMPARE_RESULT] = ctx["latest_compare_result"]
-        st.session_state[_SS_COMPARE_ERROR]  = None
-        st.session_state[_SS_LAST_COMP_CTX] = ctx["latest_compare_result"]
-    if ctx.get("latest_ai_explanation") is not None:
-        st.session_state[_SS_AI_RESULT] = ctx["latest_ai_explanation"]
-        st.session_state[_SS_AI_ERROR]  = None
+
+    # Sync only results produced by this router run. session_ctx may also carry
+    # prior compare/projection results for AI follow-ups, and those must not be
+    # rehydrated as the current command's visible result.
+    for step in router_result.get("steps_executed") or []:
+        if step.get("status") != "success":
+            continue
+        result = step.get("result")
+        stype = step.get("type", "")
+        if stype == "projection" and result is not None:
+            st.session_state[_SS_PROJ_RESULT] = result
+            st.session_state[_SS_PROJ_ERROR] = None
+            st.session_state[_SS_LAST_PROJ_CTX] = result
+        elif stype == "query" and result is not None:
+            st.session_state[_SS_QUERY_RESULT] = result
+            st.session_state[_SS_QUERY_ERROR] = None
+        elif stype == "compare" and result is not None:
+            st.session_state[_SS_COMPARE_RESULT] = result
+            st.session_state[_SS_COMPARE_ERROR] = None
+            st.session_state[_SS_LAST_COMP_CTX] = result
+        elif stype in ("ai_explain_projection", "ai_explain_compare", "ai_explain_risk") and result is not None:
+            st.session_state[_SS_AI_RESULT] = result
+            st.session_state[_SS_AI_ERROR] = None
+
     # Propagate per-step failure messages for non-optional steps
     for step in router_result.get("steps_executed") or []:
         if step.get("status") == "failed" and step.get("error"):
@@ -993,6 +1002,25 @@ def _sync_router_to_session(router_result: dict[str, Any]) -> None:
                 st.session_state[_SS_QUERY_ERROR] = step["error"]
             elif stype == "compare":
                 st.session_state[_SS_COMPARE_ERROR] = step["error"]
+
+
+def _router_primary_type(router_result: dict[str, Any] | None) -> str | None:
+    if not isinstance(router_result, dict):
+        return None
+    primary = router_result.get("primary_result")
+    if not isinstance(primary, dict):
+        return None
+    rtype = primary.get("type")
+    return str(rtype) if rtype else None
+
+
+def _parsed_router_type(parsed: ParsedTask) -> str | None:
+    return {
+        "run_projection": "projection",
+        "query_data": "query",
+        "compare_data": "compare",
+        "ai_explanation": "ai_explanation",
+    }.get(parsed.task_type)
 
 
 def _render_stored_result() -> None:
@@ -1025,6 +1053,11 @@ def _render_stored_result() -> None:
         st.caption("（指令解析器标记为未识别，意图规划已执行）")
 
     st.success(f"**{CMD_RESULT_LABEL}**")
+
+    primary_type = _router_primary_type(router_result)
+    if primary_type and primary_type != _parsed_router_type(parsed):
+        _render_router_primary(router_result, parsed=parsed, plan=plan)
+        return
 
     # Task-specific execution result
     if parsed.task_type == "run_projection":
@@ -1121,8 +1154,7 @@ def render_command_bar() -> None:
             if not cmd_text or not cmd_text.strip():
                 st.warning("请先输入指令。")
             else:
-                parsed = parse_command(cmd_text)
-                plan = plan_intent(cmd_text)
+                parsed, plan, _ = parse_with_ai_fallback(cmd_text)
 
                 # Persist parse result; clear any prior execution results.
                 st.session_state[_SS_LAST_INPUT] = cmd_text
