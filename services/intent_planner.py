@@ -177,7 +177,10 @@ def plan_intent(text: str) -> dict[str, Any]:
             _step(
                 "query",
                 symbols=symbols,
-                fields=fields or ["Close"],
+                # Empty fields means "no explicit field requested" — the domain
+                # default (OHLCV) is applied downstream by load_symbol_data when
+                # tool_router converts [] → None.  Do not narrow to Close here.
+                fields=fields,
                 lookback_days=lookback_days,
                 source_command=raw_text,
             )

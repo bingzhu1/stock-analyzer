@@ -144,6 +144,23 @@ class IntentPlannerTests(unittest.TestCase):
 
     # ── Task 032: unsupported graceful fallback ───────────────────────────────
 
+    # ── Close-only default fix: generic queries must not narrow to Close ─────
+
+    def test_generic_query_no_field_returns_empty_fields(self) -> None:
+        """Generic data requests without explicit field must not default to Close.
+
+        fields=[] in the plan step is intentional — tool_router converts it to
+        None, which triggers load_symbol_data's OHLCV default.
+        """
+        for text in ("只看博通最近20天数据", "查看博通最近20天行情"):
+            with self.subTest(text=text):
+                plan = plan_intent(text)
+                self.assertTrue(plan["supported"])
+                self.assertEqual(plan["primary_intent"], "query")
+                step = plan["steps"][0]
+                self.assertNotEqual(step["fields"], ["Close"],
+                                    "query step must not narrow to Close-only")
+
     def test_empty_input_degrades_safely(self) -> None:
         plan = plan_intent("")
 

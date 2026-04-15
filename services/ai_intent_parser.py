@@ -68,6 +68,8 @@ _SYSTEM_PROMPT = """\
 字段说明：
 - "所有数据"、"全部数据"、"完整数据"、"OHLCV"、"K线数据" 均指 \
 ["Open", "High", "Low", "Close", "Volume"]
+- query 意图：如果用户没有明确指定字段（如"收盘价"、"成交量"），\
+默认返回 ["Open", "High", "Low", "Close", "Volume"]，不要只返回 ["Close"]
 - "今天 vs 最近N天平均..." 应优先解析为 stats，operation = "today_vs_average"
 - "比较/强弱/走势" 通常是 compare
 - "推演/明天怎么样/下一个交易日" 是 projection
