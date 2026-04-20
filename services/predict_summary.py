@@ -52,6 +52,7 @@ _RS_LABELS = {
     "weaker": "弱于",
     "neutral": "接近",
 }
+_MISSING_EXTERNAL_VALUES = {"", "none", "unavailable", "unknown", "null"}
 
 
 def _as_lines(values: Any, *, fallback: str | None = None) -> list[str]:
@@ -179,13 +180,20 @@ def _scan_context_lines(scan_result: dict[str, Any]) -> list[str]:
     return lines
 
 
+def _is_missing_external_value(value: Any) -> bool:
+    if value is None:
+        return True
+    return str(value).strip().lower() in _MISSING_EXTERNAL_VALUES
+
+
 def _format_rs(summary: dict[str, Any]) -> str:
     parts = []
     for key in ("vs_nvda", "vs_soxx", "vs_qqq"):
-        value = str(summary.get(key, ""))
-        if value and value != "unavailable":
-            label = _RS_LABELS.get(value, value)
-            parts.append(f"{label} {key.replace('vs_', '').upper()}")
+        value = summary.get(key, "")
+        if _is_missing_external_value(value):
+            continue
+        label = _RS_LABELS.get(str(value), str(value))
+        parts.append(f"{label} {key.replace('vs_', '').upper()}")
     return "、".join(parts) if parts else "暂无可用对照"
 
 
@@ -195,7 +203,7 @@ def _external_confirmation_missing(scan_result: dict[str, Any]) -> bool:
     if not rs_5d and not rs_day:
         return bool(scan_result)
     values = list(rs_5d.values()) + list(rs_day.values())
-    return bool(values) and all(str(value) in {"", "unavailable", "unknown"} for value in values)
+    return bool(values) and all(_is_missing_external_value(value) for value in values)
 
 
 def _risk_lines(
