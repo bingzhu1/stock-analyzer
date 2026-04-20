@@ -37,3 +37,28 @@ recommendation: keep Task 034 `blocked`, but narrow the blocker to documentation
 - Add missing builder handoff for Task 034.
 - Verify or extend AppTest/test coverage for the required fixed answer-card sections.
 - Only rewrite rendering code if those tests reveal a real structural gap.
+
+---
+
+## 2026-04-20 reviewer follow-up
+
+### findings
+- Builder handoff is now present for Task 034.
+- The existing committed tests already cover the task's required structure more directly than the earlier blocker description suggested:
+  - `tests/test_command_bar_apptest.py` asserts fixed response sections for a query path and exercises compare / stats / projection command-bar renders.
+  - `tests/test_command_center_stability.py` asserts fixed section ordering, shared outer card structure for projection / compare / query / stats, warnings rendering via the fixed response-card path, raw-table placement outside the raw-result expander, projection-card rendering, and rerender/repeated-parse stability behavior.
+- Based on code and test audit, I no longer see evidence that Task 034 is blocked on missing renderer functionality. The remaining gap is runtime test execution, i.e. tester closure.
+
+### severity
+- review outcome: PASS to tester
+- remaining risk: low, limited to runtime confirmation that the targeted tests still pass in the current branch state
+
+### why it matters
+- The blocker has effectively shifted from implementation uncertainty to execution evidence. That means the most efficient next step is tester validation, not further renderer changes.
+
+### suggested fix
+- No additional code change required from reviewer.
+- Proceed directly to tester validation for Task 034 focused command-bar / stability tests.
+
+### merge recommendation
+- Move Task 034 to `in-test`.
