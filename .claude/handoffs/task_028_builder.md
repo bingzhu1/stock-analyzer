@@ -33,3 +33,30 @@
 - No new core prediction/scanner features were added; this remains a polish and guardrail pass only.
 - Future unseen factor strings may still pass through as-is if no formatter mapping exists.
 - Existing unrelated dirty worktree files and local git ignore permission warning were not changed.
+
+---
+
+## 2026-04-20 follow-up
+
+### context scanned
+- `.claude/handoffs/task_028_reviewer.md`
+- `services/predict_summary.py`
+- `tests/test_predict_summary.py`
+
+### changed files
+- `services/predict_summary.py`
+- `tests/test_predict_summary.py`
+- `.claude/handoffs/task_028_builder.md`
+
+### implementation
+- Added `_is_missing_external_value()` to normalize missing peer-relative-strength values.
+- Updated `_format_rs()` to skip `None` / empty / unavailable-like values instead of rendering raw text such as `None NVDA`.
+- Updated `_external_confirmation_missing()` so all-missing peer confirmations, including Python `None`, correctly trigger the 外部确认不足 guardrail and high-risk downgrade.
+- Added a focused regression test for `vs_nvda=None`, `vs_soxx=None`, `vs_qqq=None`.
+
+### validation
+- Focused regression test was added for the exact reviewer-reported edge case.
+- Runtime test execution was not performed in this environment and still needs tester confirmation.
+
+### remaining risks
+- Tester still needs to confirm no wording regressions in readable summaries after the `None` normalization change.
