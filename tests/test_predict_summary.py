@@ -90,6 +90,26 @@ class PredictReadableSummaryTests(unittest.TestCase):
         self.assertEqual(summary["baseline_judgment"]["risk_level"], "高")
         self.assertTrue(any("外部确认不足" in line for line in summary["risk_reminders"]))
 
+    def test_none_external_confirmation_degrades_safely(self) -> None:
+        summary = build_predict_readable_summary(
+            {"final_bias": "bullish", "final_confidence": "high"},
+            scan_result={
+                "confirmation_state": "mixed",
+                "relative_strength_5d_summary": {
+                    "vs_nvda": None,
+                    "vs_soxx": None,
+                    "vs_qqq": None,
+                },
+            },
+        )
+
+        self.assertEqual(summary["baseline_judgment"]["risk_level"], "高")
+        self.assertTrue(any("外部确认不足" in line for line in summary["risk_reminders"]))
+        self.assertNotIn("None NVDA", summary["summary_text"])
+        self.assertNotIn("None SOXX", summary["summary_text"])
+        self.assertNotIn("None QQQ", summary["summary_text"])
+        self.assertNotIn("None", summary["summary_text"])
+
     def test_ai_polish_is_optional_and_secondary(self) -> None:
         summary = build_predict_readable_summary(
             {"final_bias": "bearish", "final_confidence": "medium"},
