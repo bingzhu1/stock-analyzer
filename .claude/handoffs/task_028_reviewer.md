@@ -49,3 +49,26 @@ Validation run:
   - `调出博通最近20天收盘价`
   - `比较博通和英伟达最近20天收盘价`
 - Reviewer edge spot-check - FAIL: all-`None` peer RS values render as `None NVDA / None SOXX / None QQQ` and keep risk `低`.
+
+---
+
+## 2026-04-20 reviewer follow-up
+
+### findings
+- Follow-up fix is now present in `services/predict_summary.py`: `_is_missing_external_value()` normalizes `None` / empty / unavailable-like peer RS values, `_format_rs()` skips them, and `_external_confirmation_missing()` now treats all-`None` confirmations as missing.
+- Focused regression coverage is present in `tests/test_predict_summary.py` for the exact reviewer-reported case (`vs_nvda=None`, `vs_soxx=None`, `vs_qqq=None`).
+- No new out-of-scope changes were introduced; the follow-up remains limited to predict summary guardrails and direct tests.
+
+### severity
+- review outcome: PASS to tester
+- remaining risk: low, limited to runtime confirmation of the focused tests
+
+### why it matters
+- The previously blocked user-visible failure mode is directly addressed: raw `None NVDA / None SOXX / None QQQ` leakage is now prevented, and the risk downgrade / 外部确认不足 reminder path is restored for missing external confirmation.
+
+### suggested fix
+- No further code change required from reviewer.
+- Proceed to tester validation for focused Task 028 checks.
+
+### merge recommendation
+- Move Task 028 to `in-test` if focused tester validation passes.
