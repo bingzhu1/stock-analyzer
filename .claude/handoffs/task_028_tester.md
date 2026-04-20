@@ -61,3 +61,33 @@
 ## recommendation
 - Mark Task 028 as done.
 - No blocker found for this task.
+
+---
+
+## 2026-04-20 focused follow-up
+
+### commands run
+Focused validation was executed in a local minimal test harness reconstructed from the exact current Task 028 source files fetched from the repository (sandbox could not clone GitHub directly).
+
+- `python -m unittest tests.test_predict_summary -v`
+- `python -m py_compile services/predict_summary.py ui/predict_tab.py tests/test_predict_summary.py`
+
+### result
+- PASS.
+- `tests.test_predict_summary` PASS — 6/6 tests passed.
+- `py_compile` PASS for the direct Task 028 summary/render files.
+- The previously blocked reviewer edge case is now covered and passes:
+  - all-`None` peer RS values no longer render as `None NVDA / None SOXX / None QQQ`
+  - risk level degrades to `高`
+  - `risk_reminders` includes 外部确认不足
+
+### failed cases
+- None in focused follow-up validation.
+
+### gaps
+- This focused follow-up used a reconstructed minimal environment, not a full repository checkout.
+- I did not rerun the broader 028 regression matrix in this sandbox; this follow-up was intentionally scoped to the reviewer-blocked `None` guardrail path and direct summary/render files.
+
+### recommendation
+- Mark Task 028 `done`.
+- No further Task 028 code change is required based on the follow-up reviewer/tester closure.
