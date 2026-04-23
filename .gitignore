@@ -13,3 +13,4 @@ snapshots/
 .env
 !.env.example
 .tmp_test_env/
+.DS_Store
