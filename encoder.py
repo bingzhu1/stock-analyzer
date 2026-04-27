@@ -25,6 +25,10 @@ REQUIRED_COLUMNS = [
     "V_ratio",
 ]
 
+# Optional columns added by the dual-price-track system; present only when
+# the source CSV contains "Adj Close".
+_OPTIONAL_COLUMNS = ["Adj Close", "PrevAdjClose", "C_adj"]
+
 CODE_COLUMNS = ["O_code", "H_code", "L_code", "C_code", "V_code", "Code"]
 
 
@@ -51,10 +55,13 @@ def load_feature_csv(csv_path: Path) -> pd.DataFrame:
             f"Missing required columns in {csv_path}: {', '.join(missing_columns)}"
         )
 
-    df = df[REQUIRED_COLUMNS].copy()
+    # Include optional dual-price columns when present
+    present_optional = [col for col in _OPTIONAL_COLUMNS if col in df.columns]
+    all_columns = REQUIRED_COLUMNS + present_optional
+    df = df[all_columns].copy()
     df["Date"] = pd.to_datetime(df["Date"])
 
-    numeric_columns = [col for col in REQUIRED_COLUMNS if col != "Date"]
+    numeric_columns = [col for col in all_columns if col != "Date"]
     for col in numeric_columns:
         df[col] = pd.to_numeric(df[col], errors="coerce")
 
@@ -147,12 +154,16 @@ def encode_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     result["O_code"] = result["O_gap"].apply(encode_o_gap).astype("Int64")
     result["H_code"] = result["H_up"].apply(encode_h_up).astype("Int64")
     result["L_code"] = result["L_down"].apply(encode_l_down).astype("Int64")
-    result["C_code"] = result["C_move"].apply(encode_c_move).astype("Int64")
+    # Use C_adj (dividend-adjusted daily return) when available; fall back to C_move
+    c_source = result["C_adj"] if "C_adj" in result.columns else result["C_move"]
+    result["C_code"] = c_source.apply(encode_c_move).astype("Int64")
     result["V_code"] = result["V_ratio"].apply(encode_v_ratio).astype("Int64")
     result["Code"] = result.apply(build_code_string, axis=1)
 
-    result["Date"] = result["Date"].dt.strftime("%Y-%m-%d")
-    return result[REQUIRED_COLUMNS + CODE_COLUMNS]
+    if hasattr(result["Date"], "dt"):
+        result["Date"] = result["Date"].dt.strftime("%Y-%m-%d")
+    present_optional = [col for col in _OPTIONAL_COLUMNS if col in result.columns]
+    return result[REQUIRED_COLUMNS + present_optional + CODE_COLUMNS]
 
 
 def encode_symbol(symbol: str) -> pd.DataFrame:

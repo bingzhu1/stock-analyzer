@@ -27,7 +27,7 @@ SUPPORTED_SYMBOLS: frozenset[str] = frozenset({"AVGO", "NVDA", "SOXX", "QQQ"})
 
 # Fields present in the coded CSV as-is
 _CSV_FIELDS: frozenset[str] = frozenset({
-    "Open", "High", "Low", "Close", "Volume", "Code",
+    "Open", "High", "Low", "Close", "Adj Close", "Volume", "Code",
 })
 
 # Fields computed on-the-fly by _enrich()
@@ -84,7 +84,9 @@ def _classify_stage(
 def _enrich(df: pd.DataFrame) -> pd.DataFrame:
     """Add derived columns to a coded DataFrame. Works in-place on a copy."""
     df = df.copy()
-    close = df["Close"].astype(float)
+    # Use Adj Close for return/position calculations when available
+    price_col = "Adj Close" if "Adj Close" in df.columns else "Close"
+    close = df[price_col].astype(float)
     high  = df["High"].astype(float)
     low   = df["Low"].astype(float)
     vol   = df["Volume"].astype(float)

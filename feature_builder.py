@@ -9,7 +9,9 @@ DATA_DIR = Path("data")
 ENRICHED_DIR = Path("enriched_data")
 SYMBOLS = ["AVGO", "NVDA", "SOXX", "QQQ"]
 
-BASE_COLUMNS = ["Date", "Open", "High", "Low", "Close", "Volume"]
+BASE_COLUMNS = ["Date", "Open", "High", "Low", "Close", "Adj Close", "Volume"]
+# Required subset of BASE_COLUMNS (Adj Close is optional)
+_REQUIRED_BASE = ["Date", "Open", "High", "Low", "Close", "Volume"]
 FEATURE_COLUMNS = [
     "PrevClose",
     "MA20_Volume",
@@ -18,6 +20,8 @@ FEATURE_COLUMNS = [
     "L_down",
     "C_move",
     "V_ratio",
+    "PrevAdjClose",
+    "C_adj",
 ]
 
 
@@ -38,17 +42,23 @@ def load_price_csv(csv_path: Path) -> pd.DataFrame:
 
     df = pd.read_csv(csv_path)
 
-    missing_columns = [col for col in BASE_COLUMNS if col not in df.columns]
+    # Only the non-optional base columns are required; Adj Close is optional
+    missing_columns = [col for col in _REQUIRED_BASE if col not in df.columns]
     if missing_columns:
         raise ValueError(
             f"Missing required columns in {csv_path}: {', '.join(missing_columns)}"
         )
 
-    df = df[BASE_COLUMNS].copy()
+    available_base = [col for col in BASE_COLUMNS if col in df.columns]
+    df = df[available_base].copy()
     df["Date"] = pd.to_datetime(df["Date"])
 
     for col in ["Open", "High", "Low", "Close", "Volume"]:
-        df[col] = pd.to_numeric(df[col], errors="coerce")
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    if "Adj Close" in df.columns:
+        df["Adj Close"] = pd.to_numeric(df["Adj Close"], errors="coerce")
 
     df = df.sort_values("Date").reset_index(drop=True)
     return df
@@ -58,17 +68,28 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     """Calculate basic daily features for later analysis."""
     result = df.copy()
 
+    # Use Adj Close for adjusted-return calculations when available;
+    # fall back to raw Close so older CSVs without Adj Close still work.
+    has_adj = "Adj Close" in result.columns and result["Adj Close"].notna().any()
+    adj_close_series = result["Adj Close"] if has_adj else result["Close"]
+
     result["PrevClose"] = result["Close"].shift(1)
+    result["PrevAdjClose"] = adj_close_series.shift(1)
     result["MA20_Volume"] = result["Volume"].shift(1).rolling(20).mean()
 
+    # O_gap: intraday/overnight structure — always raw price (Open vs prev raw Close)
     result["O_gap"] = (result["Open"] - result["PrevClose"]) / result["PrevClose"]
+    # Intraday structure — always raw OHLC
     result["H_up"] = (result["High"] - result["Open"]) / result["Open"]
     result["L_down"] = (result["Open"] - result["Low"]) / result["Open"]
     result["C_move"] = (result["Close"] - result["Open"]) / result["Open"]
     result["V_ratio"] = result["Volume"] / result["MA20_Volume"]
+    # Adjusted daily return for C_code encoding
+    result["C_adj"] = (adj_close_series - result["PrevAdjClose"]) / result["PrevAdjClose"]
 
     result["Date"] = result["Date"].dt.strftime("%Y-%m-%d")
-    return result[BASE_COLUMNS + FEATURE_COLUMNS]
+    available_base = [col for col in BASE_COLUMNS if col in result.columns]
+    return result[available_base + FEATURE_COLUMNS]
 
 
 def build_features_for_csv(csv_path: str | Path) -> pd.DataFrame:
