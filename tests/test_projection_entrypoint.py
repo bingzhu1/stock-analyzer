@@ -148,6 +148,14 @@ class ProjectionEntrypointTests(unittest.TestCase):
                         lookback_days=10,
                     )
 
+        three_systems = result.pop("projection_three_systems")
+        self.assertEqual(three_systems["kind"], "projection_three_systems")
+        self.assertEqual(three_systems["symbol"], "AVGO")
+        self.assertEqual(
+            set(three_systems.keys()),
+            {"kind", "symbol", "ready", "negative_system",
+             "record_02_projection_system", "confidence_evaluator"},
+        )
         self.assertEqual(result, packaged | {"projection_narrative": narrative})
         runner.assert_called_once_with(symbol="AVGO", lookback_days=10)
         packager.assert_called_once_with(

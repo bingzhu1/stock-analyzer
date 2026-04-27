@@ -6,7 +6,68 @@ from typing import Any
 
 from services.projection_orchestrator_v2 import run_projection_v2
 from services.projection_narrative_renderer import build_projection_narrative
+from services.projection_three_systems_renderer import (
+    build_projection_three_systems,
+)
 from services.projection_v2_adapter import build_projection_entrypoint_result
+
+
+_THREE_SYSTEMS_KIND = "projection_three_systems"
+
+
+def _degraded_projection_three_systems(
+    *, symbol: str, error_message: str
+) -> dict[str, Any]:
+    reason = f"projection_three_systems 降级：{error_message}"
+    return {
+        "kind": _THREE_SYSTEMS_KIND,
+        "symbol": symbol,
+        "ready": False,
+        "negative_system": {
+            "conclusion": "否定系统不可用，已按安全降级处理。",
+            "excluded_states": [],
+            "strength": "none",
+            "evidence": [],
+            "invalidating_conditions": ["否定系统不可用，无法给出失效条件。"],
+            "risk_notes": [reason],
+        },
+        "record_02_projection_system": {
+            "current_structure": "02 推演系统不可用，无法描述当前结构。",
+            "main_projection": "02 推演系统不可用，无法生成主推演。",
+            "five_state_projection": {},
+            "open_path_close_projection": {
+                "open": "02 推演系统不可用，开盘倾向暂不输出。",
+                "intraday": "02 推演系统不可用，日内结构暂不输出。",
+                "close": "02 推演系统不可用，收盘倾向暂不输出。",
+            },
+            "historical_sample_summary": "02 推演系统不可用，历史样本说明暂不输出。",
+            "peer_market_confirmation": "02 推演系统不可用，peers 确认暂不输出。",
+            "key_price_levels": [],
+            "risk_notes": [reason],
+            "final_summary": "02 推演系统不可用。",
+        },
+        "confidence_evaluator": {
+            "negative_system_confidence": {
+                "score": None,
+                "level": "unknown",
+                "reasoning": [reason],
+                "risks": [reason],
+            },
+            "projection_system_confidence": {
+                "score": None,
+                "level": "unknown",
+                "reasoning": [reason],
+                "risks": [reason],
+            },
+            "overall_confidence": {
+                "score": None,
+                "level": "unknown",
+                "reasoning": [reason],
+            },
+            "conflicts": [],
+            "reliability_warnings": [reason],
+        },
+    }
 
 
 def _degraded_projection_narrative(*, symbol: str, error_message: str) -> dict[str, Any]:
@@ -73,4 +134,19 @@ def run_projection_entrypoint(
         notes = result.get("notes")
         if isinstance(notes, list):
             notes.append(f"Projection narrative degraded: {message}")
+
+    try:
+        result["projection_three_systems"] = build_projection_three_systems(
+            projection_v2_raw=v2_raw,
+            symbol=normalized_symbol,
+        )
+    except Exception as exc:
+        message = str(exc).strip() or exc.__class__.__name__
+        result["projection_three_systems"] = _degraded_projection_three_systems(
+            symbol=normalized_symbol,
+            error_message=message,
+        )
+        notes = result.get("notes")
+        if isinstance(notes, list):
+            notes.append(f"Projection three-systems degraded: {message}")
     return result
