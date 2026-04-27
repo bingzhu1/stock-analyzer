@@ -69,6 +69,7 @@
 - 068 — `scheduler_and_automation_wrapper`
 - 069 — `avgo_1000day_replay_training_and_rule_summary`
 - 06Q — `projection_output_three_systems`
+- 070 — `dual_price_track_foundation`
 
 ## Handoff status rules
 
@@ -150,3 +151,4 @@
 | 068 | scheduler_and_automation_wrapper | tester | done | 2026-04-22 | Tester closeout passed: direct Task 068 tests confirmed stable daily_automation_run shape, correct pipeline / summary / dashboard orchestration, explicit artifact priority, partial-failure semantics, zero-safe headline precedence, and degraded-path stability (11/11); see task_068_tester.md |
 | 069 | avgo_1000day_replay_training_and_rule_summary | tester | done | 2026-04-22 | Tester closeout passed: direct Task 069 tests confirm stable avgo_1000day_training_report shape, correct ordered (T,T+1) sample construction, conservative malformed replay handling, explicit skipped validation tail semantics without paired inputs, degraded-path resilience, and aligned findings/insights outputs (10/10); see task_069_tester.md |
 | 06Q | projection_output_three_systems | builder | in-review | 2026-04-27 | Additive output-architecture refactor: new services/projection_three_systems_renderer.py exposes negative_system / record_02_projection_system / confidence_evaluator from existing v2_raw without changing rules; entrypoint adds projection_three_systems field with degraded fallback; 21 new tests pass + 56 related regression tests pass; see task_06Q_builder.md |
+| 070 | dual_price_track_foundation | builder | in-review | 2026-04-27 | Hard-rule extension: introduces parallel Adj Close track alongside raw price track. encoder.py C_code now uses dividend-adjusted return (C_adj) when present, falling back to raw C_move otherwise; O / H / L / V positions unchanged. data_fetcher / feature_builder / services/data_query updated additively. Backwards-compatible with legacy CSVs (no Adj Close → original C_code). 72 / 72 focused tests pass. See tasks/06S_H1_hard_rule_layer_audit.md for full hard-rule analysis. |

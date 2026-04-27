@@ -12,7 +12,7 @@ SYMBOLS = {
     "SOXX": "2016-05-18",
     "QQQ": "2016-05-18",
 }
-KEEP_COLUMNS = ["Date", "Open", "High", "Low", "Close", "Volume"]
+KEEP_COLUMNS = ["Date", "Open", "High", "Low", "Close", "Adj Close", "Volume"]
 
 
 def get_csv_path(symbol: str) -> Path:
@@ -34,6 +34,15 @@ def clean_price_data(df: pd.DataFrame) -> pd.DataFrame:
             first_col = cleaned.columns[0]
             cleaned = cleaned.rename(columns={first_col: "Date"})
 
+    # Normalise "Adj Close" column name variations from yfinance
+    for variant in ("adj close", "adjclose", "adj_close"):
+        if variant in [c.lower().replace(" ", "_") for c in cleaned.columns]:
+            # Find the actual column name and rename it
+            for col in cleaned.columns:
+                if col.lower().replace(" ", "_") == variant.replace(" ", "_") and col != "Adj Close":
+                    cleaned = cleaned.rename(columns={col: "Adj Close"})
+                    break
+
     cleaned["Date"] = pd.to_datetime(cleaned["Date"]).dt.strftime("%Y-%m-%d")
 
     available_columns = [col for col in KEEP_COLUMNS if col in cleaned.columns]
@@ -42,7 +51,7 @@ def clean_price_data(df: pd.DataFrame) -> pd.DataFrame:
     if "Volume" in cleaned.columns:
         cleaned["Volume"] = cleaned["Volume"].fillna(0).astype("int64")
 
-    for col in ["Open", "High", "Low", "Close"]:
+    for col in ["Open", "High", "Low", "Close", "Adj Close"]:
         if col in cleaned.columns:
             cleaned[col] = pd.to_numeric(cleaned[col], errors="coerce")
 
@@ -50,7 +59,8 @@ def clean_price_data(df: pd.DataFrame) -> pd.DataFrame:
     cleaned = cleaned.drop_duplicates(subset=["Date"])
     cleaned = cleaned.sort_values("Date").reset_index(drop=True)
 
-    return cleaned[KEEP_COLUMNS]
+    # Return only columns that exist (Adj Close may be absent for some symbols)
+    return cleaned[[col for col in KEEP_COLUMNS if col in cleaned.columns]]
 
 
 def fetch_history_from_yahoo(symbol: str, start_date: str) -> pd.DataFrame:
