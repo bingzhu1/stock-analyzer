@@ -68,6 +68,7 @@
 - 067 — `dashboard_rule_library_and_monitoring_view`
 - 068 — `scheduler_and_automation_wrapper`
 - 069 — `avgo_1000day_replay_training_and_rule_summary`
+- 06Q — `projection_output_three_systems`
 
 ## Handoff status rules
 
@@ -148,3 +149,4 @@
 | 067 | dashboard_rule_library_and_monitoring_view | tester | done | 2026-04-22 | Tester closeout passed: direct Task 067 tests confirm stable rule_dashboard_view shape, correct header/headline cards/core lists, strict export priority for active counts and active rules even when export values are 0/empty, daily-brief risk flag reuse, and degraded-path resilience for missing brief/export/promotion/adoption/drift and all-inputs-missing fallback (11/11); see task_067_tester.md |
 | 068 | scheduler_and_automation_wrapper | tester | done | 2026-04-22 | Tester closeout passed: direct Task 068 tests confirmed stable daily_automation_run shape, correct pipeline / summary / dashboard orchestration, explicit artifact priority, partial-failure semantics, zero-safe headline precedence, and degraded-path stability (11/11); see task_068_tester.md |
 | 069 | avgo_1000day_replay_training_and_rule_summary | tester | done | 2026-04-22 | Tester closeout passed: direct Task 069 tests confirm stable avgo_1000day_training_report shape, correct ordered (T,T+1) sample construction, conservative malformed replay handling, explicit skipped validation tail semantics without paired inputs, degraded-path resilience, and aligned findings/insights outputs (10/10); see task_069_tester.md |
+| 06Q | projection_output_three_systems | builder | in-review | 2026-04-27 | Additive output-architecture refactor: new services/projection_three_systems_renderer.py exposes negative_system / record_02_projection_system / confidence_evaluator from existing v2_raw without changing rules; entrypoint adds projection_three_systems field with degraded fallback; 21 new tests pass + 56 related regression tests pass; see task_06Q_builder.md |
