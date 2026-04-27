@@ -1,0 +1,270 @@
+{
+  "source": {
+    "details_path": "/Users/may/Desktop/stock-analyzer-main/logs/technical_features/false_bigup_bigdown_support_breakdown_3a/unsupported_source_breakdown_details.csv",
+    "summary_path": "/Users/may/Desktop/stock-analyzer-main/logs/technical_features/false_bigup_bigdown_support_breakdown_3a/unsupported_source_breakdown_summary.json",
+    "input_source": "task_3a_output"
+  },
+  "summary": {
+    "baseline": {},
+    "unsupported_total": 111,
+    "support_mix_counts": {
+      "raw_only": 55,
+      "raw_and_technical": 37,
+      "technical_only": 19
+    },
+    "taxonomy_counts": {
+      "history_support_thin_for_big_up_exclusion": 77,
+      "bullish_momentum_cluster": 50,
+      "macro_rebound_conflicts_with_big_up_exclusion": 47,
+      "bullish_trend_structure_cluster": 32,
+      "bearish_momentum_cluster": 19,
+      "bearish_trend_structure_cluster": 15,
+      "bullish_volume_confirmation": 13,
+      "dual_tail_conflict_against_big_down_exclusion": 8,
+      "post_earnings_repricing_risk": 8,
+      "tail_compression_context_against_big_down_exclusion": 8,
+      "tail_risk_expansion_against_big_down_exclusion": 8,
+      "bearish_volume_stress": 4
+    },
+    "display_tier_counts": {
+      "强证据": 171,
+      "数据缺口提醒": 77,
+      "辅助证据": 41
+    },
+    "strongest_tier_counts": {
+      "强证据": 98,
+      "数据缺口提醒": 10,
+      "辅助证据": 3
+    },
+    "catalog": [
+      {
+        "taxonomy_key": "bullish_momentum_cluster",
+        "count": 50,
+        "source_type": "technical",
+        "applies_to_exclusion": "大涨",
+        "display_tier": "strong_evidence",
+        "display_tier_cn": "强证据",
+        "title_cn": "技术动量偏强，不支持“否定大涨”",
+        "short_cn": "MACD、RSI 或短中期动量偏强，说明上涨延续条件仍在。",
+        "display_cn": "技术动量已经转强，说明价格仍具备继续上攻的条件，因此“否定大涨”缺少技术面支持。",
+        "source_labels": [
+          "macd_bullish",
+          "positive_momentum",
+          "rsi_bullish"
+        ]
+      },
+      {
+        "taxonomy_key": "macro_rebound_conflicts_with_big_up_exclusion",
+        "count": 47,
+        "source_type": "raw",
+        "applies_to_exclusion": "大涨",
+        "display_tier": "strong_evidence",
+        "display_tier_cn": "强证据",
+        "title_cn": "宏观反弹条件与“否定大涨”矛盾",
+        "short_cn": "宏观环境更像反弹或风险偏好修复，不支持继续强排除大涨。",
+        "display_cn": "新补全的宏观环境信号与原先“否定大涨”的判断方向相反，因此这个否定可靠性明显下降。",
+        "source_labels": [
+          "macro_contradiction"
+        ]
+      },
+      {
+        "taxonomy_key": "bullish_trend_structure_cluster",
+        "count": 32,
+        "source_type": "technical",
+        "applies_to_exclusion": "大涨",
+        "display_tier": "strong_evidence",
+        "display_tier_cn": "强证据",
+        "title_cn": "价格趋势结构偏强，不支持“否定大涨”",
+        "short_cn": "价格站上关键均线或已处于高位强势区间，趋势上不适合直接否定大涨。",
+        "display_cn": "价格位置和均线结构都偏强，这说明趋势仍在大涨可达区间内，原先否定大涨的技术依据不足。",
+        "source_labels": [
+          "trend_above_ma20_ma50",
+          "high_position"
+        ]
+      },
+      {
+        "taxonomy_key": "bearish_momentum_cluster",
+        "count": 19,
+        "source_type": "technical",
+        "applies_to_exclusion": "大跌",
+        "display_tier": "strong_evidence",
+        "display_tier_cn": "强证据",
+        "title_cn": "技术动量转弱，不支持“否定大跌”",
+        "short_cn": "MACD、RSI 或短中期动量偏弱，说明向下延续条件仍在。",
+        "display_cn": "技术动量已经偏空，价格仍有继续走弱的基础，因此“否定大跌”缺少技术面支撑。",
+        "source_labels": [
+          "macd_bearish",
+          "negative_momentum",
+          "rsi_bearish"
+        ]
+      },
+      {
+        "taxonomy_key": "bearish_trend_structure_cluster",
+        "count": 15,
+        "source_type": "technical",
+        "applies_to_exclusion": "大跌",
+        "display_tier": "strong_evidence",
+        "display_tier_cn": "强证据",
+        "title_cn": "价格趋势走弱，不支持“否定大跌”",
+        "short_cn": "价格落在关键均线下方或处于低位弱势区间，大跌仍需保留。",
+        "display_cn": "价格位置和趋势结构都偏弱，说明大跌风险仍处在可触发区间，原先否定大跌的技术依据不足。",
+        "source_labels": [
+          "trend_below_ma20_ma50",
+          "low_position"
+        ]
+      },
+      {
+        "taxonomy_key": "dual_tail_conflict_against_big_down_exclusion",
+        "count": 8,
+        "source_type": "raw",
+        "applies_to_exclusion": "大跌",
+        "display_tier": "strong_evidence",
+        "display_tier_cn": "强证据",
+        "title_cn": "系统同时压低双尾，说明“大跌否定”本身不稳",
+        "short_cn": "系统把大涨和大跌两端同时压低，说明尾部压缩过强，大跌不能再当成稳定排除项。",
+        "display_cn": "原系统同时压低双尾状态，本身就说明判断偏向过度收缩；在这种结构下，继续否定大跌并不可靠。",
+        "source_labels": [
+          "dual_extremes"
+        ]
+      },
+      {
+        "taxonomy_key": "bullish_volume_confirmation",
+        "count": 13,
+        "source_type": "technical",
+        "applies_to_exclusion": "大涨",
+        "display_tier": "supporting_evidence",
+        "display_tier_cn": "辅助证据",
+        "title_cn": "量能配合上行，削弱“否定大涨”",
+        "short_cn": "上涨伴随量能确认时，大涨并不能轻易被排除。",
+        "display_cn": "量能和价格同向配合，说明市场对上行有确认，不适合把大涨直接视为低概率事件。",
+        "source_labels": [
+          "volume_confirmation"
+        ]
+      },
+      {
+        "taxonomy_key": "post_earnings_repricing_risk",
+        "count": 8,
+        "source_type": "raw",
+        "applies_to_exclusion": "大涨",
+        "display_tier": "supporting_evidence",
+        "display_tier_cn": "辅助证据",
+        "title_cn": "财报后重定价窗口不适合强排除大涨",
+        "short_cn": "财报后窗口容易出现重新定价，直接否定大涨的把握会下降。",
+        "display_cn": "当前仍处于财报后重定价窗口，这类时段更容易出现方向重估，不适合把大涨当成强排除项。",
+        "source_labels": [
+          "post_earnings_window"
+        ]
+      },
+      {
+        "taxonomy_key": "tail_compression_context_against_big_down_exclusion",
+        "count": 8,
+        "source_type": "raw",
+        "applies_to_exclusion": "大跌",
+        "display_tier": "supporting_evidence",
+        "display_tier_cn": "辅助证据",
+        "title_cn": "震荡压缩结构削弱了“否定大跌”的可信度",
+        "short_cn": "预测偏向震荡且上行尾部也被压低，说明系统主要是在做双尾收缩，而不是有力地否定大跌。",
+        "display_cn": "这类案例更像整体尾部压缩，而不是有充分证据证明不会出现大跌，因此“大跌否定”只能视为弱结论。",
+        "source_labels": [
+          "predicted_neutral",
+          "p_big_up_compressed"
+        ]
+      },
+      {
+        "taxonomy_key": "tail_risk_expansion_against_big_down_exclusion",
+        "count": 8,
+        "source_type": "raw",
+        "applies_to_exclusion": "大跌",
+        "display_tier": "supporting_evidence",
+        "display_tier_cn": "辅助证据",
+        "title_cn": "波动与量能扩张提示尾部下跌风险仍在",
+        "short_cn": "高波动、危机环境或量能放大，说明尾部大跌风险没有被真正消除。",
+        "display_cn": "新补全数据提示波动和量能都在扩张，这种环境下尾部下跌风险仍然存在，不适合强排除大跌。",
+        "source_labels": [
+          "high_vol_or_crisis",
+          "volume_expansion",
+          "recent_volatility_expansion"
+        ]
+      },
+      {
+        "taxonomy_key": "bearish_volume_stress",
+        "count": 4,
+        "source_type": "technical",
+        "applies_to_exclusion": "大跌",
+        "display_tier": "supporting_evidence",
+        "display_tier_cn": "辅助证据",
+        "title_cn": "放量下行压力削弱“否定大跌”",
+        "short_cn": "下跌伴随放量时，尾部下跌风险不能被轻易排除。",
+        "display_cn": "量能放大同时价格承压，说明卖压真实存在，因此不适合把大跌直接排除。",
+        "source_labels": [
+          "volume_stress"
+        ]
+      },
+      {
+        "taxonomy_key": "history_support_thin_for_big_up_exclusion",
+        "count": 77,
+        "source_type": "raw",
+        "applies_to_exclusion": "大涨",
+        "display_tier": "data_gap_notice",
+        "display_tier_cn": "数据缺口提醒",
+        "title_cn": "历史样本对“否定大涨”支撑偏薄",
+        "short_cn": "可比历史样本不足，当前没有足够先例继续高置信排除大涨。",
+        "display_cn": "历史样本信心不足，说明这次“否定大涨”更像证据偏薄，而不是有强反证支持。",
+        "source_labels": [
+          "sample_confidence_invalidation"
+        ]
+      }
+    ],
+    "by_state": {
+      "大涨": {
+        "unsupported_total": 89,
+        "support_mix_counts": {
+          "raw_only": 51,
+          "raw_and_technical": 33,
+          "technical_only": 5
+        },
+        "taxonomy_counts": {
+          "history_support_thin_for_big_up_exclusion": 77,
+          "bullish_momentum_cluster": 50,
+          "macro_rebound_conflicts_with_big_up_exclusion": 47,
+          "bullish_trend_structure_cluster": 32,
+          "bullish_volume_confirmation": 13,
+          "post_earnings_repricing_risk": 8
+        },
+        "display_tier_counts": {
+          "强证据": 129,
+          "数据缺口提醒": 77,
+          "辅助证据": 21
+        },
+        "strongest_tier_counts": {
+          "强证据": 76,
+          "数据缺口提醒": 10,
+          "辅助证据": 3
+        }
+      },
+      "大跌": {
+        "unsupported_total": 22,
+        "support_mix_counts": {
+          "technical_only": 14,
+          "raw_and_technical": 4,
+          "raw_only": 4
+        },
+        "taxonomy_counts": {
+          "bearish_momentum_cluster": 19,
+          "bearish_trend_structure_cluster": 15,
+          "dual_tail_conflict_against_big_down_exclusion": 8,
+          "tail_compression_context_against_big_down_exclusion": 8,
+          "tail_risk_expansion_against_big_down_exclusion": 8,
+          "bearish_volume_stress": 4
+        },
+        "display_tier_counts": {
+          "强证据": 42,
+          "辅助证据": 20
+        },
+        "strongest_tier_counts": {
+          "强证据": 22
+        }
+      }
+    }
+  }
+}

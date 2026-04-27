@@ -1,0 +1,6032 @@
+[
+  {
+    "rule_id": "rule_20160705_22221_fix",
+    "created_from_date": "2016-07-05",
+    "used_from_date": "2016-07-06",
+    "rule_text": "Code=22221 时，预测震荡但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "22221"
+  },
+  {
+    "rule_id": "rule_20160706_21212_fix",
+    "created_from_date": "2016-07-06",
+    "used_from_date": "2016-07-07",
+    "rule_text": "Code=21212 时，预测收跌但实际震荡，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "21212"
+  },
+  {
+    "rule_id": "rule_20160707_22231_fix",
+    "created_from_date": "2016-07-07",
+    "used_from_date": "2016-07-08",
+    "rule_text": "Code=22231 时，预测收跌但实际震荡，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "22231"
+  },
+  {
+    "rule_id": "rule_20160708_33131_fix",
+    "created_from_date": "2016-07-08",
+    "used_from_date": "2016-07-09",
+    "rule_text": "Code=33131 时，预测收跌但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "33131"
+  },
+  {
+    "rule_id": "rule_20160711_43153_fix",
+    "created_from_date": "2016-07-11",
+    "used_from_date": "2016-07-12",
+    "rule_text": "Code=43153 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "43153"
+  },
+  {
+    "rule_id": "rule_20160712_42242_fix",
+    "created_from_date": "2016-07-12",
+    "used_from_date": "2016-07-13",
+    "rule_text": "Code=42242 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "42242"
+  },
+  {
+    "rule_id": "rule_20160713_42141",
+    "created_from_date": "2016-07-13",
+    "used_from_date": "2016-07-14",
+    "rule_text": "Code=42141 时，次日收跌准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "42141"
+  },
+  {
+    "rule_id": "rule_20160714_32221_fix",
+    "created_from_date": "2016-07-14",
+    "used_from_date": "2016-07-15",
+    "rule_text": "Code=32221 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32221"
+  },
+  {
+    "rule_id": "rule_20160715_42152",
+    "created_from_date": "2016-07-15",
+    "used_from_date": "2016-07-16",
+    "rule_text": "Code=42152 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "42152"
+  },
+  {
+    "rule_id": "rule_20160719_42141_fix",
+    "created_from_date": "2016-07-19",
+    "used_from_date": "2016-07-20",
+    "rule_text": "Code=42141 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "42141"
+  },
+  {
+    "rule_id": "rule_20160720_21221_fix",
+    "created_from_date": "2016-07-20",
+    "used_from_date": "2016-07-21",
+    "rule_text": "Code=21221 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "21221"
+  },
+  {
+    "rule_id": "rule_20160721_42141_fix",
+    "created_from_date": "2016-07-21",
+    "used_from_date": "2016-07-22",
+    "rule_text": "Code=42141 时，预测收涨但实际收跌，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "42141"
+  },
+  {
+    "rule_id": "rule_20160722_31322_fix",
+    "created_from_date": "2016-07-22",
+    "used_from_date": "2016-07-23",
+    "rule_text": "Code=31322 时，预测震荡但实际震荡，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31322"
+  },
+  {
+    "rule_id": "rule_20160725_21332",
+    "created_from_date": "2016-07-25",
+    "used_from_date": "2016-07-26",
+    "rule_text": "Code=21332 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "21332"
+  },
+  {
+    "rule_id": "rule_20160726_32131_fix",
+    "created_from_date": "2016-07-26",
+    "used_from_date": "2016-07-27",
+    "rule_text": "Code=32131 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32131"
+  },
+  {
+    "rule_id": "rule_20160727_42254_fix",
+    "created_from_date": "2016-07-27",
+    "used_from_date": "2016-07-28",
+    "rule_text": "Code=42254 时，预测收涨但实际收涨，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "42254"
+  },
+  {
+    "rule_id": "rule_20160728_42344_fix",
+    "created_from_date": "2016-07-28",
+    "used_from_date": "2016-07-29",
+    "rule_text": "Code=42344 时，预测收涨但实际收跌，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "42344"
+  },
+  {
+    "rule_id": "rule_20160729_32222_fix",
+    "created_from_date": "2016-07-29",
+    "used_from_date": "2016-07-30",
+    "rule_text": "Code=32222 时，预测收涨但实际收跌，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32222"
+  },
+  {
+    "rule_id": "rule_20160802_32242",
+    "created_from_date": "2016-08-02",
+    "used_from_date": "2016-08-03",
+    "rule_text": "Code=32242 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "32242"
+  },
+  {
+    "rule_id": "rule_20160803_32233_fix",
+    "created_from_date": "2016-08-03",
+    "used_from_date": "2016-08-04",
+    "rule_text": "Code=32233 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32233"
+  },
+  {
+    "rule_id": "rule_20160804_22142_fix",
+    "created_from_date": "2016-08-04",
+    "used_from_date": "2016-08-05",
+    "rule_text": "Code=22142 时，预测震荡但实际收涨，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "22142"
+  },
+  {
+    "rule_id": "rule_20160805_33143_fix",
+    "created_from_date": "2016-08-05",
+    "used_from_date": "2016-08-06",
+    "rule_text": "Code=33143 时，预测收涨但实际收涨，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "33143"
+  },
+  {
+    "rule_id": "rule_20160808_42144_fix",
+    "created_from_date": "2016-08-08",
+    "used_from_date": "2016-08-09",
+    "rule_text": "Code=42144 时，预测收涨但实际收跌，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "42144"
+  },
+  {
+    "rule_id": "rule_20160810_33145_fix",
+    "created_from_date": "2016-08-10",
+    "used_from_date": "2016-08-11",
+    "rule_text": "Code=33145 时，预测收涨但实际震荡，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "33145"
+  },
+  {
+    "rule_id": "rule_20160815_31132_fix",
+    "created_from_date": "2016-08-15",
+    "used_from_date": "2016-08-16",
+    "rule_text": "Code=31132 时，预测收涨但实际收涨，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31132"
+  },
+  {
+    "rule_id": "rule_20160816_42244_fix",
+    "created_from_date": "2016-08-16",
+    "used_from_date": "2016-08-17",
+    "rule_text": "Code=42244 时，预测收涨但实际收跌，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "42244"
+  },
+  {
+    "rule_id": "rule_20160817_31323_fix",
+    "created_from_date": "2016-08-17",
+    "used_from_date": "2016-08-18",
+    "rule_text": "Code=31323 时，预测收涨但实际震荡，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31323"
+  },
+  {
+    "rule_id": "rule_20160819_32143",
+    "created_from_date": "2016-08-19",
+    "used_from_date": "2016-08-20",
+    "rule_text": "Code=32143 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "32143"
+  },
+  {
+    "rule_id": "rule_20160823_32242",
+    "created_from_date": "2016-08-23",
+    "used_from_date": "2016-08-24",
+    "rule_text": "Code=32242 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "32242"
+  },
+  {
+    "rule_id": "rule_20160824_31143_fix",
+    "created_from_date": "2016-08-24",
+    "used_from_date": "2016-08-25",
+    "rule_text": "Code=31143 时，预测收涨但实际收跌，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31143"
+  },
+  {
+    "rule_id": "rule_20160825_31323_fix",
+    "created_from_date": "2016-08-25",
+    "used_from_date": "2016-08-26",
+    "rule_text": "Code=31323 时，预测收涨但实际震荡，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31323"
+  },
+  {
+    "rule_id": "rule_20160826_32133",
+    "created_from_date": "2016-08-26",
+    "used_from_date": "2016-08-27",
+    "rule_text": "Code=32133 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "32133"
+  },
+  {
+    "rule_id": "rule_20160829_32244_fix",
+    "created_from_date": "2016-08-29",
+    "used_from_date": "2016-08-30",
+    "rule_text": "Code=32244 时，预测收涨但实际震荡，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32244"
+  },
+  {
+    "rule_id": "rule_20160830_32132_fix",
+    "created_from_date": "2016-08-30",
+    "used_from_date": "2016-08-31",
+    "rule_text": "Code=32132 时，预测收涨但实际震荡，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32132"
+  },
+  {
+    "rule_id": "rule_20160831_32234_fix",
+    "created_from_date": "2016-08-31",
+    "used_from_date": "2016-09-01",
+    "rule_text": "Code=32234 时，预测收涨但实际震荡，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32234"
+  },
+  {
+    "rule_id": "rule_20160901_32235_fix",
+    "created_from_date": "2016-09-01",
+    "used_from_date": "2016-09-02",
+    "rule_text": "Code=32235 时，预测收涨但实际震荡，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32235"
+  },
+  {
+    "rule_id": "rule_20160902_31235_fix",
+    "created_from_date": "2016-09-02",
+    "used_from_date": "2016-09-03",
+    "rule_text": "Code=31235 时，预测收涨但实际收跌，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31235"
+  },
+  {
+    "rule_id": "rule_20160906_31415_fix",
+    "created_from_date": "2016-09-06",
+    "used_from_date": "2016-09-07",
+    "rule_text": "Code=31415 时，预测收涨但实际收跌，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31415"
+  },
+  {
+    "rule_id": "rule_20160909_31232_fix",
+    "created_from_date": "2016-09-09",
+    "used_from_date": "2016-09-10",
+    "rule_text": "Code=31232 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31232"
+  },
+  {
+    "rule_id": "rule_20160912_21415_fix",
+    "created_from_date": "2016-09-12",
+    "used_from_date": "2016-09-13",
+    "rule_text": "Code=21415 时，预测收涨但实际收涨，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "21415"
+  },
+  {
+    "rule_id": "rule_20160915_33154",
+    "created_from_date": "2016-09-15",
+    "used_from_date": "2016-09-16",
+    "rule_text": "Code=33154 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "33154"
+  },
+  {
+    "rule_id": "rule_20160916_33254_fix",
+    "created_from_date": "2016-09-16",
+    "used_from_date": "2016-09-17",
+    "rule_text": "Code=33254 时，预测收涨但实际收跌，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "33254"
+  },
+  {
+    "rule_id": "rule_20160919_31225",
+    "created_from_date": "2016-09-19",
+    "used_from_date": "2016-09-20",
+    "rule_text": "Code=31225 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "31225"
+  },
+  {
+    "rule_id": "rule_20160920_32232_fix",
+    "created_from_date": "2016-09-20",
+    "used_from_date": "2016-09-21",
+    "rule_text": "Code=32232 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32232"
+  },
+  {
+    "rule_id": "rule_20160922_32141_fix",
+    "created_from_date": "2016-09-22",
+    "used_from_date": "2016-09-23",
+    "rule_text": "Code=32141 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32141"
+  },
+  {
+    "rule_id": "rule_20160923_41321_fix",
+    "created_from_date": "2016-09-23",
+    "used_from_date": "2016-09-24",
+    "rule_text": "Code=41321 时，预测震荡但实际收跌，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "41321"
+  },
+  {
+    "rule_id": "rule_20160926_31322",
+    "created_from_date": "2016-09-26",
+    "used_from_date": "2016-09-27",
+    "rule_text": "Code=31322 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "31322"
+  },
+  {
+    "rule_id": "rule_20160927_22233",
+    "created_from_date": "2016-09-27",
+    "used_from_date": "2016-09-28",
+    "rule_text": "Code=22233 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "22233"
+  },
+  {
+    "rule_id": "rule_20160928_33252_fix",
+    "created_from_date": "2016-09-28",
+    "used_from_date": "2016-09-29",
+    "rule_text": "Code=33252 时，预测收涨但实际震荡，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "33252"
+  },
+  {
+    "rule_id": "rule_20160930_33143",
+    "created_from_date": "2016-09-30",
+    "used_from_date": "2016-10-01",
+    "rule_text": "Code=33143 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "33143"
+  },
+  {
+    "rule_id": "rule_20161003_32133_fix",
+    "created_from_date": "2016-10-03",
+    "used_from_date": "2016-10-04",
+    "rule_text": "Code=32133 时，预测收涨但实际收跌，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32133"
+  },
+  {
+    "rule_id": "rule_20161005_31221_fix",
+    "created_from_date": "2016-10-05",
+    "used_from_date": "2016-10-06",
+    "rule_text": "Code=31221 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31221"
+  },
+  {
+    "rule_id": "rule_20161006_43152_fix",
+    "created_from_date": "2016-10-06",
+    "used_from_date": "2016-10-07",
+    "rule_text": "Code=43152 时，预测收涨但实际震荡，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "43152"
+  },
+  {
+    "rule_id": "rule_20161007_32231",
+    "created_from_date": "2016-10-07",
+    "used_from_date": "2016-10-08",
+    "rule_text": "Code=32231 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "32231"
+  },
+  {
+    "rule_id": "rule_20161010_31231",
+    "created_from_date": "2016-10-10",
+    "used_from_date": "2016-10-11",
+    "rule_text": "Code=31231 时，次日震荡准确率高（本次得分100）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "31231"
+  },
+  {
+    "rule_id": "rule_20161011_32231_fix",
+    "created_from_date": "2016-10-11",
+    "used_from_date": "2016-10-12",
+    "rule_text": "Code=32231 时，预测收涨但实际收跌，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32231"
+  },
+  {
+    "rule_id": "rule_20161012_31412",
+    "created_from_date": "2016-10-12",
+    "used_from_date": "2016-10-13",
+    "rule_text": "Code=31412 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "31412"
+  },
+  {
+    "rule_id": "rule_20161013_31232_fix",
+    "created_from_date": "2016-10-13",
+    "used_from_date": "2016-10-14",
+    "rule_text": "Code=31232 时，预测震荡但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31232"
+  },
+  {
+    "rule_id": "rule_20161014_22222_fix",
+    "created_from_date": "2016-10-14",
+    "used_from_date": "2016-10-15",
+    "rule_text": "Code=22222 时，预测收涨但实际收涨，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "22222"
+  },
+  {
+    "rule_id": "rule_20161019_42141_fix",
+    "created_from_date": "2016-10-19",
+    "used_from_date": "2016-10-20",
+    "rule_text": "Code=42141 时，预测收涨但实际震荡，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "42141"
+  },
+  {
+    "rule_id": "rule_20161021_33142_fix",
+    "created_from_date": "2016-10-21",
+    "used_from_date": "2016-10-22",
+    "rule_text": "Code=33142 时，预测收涨但实际震荡，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "33142"
+  },
+  {
+    "rule_id": "rule_20161024_22231_fix",
+    "created_from_date": "2016-10-24",
+    "used_from_date": "2016-10-25",
+    "rule_text": "Code=22231 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "22231"
+  },
+  {
+    "rule_id": "rule_20161025_43152_fix",
+    "created_from_date": "2016-10-25",
+    "used_from_date": "2016-10-26",
+    "rule_text": "Code=43152 时，预测收涨但实际收跌，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "43152"
+  },
+  {
+    "rule_id": "rule_20161026_31223_fix",
+    "created_from_date": "2016-10-26",
+    "used_from_date": "2016-10-27",
+    "rule_text": "Code=31223 时，预测收涨但实际震荡，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31223"
+  },
+  {
+    "rule_id": "rule_20161027_23233_fix",
+    "created_from_date": "2016-10-27",
+    "used_from_date": "2016-10-28",
+    "rule_text": "Code=23233 时，预测收涨但实际震荡，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "23233"
+  },
+  {
+    "rule_id": "rule_20161028_42233_fix",
+    "created_from_date": "2016-10-28",
+    "used_from_date": "2016-10-29",
+    "rule_text": "Code=42233 时，预测震荡但实际收跌，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "42233"
+  },
+  {
+    "rule_id": "rule_20161101_32243_fix",
+    "created_from_date": "2016-11-01",
+    "used_from_date": "2016-11-02",
+    "rule_text": "Code=32243 时，预测收涨但实际收跌，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32243"
+  },
+  {
+    "rule_id": "rule_20161102_31324_fix",
+    "created_from_date": "2016-11-02",
+    "used_from_date": "2016-11-03",
+    "rule_text": "Code=31324 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31324"
+  },
+  {
+    "rule_id": "rule_20161103_52355",
+    "created_from_date": "2016-11-03",
+    "used_from_date": "2016-11-04",
+    "rule_text": "Code=52355 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "52355"
+  },
+  {
+    "rule_id": "rule_20161107_23133",
+    "created_from_date": "2016-11-07",
+    "used_from_date": "2016-11-08",
+    "rule_text": "Code=23133 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "23133"
+  },
+  {
+    "rule_id": "rule_20161108_43154",
+    "created_from_date": "2016-11-08",
+    "used_from_date": "2016-11-09",
+    "rule_text": "Code=43154 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "43154"
+  },
+  {
+    "rule_id": "rule_20161109_32232_fix",
+    "created_from_date": "2016-11-09",
+    "used_from_date": "2016-11-10",
+    "rule_text": "Code=32232 时，预测震荡但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32232"
+  },
+  {
+    "rule_id": "rule_20161110_13115_fix",
+    "created_from_date": "2016-11-10",
+    "used_from_date": "2016-11-11",
+    "rule_text": "Code=13115 时，预测收涨但实际收跌，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "13115"
+  },
+  {
+    "rule_id": "rule_20161111_31515",
+    "created_from_date": "2016-11-11",
+    "used_from_date": "2016-11-12",
+    "rule_text": "Code=31515 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "31515"
+  },
+  {
+    "rule_id": "rule_20161114_33234_fix",
+    "created_from_date": "2016-11-14",
+    "used_from_date": "2016-11-15",
+    "rule_text": "Code=33234 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "33234"
+  },
+  {
+    "rule_id": "rule_20161115_22314_fix",
+    "created_from_date": "2016-11-15",
+    "used_from_date": "2016-11-16",
+    "rule_text": "Code=22314 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "22314"
+  },
+  {
+    "rule_id": "rule_20161118_32232_fix",
+    "created_from_date": "2016-11-18",
+    "used_from_date": "2016-11-19",
+    "rule_text": "Code=32232 时，预测震荡但实际收涨，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32232"
+  },
+  {
+    "rule_id": "rule_20161121_32142_fix",
+    "created_from_date": "2016-11-21",
+    "used_from_date": "2016-11-22",
+    "rule_text": "Code=32142 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32142"
+  },
+  {
+    "rule_id": "rule_20161128_31231_fix",
+    "created_from_date": "2016-11-28",
+    "used_from_date": "2016-11-29",
+    "rule_text": "Code=31231 时，预测震荡但实际收跌，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31231"
+  },
+  {
+    "rule_id": "rule_20161129_32223",
+    "created_from_date": "2016-11-29",
+    "used_from_date": "2016-11-30",
+    "rule_text": "Code=32223 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "32223"
+  },
+  {
+    "rule_id": "rule_20161130_33132_fix",
+    "created_from_date": "2016-11-30",
+    "used_from_date": "2016-12-01",
+    "rule_text": "Code=33132 时，预测收涨但实际收跌，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "33132"
+  },
+  {
+    "rule_id": "rule_20161202_31515",
+    "created_from_date": "2016-12-02",
+    "used_from_date": "2016-12-03",
+    "rule_text": "Code=31515 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "31515"
+  },
+  {
+    "rule_id": "rule_20161206_41342",
+    "created_from_date": "2016-12-06",
+    "used_from_date": "2016-12-07",
+    "rule_text": "Code=41342 时，次日收跌准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "41342"
+  },
+  {
+    "rule_id": "rule_20161208_33254_fix",
+    "created_from_date": "2016-12-08",
+    "used_from_date": "2016-12-09",
+    "rule_text": "Code=33254 时，预测收涨但实际收涨，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "33254"
+  },
+  {
+    "rule_id": "rule_20161209_42244_fix",
+    "created_from_date": "2016-12-09",
+    "used_from_date": "2016-12-10",
+    "rule_text": "Code=42244 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "42244"
+  },
+  {
+    "rule_id": "rule_20161212_52355_fix",
+    "created_from_date": "2016-12-12",
+    "used_from_date": "2016-12-13",
+    "rule_text": "Code=52355 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "52355"
+  },
+  {
+    "rule_id": "rule_20161213_23224",
+    "created_from_date": "2016-12-13",
+    "used_from_date": "2016-12-14",
+    "rule_text": "Code=23224 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "23224"
+  },
+  {
+    "rule_id": "rule_20161214_33145_fix",
+    "created_from_date": "2016-12-14",
+    "used_from_date": "2016-12-15",
+    "rule_text": "Code=33145 时，预测收涨但实际震荡，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "33145"
+  },
+  {
+    "rule_id": "rule_20161219_31324_fix",
+    "created_from_date": "2016-12-19",
+    "used_from_date": "2016-12-20",
+    "rule_text": "Code=31324 时，预测震荡但实际收涨，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31324"
+  },
+  {
+    "rule_id": "rule_20161220_32241_fix",
+    "created_from_date": "2016-12-20",
+    "used_from_date": "2016-12-21",
+    "rule_text": "Code=32241 时，预测震荡但实际收涨，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32241"
+  },
+  {
+    "rule_id": "rule_20161227_32141",
+    "created_from_date": "2016-12-27",
+    "used_from_date": "2016-12-28",
+    "rule_text": "Code=32141 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "32141"
+  },
+  {
+    "rule_id": "rule_20161229_31321",
+    "created_from_date": "2016-12-29",
+    "used_from_date": "2016-12-30",
+    "rule_text": "Code=31321 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "31321"
+  },
+  {
+    "rule_id": "rule_20161230_32231_fix",
+    "created_from_date": "2016-12-30",
+    "used_from_date": "2016-12-31",
+    "rule_text": "Code=32231 时，预测收涨但实际收跌，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32231"
+  },
+  {
+    "rule_id": "rule_20170103_31322_fix",
+    "created_from_date": "2017-01-03",
+    "used_from_date": "2017-01-04",
+    "rule_text": "Code=31322 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31322"
+  },
+  {
+    "rule_id": "rule_20170104_42243_fix",
+    "created_from_date": "2017-01-04",
+    "used_from_date": "2017-01-05",
+    "rule_text": "Code=42243 时，预测震荡但实际收跌，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "42243"
+  },
+  {
+    "rule_id": "rule_20170105_31222_fix",
+    "created_from_date": "2017-01-05",
+    "used_from_date": "2017-01-06",
+    "rule_text": "Code=31222 时，预测收涨但实际收跌，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31222"
+  },
+  {
+    "rule_id": "rule_20170109_33242",
+    "created_from_date": "2017-01-09",
+    "used_from_date": "2017-01-10",
+    "rule_text": "Code=33242 时，次日震荡准确率高（本次得分100）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "33242"
+  },
+  {
+    "rule_id": "rule_20170110_32131_fix",
+    "created_from_date": "2017-01-10",
+    "used_from_date": "2017-01-11",
+    "rule_text": "Code=32131 时，预测震荡但实际收涨，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32131"
+  },
+  {
+    "rule_id": "rule_20170111_33153_fix",
+    "created_from_date": "2017-01-11",
+    "used_from_date": "2017-01-12",
+    "rule_text": "Code=33153 时，预测收涨但实际收跌，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "33153"
+  },
+  {
+    "rule_id": "rule_20170112_31221_fix",
+    "created_from_date": "2017-01-12",
+    "used_from_date": "2017-01-13",
+    "rule_text": "Code=31221 时，预测震荡但实际震荡，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31221"
+  },
+  {
+    "rule_id": "rule_20170117_32142_fix",
+    "created_from_date": "2017-01-17",
+    "used_from_date": "2017-01-18",
+    "rule_text": "Code=32142 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32142"
+  },
+  {
+    "rule_id": "rule_20170118_21224_fix",
+    "created_from_date": "2017-01-18",
+    "used_from_date": "2017-01-19",
+    "rule_text": "Code=21224 时，预测收涨但实际收涨，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "21224"
+  },
+  {
+    "rule_id": "rule_20170119_43155",
+    "created_from_date": "2017-01-19",
+    "used_from_date": "2017-01-20",
+    "rule_text": "Code=43155 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "43155"
+  },
+  {
+    "rule_id": "rule_20170124_31234_fix",
+    "created_from_date": "2017-01-24",
+    "used_from_date": "2017-01-25",
+    "rule_text": "Code=31234 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31234"
+  },
+  {
+    "rule_id": "rule_20170125_44155_fix",
+    "created_from_date": "2017-01-25",
+    "used_from_date": "2017-01-26",
+    "rule_text": "Code=44155 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "44155"
+  },
+  {
+    "rule_id": "rule_20170126_42255_fix",
+    "created_from_date": "2017-01-26",
+    "used_from_date": "2017-01-27",
+    "rule_text": "Code=42255 时，预测收涨但实际收涨，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "42255"
+  },
+  {
+    "rule_id": "rule_20170130_41242_fix",
+    "created_from_date": "2017-01-30",
+    "used_from_date": "2017-01-31",
+    "rule_text": "Code=41242 时，预测收跌但实际收跌，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "41242"
+  },
+  {
+    "rule_id": "rule_20170131_21323",
+    "created_from_date": "2017-01-31",
+    "used_from_date": "2017-02-01",
+    "rule_text": "Code=21323 时，次日收跌准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "21323"
+  },
+  {
+    "rule_id": "rule_20170201_31322_fix",
+    "created_from_date": "2017-02-01",
+    "used_from_date": "2017-02-02",
+    "rule_text": "Code=31322 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31322"
+  },
+  {
+    "rule_id": "rule_20170202_42253_fix",
+    "created_from_date": "2017-02-02",
+    "used_from_date": "2017-02-03",
+    "rule_text": "Code=42253 时，预测震荡但实际震荡，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "42253"
+  },
+  {
+    "rule_id": "rule_20170207_31231",
+    "created_from_date": "2017-02-07",
+    "used_from_date": "2017-02-08",
+    "rule_text": "Code=31231 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "31231"
+  },
+  {
+    "rule_id": "rule_20170208_31231",
+    "created_from_date": "2017-02-08",
+    "used_from_date": "2017-02-09",
+    "rule_text": "Code=31231 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "31231"
+  },
+  {
+    "rule_id": "rule_20170209_32131_fix",
+    "created_from_date": "2017-02-09",
+    "used_from_date": "2017-02-10",
+    "rule_text": "Code=32131 时，预测震荡但实际收跌，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32131"
+  },
+  {
+    "rule_id": "rule_20170210_31322",
+    "created_from_date": "2017-02-10",
+    "used_from_date": "2017-02-11",
+    "rule_text": "Code=31322 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "31322"
+  },
+  {
+    "rule_id": "rule_20170213_31232",
+    "created_from_date": "2017-02-13",
+    "used_from_date": "2017-02-14",
+    "rule_text": "Code=31232 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "31232"
+  },
+  {
+    "rule_id": "rule_20170215_31221",
+    "created_from_date": "2017-02-15",
+    "used_from_date": "2017-02-16",
+    "rule_text": "Code=31221 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "31221"
+  },
+  {
+    "rule_id": "rule_20170222_32143",
+    "created_from_date": "2017-02-22",
+    "used_from_date": "2017-02-23",
+    "rule_text": "Code=32143 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "32143"
+  },
+  {
+    "rule_id": "rule_20170223_32242_fix",
+    "created_from_date": "2017-02-23",
+    "used_from_date": "2017-02-24",
+    "rule_text": "Code=32242 时，预测收涨但实际收跌，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32242"
+  },
+  {
+    "rule_id": "rule_20170227_22334",
+    "created_from_date": "2017-02-27",
+    "used_from_date": "2017-02-28",
+    "rule_text": "Code=22334 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "22334"
+  },
+  {
+    "rule_id": "rule_20170301_31324_fix",
+    "created_from_date": "2017-03-01",
+    "used_from_date": "2017-03-02",
+    "rule_text": "Code=31324 时，预测收涨但实际收涨，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31324"
+  },
+  {
+    "rule_id": "rule_20170303_51445_fix",
+    "created_from_date": "2017-03-03",
+    "used_from_date": "2017-03-04",
+    "rule_text": "Code=51445 时，预测收涨但实际震荡，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "51445"
+  },
+  {
+    "rule_id": "rule_20170308_33143",
+    "created_from_date": "2017-03-08",
+    "used_from_date": "2017-03-09",
+    "rule_text": "Code=33143 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "33143"
+  },
+  {
+    "rule_id": "rule_20170310_33143",
+    "created_from_date": "2017-03-10",
+    "used_from_date": "2017-03-11",
+    "rule_text": "Code=33143 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "33143"
+  },
+  {
+    "rule_id": "rule_20170313_33144",
+    "created_from_date": "2017-03-13",
+    "used_from_date": "2017-03-14",
+    "rule_text": "Code=33144 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "33144"
+  },
+  {
+    "rule_id": "rule_20170314_32133_fix",
+    "created_from_date": "2017-03-14",
+    "used_from_date": "2017-03-15",
+    "rule_text": "Code=32133 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32133"
+  },
+  {
+    "rule_id": "rule_20170316_32142_fix",
+    "created_from_date": "2017-03-16",
+    "used_from_date": "2017-03-17",
+    "rule_text": "Code=32142 时，预测收涨但实际收跌，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32142"
+  },
+  {
+    "rule_id": "rule_20170317_31323_fix",
+    "created_from_date": "2017-03-17",
+    "used_from_date": "2017-03-18",
+    "rule_text": "Code=31323 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31323"
+  },
+  {
+    "rule_id": "rule_20170321_32131_fix",
+    "created_from_date": "2017-03-21",
+    "used_from_date": "2017-03-22",
+    "rule_text": "Code=32131 时，预测震荡但实际收跌，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32131"
+  },
+  {
+    "rule_id": "rule_20170323_32141",
+    "created_from_date": "2017-03-23",
+    "used_from_date": "2017-03-24",
+    "rule_text": "Code=32141 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "32141"
+  },
+  {
+    "rule_id": "rule_20170324_32131_fix",
+    "created_from_date": "2017-03-24",
+    "used_from_date": "2017-03-25",
+    "rule_text": "Code=32131 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32131"
+  },
+  {
+    "rule_id": "rule_20170327_43142_fix",
+    "created_from_date": "2017-03-27",
+    "used_from_date": "2017-03-28",
+    "rule_text": "Code=43142 时，预测收涨但实际震荡，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "43142"
+  },
+  {
+    "rule_id": "rule_20170328_23131",
+    "created_from_date": "2017-03-28",
+    "used_from_date": "2017-03-29",
+    "rule_text": "Code=23131 时，次日收涨准确率高（本次得分100）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "23131"
+  },
+  {
+    "rule_id": "rule_20170329_32141",
+    "created_from_date": "2017-03-29",
+    "used_from_date": "2017-03-30",
+    "rule_text": "Code=32141 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "32141"
+  },
+  {
+    "rule_id": "rule_20170330_31231_fix",
+    "created_from_date": "2017-03-30",
+    "used_from_date": "2017-03-31",
+    "rule_text": "Code=31231 时，预测震荡但实际收跌，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31231"
+  },
+  {
+    "rule_id": "rule_20170331_32224",
+    "created_from_date": "2017-03-31",
+    "used_from_date": "2017-04-01",
+    "rule_text": "Code=32224 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "32224"
+  },
+  {
+    "rule_id": "rule_20170403_31233",
+    "created_from_date": "2017-04-03",
+    "used_from_date": "2017-04-04",
+    "rule_text": "Code=31233 时，次日震荡准确率高（本次得分100）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "31233"
+  },
+  {
+    "rule_id": "rule_20170404_31232",
+    "created_from_date": "2017-04-04",
+    "used_from_date": "2017-04-05",
+    "rule_text": "Code=31232 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "31232"
+  },
+  {
+    "rule_id": "rule_20170406_31221",
+    "created_from_date": "2017-04-06",
+    "used_from_date": "2017-04-07",
+    "rule_text": "Code=31221 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "31221"
+  },
+  {
+    "rule_id": "rule_20170407_32231",
+    "created_from_date": "2017-04-07",
+    "used_from_date": "2017-04-08",
+    "rule_text": "Code=32231 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "32231"
+  },
+  {
+    "rule_id": "rule_20170411_22132_fix",
+    "created_from_date": "2017-04-11",
+    "used_from_date": "2017-04-12",
+    "rule_text": "Code=22132 时，预测收涨但实际震荡，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "22132"
+  },
+  {
+    "rule_id": "rule_20170412_22233_fix",
+    "created_from_date": "2017-04-12",
+    "used_from_date": "2017-04-13",
+    "rule_text": "Code=22233 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "22233"
+  },
+  {
+    "rule_id": "rule_20170413_21415",
+    "created_from_date": "2017-04-13",
+    "used_from_date": "2017-04-14",
+    "rule_text": "Code=21415 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "21415"
+  },
+  {
+    "rule_id": "rule_20170418_42141",
+    "created_from_date": "2017-04-18",
+    "used_from_date": "2017-04-19",
+    "rule_text": "Code=42141 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "42141"
+  },
+  {
+    "rule_id": "rule_20170420_31131_fix",
+    "created_from_date": "2017-04-20",
+    "used_from_date": "2017-04-21",
+    "rule_text": "Code=31131 时，预测收涨但实际收涨，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31131"
+  },
+  {
+    "rule_id": "rule_20170421_43152_fix",
+    "created_from_date": "2017-04-21",
+    "used_from_date": "2017-04-22",
+    "rule_text": "Code=43152 时，预测收涨但实际震荡，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "43152"
+  },
+  {
+    "rule_id": "rule_20170424_31231_fix",
+    "created_from_date": "2017-04-24",
+    "used_from_date": "2017-04-25",
+    "rule_text": "Code=31231 时，预测收涨但实际收涨，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31231"
+  },
+  {
+    "rule_id": "rule_20170426_32142_fix",
+    "created_from_date": "2017-04-26",
+    "used_from_date": "2017-04-27",
+    "rule_text": "Code=32142 时，预测震荡但实际收跌，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32142"
+  },
+  {
+    "rule_id": "rule_20170428_42141_fix",
+    "created_from_date": "2017-04-28",
+    "used_from_date": "2017-04-29",
+    "rule_text": "Code=42141 时，预测震荡但实际收跌，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "42141"
+  },
+  {
+    "rule_id": "rule_20170501_31222_fix",
+    "created_from_date": "2017-05-01",
+    "used_from_date": "2017-05-02",
+    "rule_text": "Code=31222 时，预测收涨但实际震荡，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31222"
+  },
+  {
+    "rule_id": "rule_20170502_41232_fix",
+    "created_from_date": "2017-05-02",
+    "used_from_date": "2017-05-03",
+    "rule_text": "Code=41232 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "41232"
+  },
+  {
+    "rule_id": "rule_20170504_32133_fix",
+    "created_from_date": "2017-05-04",
+    "used_from_date": "2017-05-05",
+    "rule_text": "Code=32133 时，预测震荡但实际收跌，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32133"
+  },
+  {
+    "rule_id": "rule_20170505_31322_fix",
+    "created_from_date": "2017-05-05",
+    "used_from_date": "2017-05-06",
+    "rule_text": "Code=31322 时，预测收涨但实际收涨，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31322"
+  },
+  {
+    "rule_id": "rule_20170510_33143",
+    "created_from_date": "2017-05-10",
+    "used_from_date": "2017-05-11",
+    "rule_text": "Code=33143 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "33143"
+  },
+  {
+    "rule_id": "rule_20170517_32243_fix",
+    "created_from_date": "2017-05-17",
+    "used_from_date": "2017-05-18",
+    "rule_text": "Code=32243 时，预测震荡但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32243"
+  },
+  {
+    "rule_id": "rule_20170518_21315",
+    "created_from_date": "2017-05-18",
+    "used_from_date": "2017-05-19",
+    "rule_text": "Code=21315 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "21315"
+  },
+  {
+    "rule_id": "rule_20170522_31325_fix",
+    "created_from_date": "2017-05-22",
+    "used_from_date": "2017-05-23",
+    "rule_text": "Code=31325 时，预测收涨但实际收涨，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31325"
+  },
+  {
+    "rule_id": "rule_20170523_42243_fix",
+    "created_from_date": "2017-05-23",
+    "used_from_date": "2017-05-24",
+    "rule_text": "Code=42243 时，预测收涨但实际收跌，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "42243"
+  },
+  {
+    "rule_id": "rule_20170524_31221_fix",
+    "created_from_date": "2017-05-24",
+    "used_from_date": "2017-05-25",
+    "rule_text": "Code=31221 时，预测收涨但实际收涨，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31221"
+  },
+  {
+    "rule_id": "rule_20170525_42242_fix",
+    "created_from_date": "2017-05-25",
+    "used_from_date": "2017-05-26",
+    "rule_text": "Code=42242 时，预测收跌但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "42242"
+  },
+  {
+    "rule_id": "rule_20170526_41242",
+    "created_from_date": "2017-05-26",
+    "used_from_date": "2017-05-27",
+    "rule_text": "Code=41242 时，次日震荡准确率高（本次得分100）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "41242"
+  },
+  {
+    "rule_id": "rule_20170606_32224_fix",
+    "created_from_date": "2017-06-06",
+    "used_from_date": "2017-06-07",
+    "rule_text": "Code=32224 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32224"
+  },
+  {
+    "rule_id": "rule_20170607_23143",
+    "created_from_date": "2017-06-07",
+    "used_from_date": "2017-06-08",
+    "rule_text": "Code=23143 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "23143"
+  },
+  {
+    "rule_id": "rule_20170613_22335_fix",
+    "created_from_date": "2017-06-13",
+    "used_from_date": "2017-06-14",
+    "rule_text": "Code=22335 时，预测收涨但实际震荡，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "22335"
+  },
+  {
+    "rule_id": "rule_20170615_32323_fix",
+    "created_from_date": "2017-06-15",
+    "used_from_date": "2017-06-16",
+    "rule_text": "Code=32323 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32323"
+  },
+  {
+    "rule_id": "rule_20170616_13122_fix",
+    "created_from_date": "2017-06-16",
+    "used_from_date": "2017-06-17",
+    "rule_text": "Code=13122 时，预测收涨但实际收跌，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "13122"
+  },
+  {
+    "rule_id": "rule_20170619_31323",
+    "created_from_date": "2017-06-19",
+    "used_from_date": "2017-06-20",
+    "rule_text": "Code=31323 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "31323"
+  },
+  {
+    "rule_id": "rule_20170620_51352",
+    "created_from_date": "2017-06-20",
+    "used_from_date": "2017-06-21",
+    "rule_text": "Code=51352 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "51352"
+  },
+  {
+    "rule_id": "rule_20170621_32231_fix",
+    "created_from_date": "2017-06-21",
+    "used_from_date": "2017-06-22",
+    "rule_text": "Code=32231 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32231"
+  },
+  {
+    "rule_id": "rule_20170623_31231_fix",
+    "created_from_date": "2017-06-23",
+    "used_from_date": "2017-06-24",
+    "rule_text": "Code=31231 时，预测收涨但实际震荡，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31231"
+  },
+  {
+    "rule_id": "rule_20170626_32133_fix",
+    "created_from_date": "2017-06-26",
+    "used_from_date": "2017-06-27",
+    "rule_text": "Code=32133 时，预测震荡但实际收跌，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32133"
+  },
+  {
+    "rule_id": "rule_20170627_32322_fix",
+    "created_from_date": "2017-06-27",
+    "used_from_date": "2017-06-28",
+    "rule_text": "Code=32322 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32322"
+  },
+  {
+    "rule_id": "rule_20170628_21312_fix",
+    "created_from_date": "2017-06-28",
+    "used_from_date": "2017-06-29",
+    "rule_text": "Code=21312 时，预测收涨但实际收涨，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "21312"
+  },
+  {
+    "rule_id": "rule_20170629_43251_fix",
+    "created_from_date": "2017-06-29",
+    "used_from_date": "2017-06-30",
+    "rule_text": "Code=43251 时，预测震荡但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "43251"
+  },
+  {
+    "rule_id": "rule_20170706_42243_fix",
+    "created_from_date": "2017-07-06",
+    "used_from_date": "2017-07-07",
+    "rule_text": "Code=42243 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "42243"
+  },
+  {
+    "rule_id": "rule_20170707_24142",
+    "created_from_date": "2017-07-07",
+    "used_from_date": "2017-07-08",
+    "rule_text": "Code=24142 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "24142"
+  },
+  {
+    "rule_id": "rule_20170712_31231_fix",
+    "created_from_date": "2017-07-12",
+    "used_from_date": "2017-07-13",
+    "rule_text": "Code=31231 时，预测收涨但实际收涨，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31231"
+  },
+  {
+    "rule_id": "rule_20170713_43253",
+    "created_from_date": "2017-07-13",
+    "used_from_date": "2017-07-14",
+    "rule_text": "Code=43253 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "43253"
+  },
+  {
+    "rule_id": "rule_20170717_42141",
+    "created_from_date": "2017-07-17",
+    "used_from_date": "2017-07-18",
+    "rule_text": "Code=42141 时，次日收跌准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "42141"
+  },
+  {
+    "rule_id": "rule_20170719_22141",
+    "created_from_date": "2017-07-19",
+    "used_from_date": "2017-07-20",
+    "rule_text": "Code=22141 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "22141"
+  },
+  {
+    "rule_id": "rule_20170721_31231_fix",
+    "created_from_date": "2017-07-21",
+    "used_from_date": "2017-07-22",
+    "rule_text": "Code=31231 时，预测收涨但实际震荡，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31231"
+  },
+  {
+    "rule_id": "rule_20170725_31231",
+    "created_from_date": "2017-07-25",
+    "used_from_date": "2017-07-26",
+    "rule_text": "Code=31231 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "31231"
+  },
+  {
+    "rule_id": "rule_20170727_32143_fix",
+    "created_from_date": "2017-07-27",
+    "used_from_date": "2017-07-28",
+    "rule_text": "Code=32143 时，预测震荡但实际收跌，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32143"
+  },
+  {
+    "rule_id": "rule_20170728_31414_fix",
+    "created_from_date": "2017-07-28",
+    "used_from_date": "2017-07-29",
+    "rule_text": "Code=31414 时，预测收涨但实际震荡，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31414"
+  },
+  {
+    "rule_id": "rule_20170801_32322_fix",
+    "created_from_date": "2017-08-01",
+    "used_from_date": "2017-08-02",
+    "rule_text": "Code=32322 时，预测收涨但实际收涨，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32322"
+  },
+  {
+    "rule_id": "rule_20170802_42242_fix",
+    "created_from_date": "2017-08-02",
+    "used_from_date": "2017-08-03",
+    "rule_text": "Code=42242 时，预测收跌但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "42242"
+  },
+  {
+    "rule_id": "rule_20170803_52255_fix",
+    "created_from_date": "2017-08-03",
+    "used_from_date": "2017-08-04",
+    "rule_text": "Code=52255 时，预测震荡但实际收跌，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "52255"
+  },
+  {
+    "rule_id": "rule_20170808_32143",
+    "created_from_date": "2017-08-08",
+    "used_from_date": "2017-08-09",
+    "rule_text": "Code=32143 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "32143"
+  },
+  {
+    "rule_id": "rule_20170809_32233_fix",
+    "created_from_date": "2017-08-09",
+    "used_from_date": "2017-08-10",
+    "rule_text": "Code=32233 时，预测震荡但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32233"
+  },
+  {
+    "rule_id": "rule_20170810_21223_fix",
+    "created_from_date": "2017-08-10",
+    "used_from_date": "2017-08-11",
+    "rule_text": "Code=21223 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "21223"
+  },
+  {
+    "rule_id": "rule_20170811_21314",
+    "created_from_date": "2017-08-11",
+    "used_from_date": "2017-08-12",
+    "rule_text": "Code=21314 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "21314"
+  },
+  {
+    "rule_id": "rule_20170815_43152_fix",
+    "created_from_date": "2017-08-15",
+    "used_from_date": "2017-08-16",
+    "rule_text": "Code=43152 时，预测收涨但实际收涨，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "43152"
+  },
+  {
+    "rule_id": "rule_20170816_41243",
+    "created_from_date": "2017-08-16",
+    "used_from_date": "2017-08-17",
+    "rule_text": "Code=41243 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "41243"
+  },
+  {
+    "rule_id": "rule_20170821_33143_fix",
+    "created_from_date": "2017-08-21",
+    "used_from_date": "2017-08-22",
+    "rule_text": "Code=33143 时，预测收涨但实际震荡，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "33143"
+  },
+  {
+    "rule_id": "rule_20170822_41333_fix",
+    "created_from_date": "2017-08-22",
+    "used_from_date": "2017-08-23",
+    "rule_text": "Code=41333 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "41333"
+  },
+  {
+    "rule_id": "rule_20170823_43154",
+    "created_from_date": "2017-08-23",
+    "used_from_date": "2017-08-24",
+    "rule_text": "Code=43154 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "43154"
+  },
+  {
+    "rule_id": "rule_20170824_33144_fix",
+    "created_from_date": "2017-08-24",
+    "used_from_date": "2017-08-25",
+    "rule_text": "Code=33144 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "33144"
+  },
+  {
+    "rule_id": "rule_20170829_41324_fix",
+    "created_from_date": "2017-08-29",
+    "used_from_date": "2017-08-30",
+    "rule_text": "Code=41324 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "41324"
+  },
+  {
+    "rule_id": "rule_20170831_33142",
+    "created_from_date": "2017-08-31",
+    "used_from_date": "2017-09-01",
+    "rule_text": "Code=33142 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "33142"
+  },
+  {
+    "rule_id": "rule_20170905_32132_fix",
+    "created_from_date": "2017-09-05",
+    "used_from_date": "2017-09-06",
+    "rule_text": "Code=32132 时，预测震荡但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32132"
+  },
+  {
+    "rule_id": "rule_20170906_22222_fix",
+    "created_from_date": "2017-09-06",
+    "used_from_date": "2017-09-07",
+    "rule_text": "Code=22222 时，预测收涨但实际震荡，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "22222"
+  },
+  {
+    "rule_id": "rule_20170907_41231",
+    "created_from_date": "2017-09-07",
+    "used_from_date": "2017-09-08",
+    "rule_text": "Code=41231 时，次日收跌准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "41231"
+  },
+  {
+    "rule_id": "rule_20170908_31221",
+    "created_from_date": "2017-09-08",
+    "used_from_date": "2017-09-09",
+    "rule_text": "Code=31221 时，次日收跌准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "31221"
+  },
+  {
+    "rule_id": "rule_20170912_41141_fix",
+    "created_from_date": "2017-09-12",
+    "used_from_date": "2017-09-13",
+    "rule_text": "Code=41141 时，预测震荡但实际震荡，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "41141"
+  },
+  {
+    "rule_id": "rule_20170913_41332_fix",
+    "created_from_date": "2017-09-13",
+    "used_from_date": "2017-09-14",
+    "rule_text": "Code=41332 时，预测震荡但实际震荡，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "41332"
+  },
+  {
+    "rule_id": "rule_20170919_32232_fix",
+    "created_from_date": "2017-09-19",
+    "used_from_date": "2017-09-20",
+    "rule_text": "Code=32232 时，预测收涨但实际震荡，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32232"
+  },
+  {
+    "rule_id": "rule_20170922_31323_fix",
+    "created_from_date": "2017-09-22",
+    "used_from_date": "2017-09-23",
+    "rule_text": "Code=31323 时，预测收涨但实际震荡，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31323"
+  },
+  {
+    "rule_id": "rule_20170925_22132_fix",
+    "created_from_date": "2017-09-25",
+    "used_from_date": "2017-09-26",
+    "rule_text": "Code=22132 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "22132"
+  },
+  {
+    "rule_id": "rule_20170927_42244_fix",
+    "created_from_date": "2017-09-27",
+    "used_from_date": "2017-09-28",
+    "rule_text": "Code=42244 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "42244"
+  },
+  {
+    "rule_id": "rule_20170928_42143",
+    "created_from_date": "2017-09-28",
+    "used_from_date": "2017-09-29",
+    "rule_text": "Code=42143 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "42143"
+  },
+  {
+    "rule_id": "rule_20171002_32231_fix",
+    "created_from_date": "2017-10-02",
+    "used_from_date": "2017-10-03",
+    "rule_text": "Code=32231 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32231"
+  },
+  {
+    "rule_id": "rule_20171003_41322",
+    "created_from_date": "2017-10-03",
+    "used_from_date": "2017-10-04",
+    "rule_text": "Code=41322 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "41322"
+  },
+  {
+    "rule_id": "rule_20171005_32242_fix",
+    "created_from_date": "2017-10-05",
+    "used_from_date": "2017-10-06",
+    "rule_text": "Code=32242 时，预测收涨但实际收涨，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32242"
+  },
+  {
+    "rule_id": "rule_20171009_23141",
+    "created_from_date": "2017-10-09",
+    "used_from_date": "2017-10-10",
+    "rule_text": "Code=23141 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "23141"
+  },
+  {
+    "rule_id": "rule_20171010_32131",
+    "created_from_date": "2017-10-10",
+    "used_from_date": "2017-10-11",
+    "rule_text": "Code=32131 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "32131"
+  },
+  {
+    "rule_id": "rule_20171016_41231",
+    "created_from_date": "2017-10-16",
+    "used_from_date": "2017-10-17",
+    "rule_text": "Code=41231 时，次日收跌准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "41231"
+  },
+  {
+    "rule_id": "rule_20171019_32242_fix",
+    "created_from_date": "2017-10-19",
+    "used_from_date": "2017-10-20",
+    "rule_text": "Code=32242 时，预测收涨但实际震荡，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32242"
+  },
+  {
+    "rule_id": "rule_20171020_22234_fix",
+    "created_from_date": "2017-10-20",
+    "used_from_date": "2017-10-21",
+    "rule_text": "Code=22234 时，预测收涨但实际震荡，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "22234"
+  },
+  {
+    "rule_id": "rule_20171023_41233",
+    "created_from_date": "2017-10-23",
+    "used_from_date": "2017-10-24",
+    "rule_text": "Code=41233 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "41233"
+  },
+  {
+    "rule_id": "rule_20171024_31233_fix",
+    "created_from_date": "2017-10-24",
+    "used_from_date": "2017-10-25",
+    "rule_text": "Code=31233 时，预测震荡但实际收涨，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31233"
+  },
+  {
+    "rule_id": "rule_20171026_22223_fix",
+    "created_from_date": "2017-10-26",
+    "used_from_date": "2017-10-27",
+    "rule_text": "Code=22223 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "22223"
+  },
+  {
+    "rule_id": "rule_20171030_34255",
+    "created_from_date": "2017-10-30",
+    "used_from_date": "2017-10-31",
+    "rule_text": "Code=34255 时，次日收涨准确率高（本次得分100）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "34255"
+  },
+  {
+    "rule_id": "rule_20171031_34155",
+    "created_from_date": "2017-10-31",
+    "used_from_date": "2017-11-01",
+    "rule_text": "Code=34155 时，次日收涨准确率高（本次得分100）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "34155"
+  },
+  {
+    "rule_id": "rule_20171102_32324",
+    "created_from_date": "2017-11-02",
+    "used_from_date": "2017-11-03",
+    "rule_text": "Code=32324 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "32324"
+  },
+  {
+    "rule_id": "rule_20171103_42535_fix",
+    "created_from_date": "2017-11-03",
+    "used_from_date": "2017-11-04",
+    "rule_text": "Code=42535 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "42535"
+  },
+  {
+    "rule_id": "rule_20171107_42345_fix",
+    "created_from_date": "2017-11-07",
+    "used_from_date": "2017-11-08",
+    "rule_text": "Code=42345 时，预测震荡但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "42345"
+  },
+  {
+    "rule_id": "rule_20171108_22313_fix",
+    "created_from_date": "2017-11-08",
+    "used_from_date": "2017-11-09",
+    "rule_text": "Code=22313 时，预测收涨但实际震荡，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "22313"
+  },
+  {
+    "rule_id": "rule_20171109_23232_fix",
+    "created_from_date": "2017-11-09",
+    "used_from_date": "2017-11-10",
+    "rule_text": "Code=23232 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "23232"
+  },
+  {
+    "rule_id": "rule_20171110_22312",
+    "created_from_date": "2017-11-10",
+    "used_from_date": "2017-11-11",
+    "rule_text": "Code=22312 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "22312"
+  },
+  {
+    "rule_id": "rule_20171113_31231_fix",
+    "created_from_date": "2017-11-13",
+    "used_from_date": "2017-11-14",
+    "rule_text": "Code=31231 时，预测收涨但实际震荡，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31231"
+  },
+  {
+    "rule_id": "rule_20171114_22132_fix",
+    "created_from_date": "2017-11-14",
+    "used_from_date": "2017-11-15",
+    "rule_text": "Code=22132 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "22132"
+  },
+  {
+    "rule_id": "rule_20171115_22221",
+    "created_from_date": "2017-11-15",
+    "used_from_date": "2017-11-16",
+    "rule_text": "Code=22221 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "22221"
+  },
+  {
+    "rule_id": "rule_20171117_33152_fix",
+    "created_from_date": "2017-11-17",
+    "used_from_date": "2017-11-18",
+    "rule_text": "Code=33152 时，预测收涨但实际震荡，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "33152"
+  },
+  {
+    "rule_id": "rule_20171121_33142",
+    "created_from_date": "2017-11-21",
+    "used_from_date": "2017-11-22",
+    "rule_text": "Code=33142 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "33142"
+  },
+  {
+    "rule_id": "rule_20171122_32141",
+    "created_from_date": "2017-11-22",
+    "used_from_date": "2017-11-23",
+    "rule_text": "Code=32141 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "32141"
+  },
+  {
+    "rule_id": "rule_20171124_31231",
+    "created_from_date": "2017-11-24",
+    "used_from_date": "2017-11-25",
+    "rule_text": "Code=31231 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "31231"
+  },
+  {
+    "rule_id": "rule_20171128_23141_fix",
+    "created_from_date": "2017-11-28",
+    "used_from_date": "2017-11-29",
+    "rule_text": "Code=23141 时，预测震荡但实际收跌，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "23141"
+  },
+  {
+    "rule_id": "rule_20171201_33252_fix",
+    "created_from_date": "2017-12-01",
+    "used_from_date": "2017-12-02",
+    "rule_text": "Code=33252 时，预测震荡但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "33252"
+  },
+  {
+    "rule_id": "rule_20171205_41514_fix",
+    "created_from_date": "2017-12-05",
+    "used_from_date": "2017-12-06",
+    "rule_text": "Code=41514 时，预测震荡但实际收跌，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "41514"
+  },
+  {
+    "rule_id": "rule_20171206_32224_fix",
+    "created_from_date": "2017-12-06",
+    "used_from_date": "2017-12-07",
+    "rule_text": "Code=32224 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32224"
+  },
+  {
+    "rule_id": "rule_20171207_23345_fix",
+    "created_from_date": "2017-12-07",
+    "used_from_date": "2017-12-08",
+    "rule_text": "Code=23345 时，预测收涨但实际震荡，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "23345"
+  },
+  {
+    "rule_id": "rule_20171208_51435_fix",
+    "created_from_date": "2017-12-08",
+    "used_from_date": "2017-12-09",
+    "rule_text": "Code=51435 时，预测震荡但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "51435"
+  },
+  {
+    "rule_id": "rule_20171213_32232_fix",
+    "created_from_date": "2017-12-13",
+    "used_from_date": "2017-12-14",
+    "rule_text": "Code=32232 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32232"
+  },
+  {
+    "rule_id": "rule_20171218_43254_fix",
+    "created_from_date": "2017-12-18",
+    "used_from_date": "2017-12-19",
+    "rule_text": "Code=43254 时，预测收涨但实际震荡，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "43254"
+  },
+  {
+    "rule_id": "rule_20171219_22232",
+    "created_from_date": "2017-12-19",
+    "used_from_date": "2017-12-20",
+    "rule_text": "Code=22232 时，次日震荡准确率高（本次得分100）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "22232"
+  },
+  {
+    "rule_id": "rule_20171221_41241",
+    "created_from_date": "2017-12-21",
+    "used_from_date": "2017-12-22",
+    "rule_text": "Code=41241 时，次日收跌准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "41241"
+  },
+  {
+    "rule_id": "rule_20171222_31321",
+    "created_from_date": "2017-12-22",
+    "used_from_date": "2017-12-23",
+    "rule_text": "Code=31321 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "31321"
+  },
+  {
+    "rule_id": "rule_20171226_32231_fix",
+    "created_from_date": "2017-12-26",
+    "used_from_date": "2017-12-27",
+    "rule_text": "Code=32231 时，预测震荡但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32231"
+  },
+  {
+    "rule_id": "rule_20171227_23221_fix",
+    "created_from_date": "2017-12-27",
+    "used_from_date": "2017-12-28",
+    "rule_text": "Code=23221 时，预测收涨但实际震荡，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "23221"
+  },
+  {
+    "rule_id": "rule_20171228_32133_fix",
+    "created_from_date": "2017-12-28",
+    "used_from_date": "2017-12-29",
+    "rule_text": "Code=32133 时，预测震荡但实际收涨，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32133"
+  },
+  {
+    "rule_id": "rule_20171229_31241",
+    "created_from_date": "2017-12-29",
+    "used_from_date": "2017-12-30",
+    "rule_text": "Code=31241 时，次日收跌准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "31241"
+  },
+  {
+    "rule_id": "rule_20180102_32221_fix",
+    "created_from_date": "2018-01-02",
+    "used_from_date": "2018-01-03",
+    "rule_text": "Code=32221 时，预测收涨但实际收涨，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32221"
+  },
+  {
+    "rule_id": "rule_20180103_43253",
+    "created_from_date": "2018-01-03",
+    "used_from_date": "2018-01-04",
+    "rule_text": "Code=43253 时，次日收涨准确率高（本次得分100）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "43253"
+  },
+  {
+    "rule_id": "rule_20180104_32143_fix",
+    "created_from_date": "2018-01-04",
+    "used_from_date": "2018-01-05",
+    "rule_text": "Code=32143 时，预测震荡但实际震荡，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32143"
+  },
+  {
+    "rule_id": "rule_20180105_41231_fix",
+    "created_from_date": "2018-01-05",
+    "used_from_date": "2018-01-06",
+    "rule_text": "Code=41231 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "41231"
+  },
+  {
+    "rule_id": "rule_20180108_42243",
+    "created_from_date": "2018-01-08",
+    "used_from_date": "2018-01-09",
+    "rule_text": "Code=42243 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "42243"
+  },
+  {
+    "rule_id": "rule_20180109_32232_fix",
+    "created_from_date": "2018-01-09",
+    "used_from_date": "2018-01-10",
+    "rule_text": "Code=32232 时，预测收涨但实际收跌，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32232"
+  },
+  {
+    "rule_id": "rule_20180112_31231_fix",
+    "created_from_date": "2018-01-12",
+    "used_from_date": "2018-01-13",
+    "rule_text": "Code=31231 时，预测收涨但实际震荡，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31231"
+  },
+  {
+    "rule_id": "rule_20180116_32232_fix",
+    "created_from_date": "2018-01-16",
+    "used_from_date": "2018-01-17",
+    "rule_text": "Code=32232 时，预测收涨但实际震荡，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32232"
+  },
+  {
+    "rule_id": "rule_20180117_32234_fix",
+    "created_from_date": "2018-01-17",
+    "used_from_date": "2018-01-18",
+    "rule_text": "Code=32234 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32234"
+  },
+  {
+    "rule_id": "rule_20180118_41345_fix",
+    "created_from_date": "2018-01-18",
+    "used_from_date": "2018-01-19",
+    "rule_text": "Code=41345 时，预测震荡但实际收涨，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "41345"
+  },
+  {
+    "rule_id": "rule_20180122_31224",
+    "created_from_date": "2018-01-22",
+    "used_from_date": "2018-01-23",
+    "rule_text": "Code=31224 时，次日收跌准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "31224"
+  },
+  {
+    "rule_id": "rule_20180124_32234_fix",
+    "created_from_date": "2018-01-24",
+    "used_from_date": "2018-01-25",
+    "rule_text": "Code=32234 时，预测收跌但实际收跌，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32234"
+  },
+  {
+    "rule_id": "rule_20180125_22315",
+    "created_from_date": "2018-01-25",
+    "used_from_date": "2018-01-26",
+    "rule_text": "Code=22315 时，次日收跌准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "22315"
+  },
+  {
+    "rule_id": "rule_20180130_21315_fix",
+    "created_from_date": "2018-01-30",
+    "used_from_date": "2018-01-31",
+    "rule_text": "Code=21315 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "21315"
+  },
+  {
+    "rule_id": "rule_20180131_23324",
+    "created_from_date": "2018-01-31",
+    "used_from_date": "2018-02-01",
+    "rule_text": "Code=23324 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "23324"
+  },
+  {
+    "rule_id": "rule_20180201_52355_fix",
+    "created_from_date": "2018-02-01",
+    "used_from_date": "2018-02-02",
+    "rule_text": "Code=52355 时，预测震荡但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "52355"
+  },
+  {
+    "rule_id": "rule_20180202_13215_fix",
+    "created_from_date": "2018-02-02",
+    "used_from_date": "2018-02-03",
+    "rule_text": "Code=13215 时，预测震荡但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "13215"
+  },
+  {
+    "rule_id": "rule_20180207_25155_fix",
+    "created_from_date": "2018-02-07",
+    "used_from_date": "2018-02-08",
+    "rule_text": "Code=25155 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "25155"
+  },
+  {
+    "rule_id": "rule_20180209_31413",
+    "created_from_date": "2018-02-09",
+    "used_from_date": "2018-02-10",
+    "rule_text": "Code=31413 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "31413"
+  },
+  {
+    "rule_id": "rule_20180212_43353_fix",
+    "created_from_date": "2018-02-12",
+    "used_from_date": "2018-02-13",
+    "rule_text": "Code=43353 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "43353"
+  },
+  {
+    "rule_id": "rule_20180213_44152",
+    "created_from_date": "2018-02-13",
+    "used_from_date": "2018-02-14",
+    "rule_text": "Code=44152 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "44152"
+  },
+  {
+    "rule_id": "rule_20180214_23141",
+    "created_from_date": "2018-02-14",
+    "used_from_date": "2018-02-15",
+    "rule_text": "Code=23141 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "23141"
+  },
+  {
+    "rule_id": "rule_20180215_32241_fix",
+    "created_from_date": "2018-02-15",
+    "used_from_date": "2018-02-16",
+    "rule_text": "Code=32241 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32241"
+  },
+  {
+    "rule_id": "rule_20180216_42341",
+    "created_from_date": "2018-02-16",
+    "used_from_date": "2018-02-17",
+    "rule_text": "Code=42341 时，次日收跌准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "42341"
+  },
+  {
+    "rule_id": "rule_20180220_31221_fix",
+    "created_from_date": "2018-02-20",
+    "used_from_date": "2018-02-21",
+    "rule_text": "Code=31221 时，预测收涨但实际震荡，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31221"
+  },
+  {
+    "rule_id": "rule_20180221_33132_fix",
+    "created_from_date": "2018-02-21",
+    "used_from_date": "2018-02-22",
+    "rule_text": "Code=33132 时，预测收涨但实际震荡，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "33132"
+  },
+  {
+    "rule_id": "rule_20180222_41331",
+    "created_from_date": "2018-02-22",
+    "used_from_date": "2018-02-23",
+    "rule_text": "Code=41331 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "41331"
+  },
+  {
+    "rule_id": "rule_20180226_42241_fix",
+    "created_from_date": "2018-02-26",
+    "used_from_date": "2018-02-27",
+    "rule_text": "Code=42241 时，预测收跌但实际震荡，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "42241"
+  },
+  {
+    "rule_id": "rule_20180227_22131",
+    "created_from_date": "2018-02-27",
+    "used_from_date": "2018-02-28",
+    "rule_text": "Code=22131 时，次日震荡准确率高（本次得分100）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "22131"
+  },
+  {
+    "rule_id": "rule_20180228_32131_fix",
+    "created_from_date": "2018-02-28",
+    "used_from_date": "2018-03-01",
+    "rule_text": "Code=32131 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32131"
+  },
+  {
+    "rule_id": "rule_20180301_41411",
+    "created_from_date": "2018-03-01",
+    "used_from_date": "2018-03-02",
+    "rule_text": "Code=41411 时，次日收跌准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "41411"
+  },
+  {
+    "rule_id": "rule_20180302_32321_fix",
+    "created_from_date": "2018-03-02",
+    "used_from_date": "2018-03-03",
+    "rule_text": "Code=32321 时，预测收涨但实际收涨，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32321"
+  },
+  {
+    "rule_id": "rule_20180305_24152_fix",
+    "created_from_date": "2018-03-05",
+    "used_from_date": "2018-03-06",
+    "rule_text": "Code=24152 时，预测震荡但实际收跌，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "24152"
+  },
+  {
+    "rule_id": "rule_20180306_32322_fix",
+    "created_from_date": "2018-03-06",
+    "used_from_date": "2018-03-07",
+    "rule_text": "Code=32322 时，预测收涨但实际收涨，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32322"
+  },
+  {
+    "rule_id": "rule_20180307_42242_fix",
+    "created_from_date": "2018-03-07",
+    "used_from_date": "2018-03-08",
+    "rule_text": "Code=42242 时，预测震荡但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "42242"
+  },
+  {
+    "rule_id": "rule_20180308_21323",
+    "created_from_date": "2018-03-08",
+    "used_from_date": "2018-03-09",
+    "rule_text": "Code=21323 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "21323"
+  },
+  {
+    "rule_id": "rule_20180309_31234_fix",
+    "created_from_date": "2018-03-09",
+    "used_from_date": "2018-03-10",
+    "rule_text": "Code=31234 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31234"
+  },
+  {
+    "rule_id": "rule_20180314_43325_fix",
+    "created_from_date": "2018-03-14",
+    "used_from_date": "2018-03-15",
+    "rule_text": "Code=43325 时，预测收涨但实际震荡，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "43325"
+  },
+  {
+    "rule_id": "rule_20180316_43155_fix",
+    "created_from_date": "2018-03-16",
+    "used_from_date": "2018-03-17",
+    "rule_text": "Code=43155 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "43155"
+  },
+  {
+    "rule_id": "rule_20180320_22415",
+    "created_from_date": "2018-03-20",
+    "used_from_date": "2018-03-21",
+    "rule_text": "Code=22415 时，次日收跌准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "22415"
+  },
+  {
+    "rule_id": "rule_20180321_32325_fix",
+    "created_from_date": "2018-03-21",
+    "used_from_date": "2018-03-22",
+    "rule_text": "Code=32325 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32325"
+  },
+  {
+    "rule_id": "rule_20180322_24154_fix",
+    "created_from_date": "2018-03-22",
+    "used_from_date": "2018-03-23",
+    "rule_text": "Code=24154 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "24154"
+  },
+  {
+    "rule_id": "rule_20180326_32234_fix",
+    "created_from_date": "2018-03-26",
+    "used_from_date": "2018-03-27",
+    "rule_text": "Code=32234 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32234"
+  },
+  {
+    "rule_id": "rule_20180327_51353_fix",
+    "created_from_date": "2018-03-27",
+    "used_from_date": "2018-03-28",
+    "rule_text": "Code=51353 时，预测震荡但实际收跌，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "51353"
+  },
+  {
+    "rule_id": "rule_20180328_33324_fix",
+    "created_from_date": "2018-03-28",
+    "used_from_date": "2018-03-29",
+    "rule_text": "Code=33324 时，预测收涨但实际收跌，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "33324"
+  },
+  {
+    "rule_id": "rule_20180329_32412_fix",
+    "created_from_date": "2018-03-29",
+    "used_from_date": "2018-03-30",
+    "rule_text": "Code=32412 时，预测收涨但实际震荡，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32412"
+  },
+  {
+    "rule_id": "rule_20180402_42233_fix",
+    "created_from_date": "2018-04-02",
+    "used_from_date": "2018-04-03",
+    "rule_text": "Code=42233 时，预测震荡但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "42233"
+  },
+  {
+    "rule_id": "rule_20180404_43352_fix",
+    "created_from_date": "2018-04-04",
+    "used_from_date": "2018-04-05",
+    "rule_text": "Code=43352 时，预测震荡但实际震荡，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "43352"
+  },
+  {
+    "rule_id": "rule_20180411_52251_fix",
+    "created_from_date": "2018-04-11",
+    "used_from_date": "2018-04-12",
+    "rule_text": "Code=52251 时，预测收跌但实际震荡，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "52251"
+  },
+  {
+    "rule_id": "rule_20180416_52353_fix",
+    "created_from_date": "2018-04-16",
+    "used_from_date": "2018-04-17",
+    "rule_text": "Code=52353 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "52353"
+  },
+  {
+    "rule_id": "rule_20180417_41241_fix",
+    "created_from_date": "2018-04-17",
+    "used_from_date": "2018-04-18",
+    "rule_text": "Code=41241 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "41241"
+  },
+  {
+    "rule_id": "rule_20180418_42141",
+    "created_from_date": "2018-04-18",
+    "used_from_date": "2018-04-19",
+    "rule_text": "Code=42141 时，次日收跌准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "42141"
+  },
+  {
+    "rule_id": "rule_20180419_31221_fix",
+    "created_from_date": "2018-04-19",
+    "used_from_date": "2018-04-20",
+    "rule_text": "Code=31221 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31221"
+  },
+  {
+    "rule_id": "rule_20180420_12214_fix",
+    "created_from_date": "2018-04-20",
+    "used_from_date": "2018-04-21",
+    "rule_text": "Code=12214 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "12214"
+  },
+  {
+    "rule_id": "rule_20180423_21313",
+    "created_from_date": "2018-04-23",
+    "used_from_date": "2018-04-24",
+    "rule_text": "Code=21313 时，次日收跌准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "21313"
+  },
+  {
+    "rule_id": "rule_20180424_31322_fix",
+    "created_from_date": "2018-04-24",
+    "used_from_date": "2018-04-25",
+    "rule_text": "Code=31322 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31322"
+  },
+  {
+    "rule_id": "rule_20180425_41414",
+    "created_from_date": "2018-04-25",
+    "used_from_date": "2018-04-26",
+    "rule_text": "Code=41414 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "41414"
+  },
+  {
+    "rule_id": "rule_20180426_32232_fix",
+    "created_from_date": "2018-04-26",
+    "used_from_date": "2018-04-27",
+    "rule_text": "Code=32232 时，预测收涨但实际收涨，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32232"
+  },
+  {
+    "rule_id": "rule_20180427_41242_fix",
+    "created_from_date": "2018-04-27",
+    "used_from_date": "2018-04-28",
+    "rule_text": "Code=41242 时，预测收跌但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "41242"
+  },
+  {
+    "rule_id": "rule_20180430_41242",
+    "created_from_date": "2018-04-30",
+    "used_from_date": "2018-05-01",
+    "rule_text": "Code=41242 时，次日收跌准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "41242"
+  },
+  {
+    "rule_id": "rule_20180501_32324_fix",
+    "created_from_date": "2018-05-01",
+    "used_from_date": "2018-05-02",
+    "rule_text": "Code=32324 时，预测收涨但实际震荡，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32324"
+  },
+  {
+    "rule_id": "rule_20180508_33153",
+    "created_from_date": "2018-05-08",
+    "used_from_date": "2018-05-09",
+    "rule_text": "Code=33153 时，次日收涨准确率高（本次得分100）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "33153"
+  },
+  {
+    "rule_id": "rule_20180509_32143",
+    "created_from_date": "2018-05-09",
+    "used_from_date": "2018-05-10",
+    "rule_text": "Code=32143 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "32143"
+  },
+  {
+    "rule_id": "rule_20180510_22233_fix",
+    "created_from_date": "2018-05-10",
+    "used_from_date": "2018-05-11",
+    "rule_text": "Code=22233 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "22233"
+  },
+  {
+    "rule_id": "rule_20180511_43151",
+    "created_from_date": "2018-05-11",
+    "used_from_date": "2018-05-12",
+    "rule_text": "Code=43151 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "43151"
+  },
+  {
+    "rule_id": "rule_20180515_42242_fix",
+    "created_from_date": "2018-05-15",
+    "used_from_date": "2018-05-16",
+    "rule_text": "Code=42242 时，预测震荡但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "42242"
+  },
+  {
+    "rule_id": "rule_20180516_22321_fix",
+    "created_from_date": "2018-05-16",
+    "used_from_date": "2018-05-17",
+    "rule_text": "Code=22321 时，预测收涨但实际震荡，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "22321"
+  },
+  {
+    "rule_id": "rule_20180517_31232_fix",
+    "created_from_date": "2018-05-17",
+    "used_from_date": "2018-05-18",
+    "rule_text": "Code=31232 时，预测收涨但实际震荡，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31232"
+  },
+  {
+    "rule_id": "rule_20180522_41242",
+    "created_from_date": "2018-05-22",
+    "used_from_date": "2018-05-23",
+    "rule_text": "Code=41242 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "41242"
+  },
+  {
+    "rule_id": "rule_20180524_23141",
+    "created_from_date": "2018-05-24",
+    "used_from_date": "2018-05-25",
+    "rule_text": "Code=23141 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "23141"
+  },
+  {
+    "rule_id": "rule_20180525_32141",
+    "created_from_date": "2018-05-25",
+    "used_from_date": "2018-05-26",
+    "rule_text": "Code=32141 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "32141"
+  },
+  {
+    "rule_id": "rule_20180530_22132_fix",
+    "created_from_date": "2018-05-30",
+    "used_from_date": "2018-05-31",
+    "rule_text": "Code=22132 时，预测收涨但实际震荡，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "22132"
+  },
+  {
+    "rule_id": "rule_20180531_41232_fix",
+    "created_from_date": "2018-05-31",
+    "used_from_date": "2018-06-01",
+    "rule_text": "Code=41232 时，预测收跌但实际收涨，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "41232"
+  },
+  {
+    "rule_id": "rule_20180604_42242_fix",
+    "created_from_date": "2018-06-04",
+    "used_from_date": "2018-06-05",
+    "rule_text": "Code=42242 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "42242"
+  },
+  {
+    "rule_id": "rule_20180605_42242",
+    "created_from_date": "2018-06-05",
+    "used_from_date": "2018-06-06",
+    "rule_text": "Code=42242 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "42242"
+  },
+  {
+    "rule_id": "rule_20180607_42144",
+    "created_from_date": "2018-06-07",
+    "used_from_date": "2018-06-08",
+    "rule_text": "Code=42144 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "42144"
+  },
+  {
+    "rule_id": "rule_20180608_32135_fix",
+    "created_from_date": "2018-06-08",
+    "used_from_date": "2018-06-09",
+    "rule_text": "Code=32135 时，预测震荡但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32135"
+  },
+  {
+    "rule_id": "rule_20180612_33243",
+    "created_from_date": "2018-06-12",
+    "used_from_date": "2018-06-13",
+    "rule_text": "Code=33243 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "33243"
+  },
+  {
+    "rule_id": "rule_20180618_42245_fix",
+    "created_from_date": "2018-06-18",
+    "used_from_date": "2018-06-19",
+    "rule_text": "Code=42245 时，预测震荡但实际收跌，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "42245"
+  },
+  {
+    "rule_id": "rule_20180619_31312_fix",
+    "created_from_date": "2018-06-19",
+    "used_from_date": "2018-06-20",
+    "rule_text": "Code=31312 时，预测收涨但实际震荡，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31312"
+  },
+  {
+    "rule_id": "rule_20180620_13233",
+    "created_from_date": "2018-06-20",
+    "used_from_date": "2018-06-21",
+    "rule_text": "Code=13233 时，次日震荡准确率高（本次得分100）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "13233"
+  },
+  {
+    "rule_id": "rule_20180621_32132",
+    "created_from_date": "2018-06-21",
+    "used_from_date": "2018-06-22",
+    "rule_text": "Code=32132 时，次日收跌准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "32132"
+  },
+  {
+    "rule_id": "rule_20180622_31221_fix",
+    "created_from_date": "2018-06-22",
+    "used_from_date": "2018-06-23",
+    "rule_text": "Code=31221 时，预测收涨但实际震荡，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31221"
+  },
+  {
+    "rule_id": "rule_20180625_41235_fix",
+    "created_from_date": "2018-06-25",
+    "used_from_date": "2018-06-26",
+    "rule_text": "Code=41235 时，预测震荡但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "41235"
+  },
+  {
+    "rule_id": "rule_20180626_21312",
+    "created_from_date": "2018-06-26",
+    "used_from_date": "2018-06-27",
+    "rule_text": "Code=21312 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "21312"
+  },
+  {
+    "rule_id": "rule_20180627_32231_fix",
+    "created_from_date": "2018-06-27",
+    "used_from_date": "2018-06-28",
+    "rule_text": "Code=32231 时，预测收涨但实际收跌，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32231"
+  },
+  {
+    "rule_id": "rule_20180703_22233_fix",
+    "created_from_date": "2018-07-03",
+    "used_from_date": "2018-07-04",
+    "rule_text": "Code=22233 时，预测震荡但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "22233"
+  },
+  {
+    "rule_id": "rule_20180705_41321_fix",
+    "created_from_date": "2018-07-05",
+    "used_from_date": "2018-07-06",
+    "rule_text": "Code=41321 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "41321"
+  },
+  {
+    "rule_id": "rule_20180706_43152",
+    "created_from_date": "2018-07-06",
+    "used_from_date": "2018-07-07",
+    "rule_text": "Code=43152 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "43152"
+  },
+  {
+    "rule_id": "rule_20180711_32241_fix",
+    "created_from_date": "2018-07-11",
+    "used_from_date": "2018-07-12",
+    "rule_text": "Code=32241 时，预测震荡但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32241"
+  },
+  {
+    "rule_id": "rule_20180712_12214_fix",
+    "created_from_date": "2018-07-12",
+    "used_from_date": "2018-07-13",
+    "rule_text": "Code=12214 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "12214"
+  },
+  {
+    "rule_id": "rule_20180716_42415",
+    "created_from_date": "2018-07-16",
+    "used_from_date": "2018-07-17",
+    "rule_text": "Code=42415 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "42415"
+  },
+  {
+    "rule_id": "rule_20180717_33235",
+    "created_from_date": "2018-07-17",
+    "used_from_date": "2018-07-18",
+    "rule_text": "Code=33235 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "33235"
+  },
+  {
+    "rule_id": "rule_20180719_22134",
+    "created_from_date": "2018-07-19",
+    "used_from_date": "2018-07-20",
+    "rule_text": "Code=22134 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "22134"
+  },
+  {
+    "rule_id": "rule_20180720_33143",
+    "created_from_date": "2018-07-20",
+    "used_from_date": "2018-07-21",
+    "rule_text": "Code=33143 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "33143"
+  },
+  {
+    "rule_id": "rule_20180725_32234_fix",
+    "created_from_date": "2018-07-25",
+    "used_from_date": "2018-07-26",
+    "rule_text": "Code=32234 时，预测震荡但实际收涨，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32234"
+  },
+  {
+    "rule_id": "rule_20180726_35154_fix",
+    "created_from_date": "2018-07-26",
+    "used_from_date": "2018-07-27",
+    "rule_text": "Code=35154 时，预测收涨但实际收跌，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "35154"
+  },
+  {
+    "rule_id": "rule_20180727_32324_fix",
+    "created_from_date": "2018-07-27",
+    "used_from_date": "2018-07-28",
+    "rule_text": "Code=32324 时，预测收涨但实际收跌，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32324"
+  },
+  {
+    "rule_id": "rule_20180730_33323",
+    "created_from_date": "2018-07-30",
+    "used_from_date": "2018-07-31",
+    "rule_text": "Code=33323 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "33323"
+  },
+  {
+    "rule_id": "rule_20180731_34143_fix",
+    "created_from_date": "2018-07-31",
+    "used_from_date": "2018-08-01",
+    "rule_text": "Code=34143 时，预测震荡但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "34143"
+  },
+  {
+    "rule_id": "rule_20180803_23131",
+    "created_from_date": "2018-08-03",
+    "used_from_date": "2018-08-04",
+    "rule_text": "Code=23131 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "23131"
+  },
+  {
+    "rule_id": "rule_20180809_31231",
+    "created_from_date": "2018-08-09",
+    "used_from_date": "2018-08-10",
+    "rule_text": "Code=31231 时，次日收跌准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "31231"
+  },
+  {
+    "rule_id": "rule_20180815_31321_fix",
+    "created_from_date": "2018-08-15",
+    "used_from_date": "2018-08-16",
+    "rule_text": "Code=31321 时，预测收涨但实际震荡，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31321"
+  },
+  {
+    "rule_id": "rule_20180817_42241_fix",
+    "created_from_date": "2018-08-17",
+    "used_from_date": "2018-08-18",
+    "rule_text": "Code=42241 时，预测收跌但实际震荡，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "42241"
+  },
+  {
+    "rule_id": "rule_20180820_33232_fix",
+    "created_from_date": "2018-08-20",
+    "used_from_date": "2018-08-21",
+    "rule_text": "Code=33232 时，预测震荡但实际收跌，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "33232"
+  },
+  {
+    "rule_id": "rule_20180823_32221_fix",
+    "created_from_date": "2018-08-23",
+    "used_from_date": "2018-08-24",
+    "rule_text": "Code=32221 时，预测震荡但实际收跌，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32221"
+  },
+  {
+    "rule_id": "rule_20180824_32222",
+    "created_from_date": "2018-08-24",
+    "used_from_date": "2018-08-25",
+    "rule_text": "Code=32222 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "32222"
+  },
+  {
+    "rule_id": "rule_20180827_32241_fix",
+    "created_from_date": "2018-08-27",
+    "used_from_date": "2018-08-28",
+    "rule_text": "Code=32241 时，预测收涨但实际收涨，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32241"
+  },
+  {
+    "rule_id": "rule_20180828_43242_fix",
+    "created_from_date": "2018-08-28",
+    "used_from_date": "2018-08-29",
+    "rule_text": "Code=43242 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "43242"
+  },
+  {
+    "rule_id": "rule_20180829_42242",
+    "created_from_date": "2018-08-29",
+    "used_from_date": "2018-08-30",
+    "rule_text": "Code=42242 时，次日震荡准确率高（本次得分100）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "42242"
+  },
+  {
+    "rule_id": "rule_20180904_33143",
+    "created_from_date": "2018-09-04",
+    "used_from_date": "2018-09-05",
+    "rule_text": "Code=33143 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "33143"
+  },
+  {
+    "rule_id": "rule_20180905_32234_fix",
+    "created_from_date": "2018-09-05",
+    "used_from_date": "2018-09-06",
+    "rule_text": "Code=32234 时，预测震荡但实际收涨，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32234"
+  },
+  {
+    "rule_id": "rule_20180910_55155",
+    "created_from_date": "2018-09-10",
+    "used_from_date": "2018-09-11",
+    "rule_text": "Code=55155 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "55155"
+  },
+  {
+    "rule_id": "rule_20180911_43255_fix",
+    "created_from_date": "2018-09-11",
+    "used_from_date": "2018-09-12",
+    "rule_text": "Code=43255 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "43255"
+  },
+  {
+    "rule_id": "rule_20180913_22324_fix",
+    "created_from_date": "2018-09-13",
+    "used_from_date": "2018-09-14",
+    "rule_text": "Code=22324 时，预测收涨但实际收涨，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "22324"
+  },
+  {
+    "rule_id": "rule_20180914_43253_fix",
+    "created_from_date": "2018-09-14",
+    "used_from_date": "2018-09-15",
+    "rule_text": "Code=43253 时，预测收涨但实际震荡，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "43253"
+  },
+  {
+    "rule_id": "rule_20180917_32231_fix",
+    "created_from_date": "2018-09-17",
+    "used_from_date": "2018-09-18",
+    "rule_text": "Code=32231 时，预测震荡但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32231"
+  },
+  {
+    "rule_id": "rule_20180918_41322_fix",
+    "created_from_date": "2018-09-18",
+    "used_from_date": "2018-09-19",
+    "rule_text": "Code=41322 时，预测收跌但实际收涨，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "41322"
+  },
+  {
+    "rule_id": "rule_20180919_33154",
+    "created_from_date": "2018-09-19",
+    "used_from_date": "2018-09-20",
+    "rule_text": "Code=33154 时，次日收涨准确率高（本次得分100）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "33154"
+  },
+  {
+    "rule_id": "rule_20180921_32243_fix",
+    "created_from_date": "2018-09-21",
+    "used_from_date": "2018-09-22",
+    "rule_text": "Code=32243 时，预测收涨但实际收涨，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32243"
+  },
+  {
+    "rule_id": "rule_20180926_31223_fix",
+    "created_from_date": "2018-09-26",
+    "used_from_date": "2018-09-27",
+    "rule_text": "Code=31223 时，预测震荡但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31223"
+  },
+  {
+    "rule_id": "rule_20180927_22121",
+    "created_from_date": "2018-09-27",
+    "used_from_date": "2018-09-28",
+    "rule_text": "Code=22121 时，次日震荡准确率高（本次得分100）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "22121"
+  },
+  {
+    "rule_id": "rule_20180928_32131",
+    "created_from_date": "2018-09-28",
+    "used_from_date": "2018-09-29",
+    "rule_text": "Code=32131 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "32131"
+  },
+  {
+    "rule_id": "rule_20181002_33141",
+    "created_from_date": "2018-10-02",
+    "used_from_date": "2018-10-03",
+    "rule_text": "Code=33141 时，次日收跌准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "33141"
+  },
+  {
+    "rule_id": "rule_20181003_32121",
+    "created_from_date": "2018-10-03",
+    "used_from_date": "2018-10-04",
+    "rule_text": "Code=32121 时，次日收涨准确率高（本次得分100）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "32121"
+  },
+  {
+    "rule_id": "rule_20181004_32241_fix",
+    "created_from_date": "2018-10-04",
+    "used_from_date": "2018-10-05",
+    "rule_text": "Code=32241 时，预测震荡但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32241"
+  },
+  {
+    "rule_id": "rule_20181005_22121_fix",
+    "created_from_date": "2018-10-05",
+    "used_from_date": "2018-10-06",
+    "rule_text": "Code=22121 时，预测震荡但实际收跌，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "22121"
+  },
+  {
+    "rule_id": "rule_20181009_32222",
+    "created_from_date": "2018-10-09",
+    "used_from_date": "2018-10-10",
+    "rule_text": "Code=32222 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "32222"
+  },
+  {
+    "rule_id": "rule_20181010_33141_fix",
+    "created_from_date": "2018-10-10",
+    "used_from_date": "2018-10-11",
+    "rule_text": "Code=33141 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "33141"
+  },
+  {
+    "rule_id": "rule_20181015_51342_fix",
+    "created_from_date": "2018-10-15",
+    "used_from_date": "2018-10-16",
+    "rule_text": "Code=51342 时，预测震荡但实际震荡，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "51342"
+  },
+  {
+    "rule_id": "rule_20181016_23132_fix",
+    "created_from_date": "2018-10-16",
+    "used_from_date": "2018-10-17",
+    "rule_text": "Code=23132 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "23132"
+  },
+  {
+    "rule_id": "rule_20181018_41331_fix",
+    "created_from_date": "2018-10-18",
+    "used_from_date": "2018-10-19",
+    "rule_text": "Code=41331 时，预测震荡但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "41331"
+  },
+  {
+    "rule_id": "rule_20181023_42232_fix",
+    "created_from_date": "2018-10-23",
+    "used_from_date": "2018-10-24",
+    "rule_text": "Code=42232 时，预测震荡但实际震荡，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "42232"
+  },
+  {
+    "rule_id": "rule_20181024_14334_fix",
+    "created_from_date": "2018-10-24",
+    "used_from_date": "2018-10-25",
+    "rule_text": "Code=14334 时，预测震荡但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "14334"
+  },
+  {
+    "rule_id": "rule_20181025_21414_fix",
+    "created_from_date": "2018-10-25",
+    "used_from_date": "2018-10-26",
+    "rule_text": "Code=21414 时，预测收涨但实际收涨，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "21414"
+  },
+  {
+    "rule_id": "rule_20181026_43144_fix",
+    "created_from_date": "2018-10-26",
+    "used_from_date": "2018-10-27",
+    "rule_text": "Code=43144 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "43144"
+  },
+  {
+    "rule_id": "rule_20181029_12315_fix",
+    "created_from_date": "2018-10-29",
+    "used_from_date": "2018-10-30",
+    "rule_text": "Code=12315 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "12315"
+  },
+  {
+    "rule_id": "rule_20181030_42422_fix",
+    "created_from_date": "2018-10-30",
+    "used_from_date": "2018-10-31",
+    "rule_text": "Code=42422 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "42422"
+  },
+  {
+    "rule_id": "rule_20181101_41242_fix",
+    "created_from_date": "2018-11-01",
+    "used_from_date": "2018-11-02",
+    "rule_text": "Code=41242 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "41242"
+  },
+  {
+    "rule_id": "rule_20181102_44254_fix",
+    "created_from_date": "2018-11-02",
+    "used_from_date": "2018-11-03",
+    "rule_text": "Code=44254 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "44254"
+  },
+  {
+    "rule_id": "rule_20181105_21414_fix",
+    "created_from_date": "2018-11-05",
+    "used_from_date": "2018-11-06",
+    "rule_text": "Code=21414 时，预测收涨但实际震荡，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "21414"
+  },
+  {
+    "rule_id": "rule_20181108_42252_fix",
+    "created_from_date": "2018-11-08",
+    "used_from_date": "2018-11-09",
+    "rule_text": "Code=42252 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "42252"
+  },
+  {
+    "rule_id": "rule_20181112_13223_fix",
+    "created_from_date": "2018-11-12",
+    "used_from_date": "2018-11-13",
+    "rule_text": "Code=13223 时，预测震荡但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "13223"
+  },
+  {
+    "rule_id": "rule_20181113_11415_fix",
+    "created_from_date": "2018-11-13",
+    "used_from_date": "2018-11-14",
+    "rule_text": "Code=11415 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "11415"
+  },
+  {
+    "rule_id": "rule_20181115_43242",
+    "created_from_date": "2018-11-15",
+    "used_from_date": "2018-11-16",
+    "rule_text": "Code=43242 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "43242"
+  },
+  {
+    "rule_id": "rule_20181120_33413_fix",
+    "created_from_date": "2018-11-20",
+    "used_from_date": "2018-11-21",
+    "rule_text": "Code=33413 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "33413"
+  },
+  {
+    "rule_id": "rule_20181121_13223_fix",
+    "created_from_date": "2018-11-21",
+    "used_from_date": "2018-11-22",
+    "rule_text": "Code=13223 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "13223"
+  },
+  {
+    "rule_id": "rule_20181123_42241_fix",
+    "created_from_date": "2018-11-23",
+    "used_from_date": "2018-11-24",
+    "rule_text": "Code=42241 时，预测收跌但实际震荡，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "42241"
+  },
+  {
+    "rule_id": "rule_20181126_23131_fix",
+    "created_from_date": "2018-11-26",
+    "used_from_date": "2018-11-27",
+    "rule_text": "Code=23131 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "23131"
+  },
+  {
+    "rule_id": "rule_20181129_32333_fix",
+    "created_from_date": "2018-11-29",
+    "used_from_date": "2018-11-30",
+    "rule_text": "Code=32333 时，预测收涨但实际震荡，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32333"
+  },
+  {
+    "rule_id": "rule_20181130_33231_fix",
+    "created_from_date": "2018-11-30",
+    "used_from_date": "2018-12-01",
+    "rule_text": "Code=33231 时，预测震荡但实际收涨，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "33231"
+  },
+  {
+    "rule_id": "rule_20181203_32244_fix",
+    "created_from_date": "2018-12-03",
+    "used_from_date": "2018-12-04",
+    "rule_text": "Code=32244 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32244"
+  },
+  {
+    "rule_id": "rule_20181210_53445_fix",
+    "created_from_date": "2018-12-10",
+    "used_from_date": "2018-12-11",
+    "rule_text": "Code=53445 时，预测震荡但实际收涨，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "53445"
+  },
+  {
+    "rule_id": "rule_20181211_35254",
+    "created_from_date": "2018-12-11",
+    "used_from_date": "2018-12-12",
+    "rule_text": "Code=35254 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "35254"
+  },
+  {
+    "rule_id": "rule_20181212_43155",
+    "created_from_date": "2018-12-12",
+    "used_from_date": "2018-12-13",
+    "rule_text": "Code=43155 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "43155"
+  },
+  {
+    "rule_id": "rule_20181214_42344_fix",
+    "created_from_date": "2018-12-14",
+    "used_from_date": "2018-12-15",
+    "rule_text": "Code=42344 时，预测震荡但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "42344"
+  },
+  {
+    "rule_id": "rule_20181217_23124",
+    "created_from_date": "2018-12-17",
+    "used_from_date": "2018-12-18",
+    "rule_text": "Code=23124 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "23124"
+  },
+  {
+    "rule_id": "rule_20181218_33134_fix",
+    "created_from_date": "2018-12-18",
+    "used_from_date": "2018-12-19",
+    "rule_text": "Code=33134 时，预测震荡但实际收跌，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "33134"
+  },
+  {
+    "rule_id": "rule_20181219_31324_fix",
+    "created_from_date": "2018-12-19",
+    "used_from_date": "2018-12-20",
+    "rule_text": "Code=31324 时，预测收涨但实际收跌，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31324"
+  },
+  {
+    "rule_id": "rule_20181221_33325",
+    "created_from_date": "2018-12-21",
+    "used_from_date": "2018-12-22",
+    "rule_text": "Code=33325 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "33325"
+  },
+  {
+    "rule_id": "rule_20181224_34145_fix",
+    "created_from_date": "2018-12-24",
+    "used_from_date": "2018-12-25",
+    "rule_text": "Code=34145 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "34145"
+  },
+  {
+    "rule_id": "rule_20181226_22411_fix",
+    "created_from_date": "2018-12-26",
+    "used_from_date": "2018-12-27",
+    "rule_text": "Code=22411 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "22411"
+  },
+  {
+    "rule_id": "rule_20181228_23242",
+    "created_from_date": "2018-12-28",
+    "used_from_date": "2018-12-29",
+    "rule_text": "Code=23242 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "23242"
+  },
+  {
+    "rule_id": "rule_20181231_43241_fix",
+    "created_from_date": "2018-12-31",
+    "used_from_date": "2019-01-01",
+    "rule_text": "Code=43241 时，预测收涨但实际震荡，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "43241"
+  },
+  {
+    "rule_id": "rule_20190103_13231_fix",
+    "created_from_date": "2019-01-03",
+    "used_from_date": "2019-01-04",
+    "rule_text": "Code=13231 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "13231"
+  },
+  {
+    "rule_id": "rule_20190104_12514_fix",
+    "created_from_date": "2019-01-04",
+    "used_from_date": "2019-01-05",
+    "rule_text": "Code=12514 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "12514"
+  },
+  {
+    "rule_id": "rule_20190107_42243",
+    "created_from_date": "2019-01-07",
+    "used_from_date": "2019-01-08",
+    "rule_text": "Code=42243 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "42243"
+  },
+  {
+    "rule_id": "rule_20190108_33253_fix",
+    "created_from_date": "2019-01-08",
+    "used_from_date": "2019-01-09",
+    "rule_text": "Code=33253 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "33253"
+  },
+  {
+    "rule_id": "rule_20190109_42321_fix",
+    "created_from_date": "2019-01-09",
+    "used_from_date": "2019-01-10",
+    "rule_text": "Code=42321 时，预测收跌但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "42321"
+  },
+  {
+    "rule_id": "rule_20190110_44153",
+    "created_from_date": "2019-01-10",
+    "used_from_date": "2019-01-11",
+    "rule_text": "Code=44153 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "44153"
+  },
+  {
+    "rule_id": "rule_20190111_33141",
+    "created_from_date": "2019-01-11",
+    "used_from_date": "2019-01-12",
+    "rule_text": "Code=33141 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "33141"
+  },
+  {
+    "rule_id": "rule_20190114_32131",
+    "created_from_date": "2019-01-14",
+    "used_from_date": "2019-01-15",
+    "rule_text": "Code=32131 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "32131"
+  },
+  {
+    "rule_id": "rule_20190115_22231_fix",
+    "created_from_date": "2019-01-15",
+    "used_from_date": "2019-01-16",
+    "rule_text": "Code=22231 时，预测收涨但实际收涨，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "22231"
+  },
+  {
+    "rule_id": "rule_20190116_44152_fix",
+    "created_from_date": "2019-01-16",
+    "used_from_date": "2019-01-17",
+    "rule_text": "Code=44152 时，预测收涨但实际收跌，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "44152"
+  },
+  {
+    "rule_id": "rule_20190117_31321_fix",
+    "created_from_date": "2019-01-17",
+    "used_from_date": "2019-01-18",
+    "rule_text": "Code=31321 时，预测收涨但实际收涨，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31321"
+  },
+  {
+    "rule_id": "rule_20190122_42252_fix",
+    "created_from_date": "2019-01-22",
+    "used_from_date": "2019-01-23",
+    "rule_text": "Code=42252 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "42252"
+  },
+  {
+    "rule_id": "rule_20190123_22222_fix",
+    "created_from_date": "2019-01-23",
+    "used_from_date": "2019-01-24",
+    "rule_text": "Code=22222 时，预测收涨但实际震荡，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "22222"
+  },
+  {
+    "rule_id": "rule_20190124_32332_fix",
+    "created_from_date": "2019-01-24",
+    "used_from_date": "2019-01-25",
+    "rule_text": "Code=32332 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32332"
+  },
+  {
+    "rule_id": "rule_20190128_42342_fix",
+    "created_from_date": "2019-01-28",
+    "used_from_date": "2019-01-29",
+    "rule_text": "Code=42342 时，预测震荡但实际震荡，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "42342"
+  },
+  {
+    "rule_id": "rule_20190129_13232_fix",
+    "created_from_date": "2019-01-29",
+    "used_from_date": "2019-01-30",
+    "rule_text": "Code=13232 时，预测收涨但实际震荡，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "13232"
+  },
+  {
+    "rule_id": "rule_20190130_31232_fix",
+    "created_from_date": "2019-01-30",
+    "used_from_date": "2019-01-31",
+    "rule_text": "Code=31232 时，预测收涨但实际收涨，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31232"
+  },
+  {
+    "rule_id": "rule_20190201_31321",
+    "created_from_date": "2019-02-01",
+    "used_from_date": "2019-02-02",
+    "rule_text": "Code=31321 时，次日收跌准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "31321"
+  },
+  {
+    "rule_id": "rule_20190204_31321",
+    "created_from_date": "2019-02-04",
+    "used_from_date": "2019-02-05",
+    "rule_text": "Code=31321 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "31321"
+  },
+  {
+    "rule_id": "rule_20190206_32222_fix",
+    "created_from_date": "2019-02-06",
+    "used_from_date": "2019-02-07",
+    "rule_text": "Code=32222 时，预测收涨但实际收涨，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32222"
+  },
+  {
+    "rule_id": "rule_20190207_43152_fix",
+    "created_from_date": "2019-02-07",
+    "used_from_date": "2019-02-08",
+    "rule_text": "Code=43152 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "43152"
+  },
+  {
+    "rule_id": "rule_20190212_32141_fix",
+    "created_from_date": "2019-02-12",
+    "used_from_date": "2019-02-13",
+    "rule_text": "Code=32141 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32141"
+  },
+  {
+    "rule_id": "rule_20190213_42241",
+    "created_from_date": "2019-02-13",
+    "used_from_date": "2019-02-14",
+    "rule_text": "Code=42241 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "42241"
+  },
+  {
+    "rule_id": "rule_20190215_32231_fix",
+    "created_from_date": "2019-02-15",
+    "used_from_date": "2019-02-16",
+    "rule_text": "Code=32231 时，预测收涨但实际震荡，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32231"
+  },
+  {
+    "rule_id": "rule_20190219_41331",
+    "created_from_date": "2019-02-19",
+    "used_from_date": "2019-02-20",
+    "rule_text": "Code=41331 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "41331"
+  },
+  {
+    "rule_id": "rule_20190220_32131",
+    "created_from_date": "2019-02-20",
+    "used_from_date": "2019-02-21",
+    "rule_text": "Code=32131 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "32131"
+  },
+  {
+    "rule_id": "rule_20190221_42141",
+    "created_from_date": "2019-02-21",
+    "used_from_date": "2019-02-22",
+    "rule_text": "Code=42141 时，次日收跌准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "42141"
+  },
+  {
+    "rule_id": "rule_20190225_31324",
+    "created_from_date": "2019-02-25",
+    "used_from_date": "2019-02-26",
+    "rule_text": "Code=31324 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "31324"
+  },
+  {
+    "rule_id": "rule_20190228_22224_fix",
+    "created_from_date": "2019-02-28",
+    "used_from_date": "2019-03-01",
+    "rule_text": "Code=22224 时，预测收涨但实际收涨，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "22224"
+  },
+  {
+    "rule_id": "rule_20190301_23144_fix",
+    "created_from_date": "2019-03-01",
+    "used_from_date": "2019-03-02",
+    "rule_text": "Code=23144 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "23144"
+  },
+  {
+    "rule_id": "rule_20190304_41322_fix",
+    "created_from_date": "2019-03-04",
+    "used_from_date": "2019-03-05",
+    "rule_text": "Code=41322 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "41322"
+  },
+  {
+    "rule_id": "rule_20190305_42342_fix",
+    "created_from_date": "2019-03-05",
+    "used_from_date": "2019-03-06",
+    "rule_text": "Code=42342 时，预测震荡但实际收涨，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "42342"
+  },
+  {
+    "rule_id": "rule_20190307_31313",
+    "created_from_date": "2019-03-07",
+    "used_from_date": "2019-03-08",
+    "rule_text": "Code=31313 时，次日收跌准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "31313"
+  },
+  {
+    "rule_id": "rule_20190308_31314_fix",
+    "created_from_date": "2019-03-08",
+    "used_from_date": "2019-03-09",
+    "rule_text": "Code=31314 时，预测收涨但实际震荡，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31314"
+  },
+  {
+    "rule_id": "rule_20190311_22233",
+    "created_from_date": "2019-03-11",
+    "used_from_date": "2019-03-12",
+    "rule_text": "Code=22233 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "22233"
+  },
+  {
+    "rule_id": "rule_20190313_31334",
+    "created_from_date": "2019-03-13",
+    "used_from_date": "2019-03-14",
+    "rule_text": "Code=31334 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "31334"
+  },
+  {
+    "rule_id": "rule_20190315_31325_fix",
+    "created_from_date": "2019-03-15",
+    "used_from_date": "2019-03-16",
+    "rule_text": "Code=31325 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31325"
+  },
+  {
+    "rule_id": "rule_20190318_54255",
+    "created_from_date": "2019-03-18",
+    "used_from_date": "2019-03-19",
+    "rule_text": "Code=54255 时，次日收涨准确率高（本次得分100）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "54255"
+  },
+  {
+    "rule_id": "rule_20190319_33145",
+    "created_from_date": "2019-03-19",
+    "used_from_date": "2019-03-20",
+    "rule_text": "Code=33145 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "33145"
+  },
+  {
+    "rule_id": "rule_20190320_33145_fix",
+    "created_from_date": "2019-03-20",
+    "used_from_date": "2019-03-21",
+    "rule_text": "Code=33145 时，预测收涨但实际收跌，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "33145"
+  },
+  {
+    "rule_id": "rule_20190325_31321",
+    "created_from_date": "2019-03-25",
+    "used_from_date": "2019-03-26",
+    "rule_text": "Code=31321 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "31321"
+  },
+  {
+    "rule_id": "rule_20190326_32231_fix",
+    "created_from_date": "2019-03-26",
+    "used_from_date": "2019-03-27",
+    "rule_text": "Code=32231 时，预测收涨但实际收涨，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32231"
+  },
+  {
+    "rule_id": "rule_20190329_33143_fix",
+    "created_from_date": "2019-03-29",
+    "used_from_date": "2019-03-30",
+    "rule_text": "Code=33143 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "33143"
+  },
+  {
+    "rule_id": "rule_20190401_41241_fix",
+    "created_from_date": "2019-04-01",
+    "used_from_date": "2019-04-02",
+    "rule_text": "Code=41241 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "41241"
+  },
+  {
+    "rule_id": "rule_20190404_41231",
+    "created_from_date": "2019-04-04",
+    "used_from_date": "2019-04-05",
+    "rule_text": "Code=41231 时，次日收跌准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "41231"
+  },
+  {
+    "rule_id": "rule_20190405_31221",
+    "created_from_date": "2019-04-05",
+    "used_from_date": "2019-04-06",
+    "rule_text": "Code=31221 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "31221"
+  },
+  {
+    "rule_id": "rule_20190408_41241",
+    "created_from_date": "2019-04-08",
+    "used_from_date": "2019-04-09",
+    "rule_text": "Code=41241 时，次日震荡准确率高（本次得分100）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "41241"
+  },
+  {
+    "rule_id": "rule_20190410_22231",
+    "created_from_date": "2019-04-10",
+    "used_from_date": "2019-04-11",
+    "rule_text": "Code=22231 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "22231"
+  },
+  {
+    "rule_id": "rule_20190412_32241_fix",
+    "created_from_date": "2019-04-12",
+    "used_from_date": "2019-04-13",
+    "rule_text": "Code=32241 时，预测收涨但实际收涨，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32241"
+  },
+  {
+    "rule_id": "rule_20190415_43153_fix",
+    "created_from_date": "2019-04-15",
+    "used_from_date": "2019-04-16",
+    "rule_text": "Code=43153 时，预测收涨但实际震荡，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "43153"
+  },
+  {
+    "rule_id": "rule_20190417_41242_fix",
+    "created_from_date": "2019-04-17",
+    "used_from_date": "2019-04-18",
+    "rule_text": "Code=41242 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "41242"
+  },
+  {
+    "rule_id": "rule_20190423_31221_fix",
+    "created_from_date": "2019-04-23",
+    "used_from_date": "2019-04-24",
+    "rule_text": "Code=31221 时，预测收涨但实际震荡，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31221"
+  },
+  {
+    "rule_id": "rule_20190425_32134_fix",
+    "created_from_date": "2019-04-25",
+    "used_from_date": "2019-04-26",
+    "rule_text": "Code=32134 时，预测震荡但实际收跌，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32134"
+  },
+  {
+    "rule_id": "rule_20190426_31324_fix",
+    "created_from_date": "2019-04-26",
+    "used_from_date": "2019-04-27",
+    "rule_text": "Code=31324 时，预测收涨但实际震荡，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31324"
+  },
+  {
+    "rule_id": "rule_20190429_22232",
+    "created_from_date": "2019-04-29",
+    "used_from_date": "2019-04-30",
+    "rule_text": "Code=22232 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "22232"
+  },
+  {
+    "rule_id": "rule_20190501_33143",
+    "created_from_date": "2019-05-01",
+    "used_from_date": "2019-05-02",
+    "rule_text": "Code=33143 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "33143"
+  },
+  {
+    "rule_id": "rule_20190503_32323",
+    "created_from_date": "2019-05-03",
+    "used_from_date": "2019-05-04",
+    "rule_text": "Code=32323 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "32323"
+  },
+  {
+    "rule_id": "rule_20190506_32233_fix",
+    "created_from_date": "2019-05-06",
+    "used_from_date": "2019-05-07",
+    "rule_text": "Code=32233 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32233"
+  },
+  {
+    "rule_id": "rule_20190507_13122_fix",
+    "created_from_date": "2019-05-07",
+    "used_from_date": "2019-05-08",
+    "rule_text": "Code=13122 时，预测震荡但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "13122"
+  },
+  {
+    "rule_id": "rule_20190508_21324_fix",
+    "created_from_date": "2019-05-08",
+    "used_from_date": "2019-05-09",
+    "rule_text": "Code=21324 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "21324"
+  },
+  {
+    "rule_id": "rule_20190509_22222_fix",
+    "created_from_date": "2019-05-09",
+    "used_from_date": "2019-05-10",
+    "rule_text": "Code=22222 时，预测收涨但实际震荡，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "22222"
+  },
+  {
+    "rule_id": "rule_20190513_32333_fix",
+    "created_from_date": "2019-05-13",
+    "used_from_date": "2019-05-14",
+    "rule_text": "Code=32333 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32333"
+  },
+  {
+    "rule_id": "rule_20190516_23242_fix",
+    "created_from_date": "2019-05-16",
+    "used_from_date": "2019-05-17",
+    "rule_text": "Code=23242 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "23242"
+  },
+  {
+    "rule_id": "rule_20190521_12415_fix",
+    "created_from_date": "2019-05-21",
+    "used_from_date": "2019-05-22",
+    "rule_text": "Code=12415 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "12415"
+  },
+  {
+    "rule_id": "rule_20190522_42243_fix",
+    "created_from_date": "2019-05-22",
+    "used_from_date": "2019-05-23",
+    "rule_text": "Code=42243 时，预测震荡但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "42243"
+  },
+  {
+    "rule_id": "rule_20190523_23214_fix",
+    "created_from_date": "2019-05-23",
+    "used_from_date": "2019-05-24",
+    "rule_text": "Code=23214 时，预测震荡但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "23214"
+  },
+  {
+    "rule_id": "rule_20190524_21315_fix",
+    "created_from_date": "2019-05-24",
+    "used_from_date": "2019-05-25",
+    "rule_text": "Code=21315 时，预测震荡但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "21315"
+  },
+  {
+    "rule_id": "rule_20190529_31325_fix",
+    "created_from_date": "2019-05-29",
+    "used_from_date": "2019-05-30",
+    "rule_text": "Code=31325 时，预测震荡但实际震荡，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31325"
+  },
+  {
+    "rule_id": "rule_20190531_32141_fix",
+    "created_from_date": "2019-05-31",
+    "used_from_date": "2019-06-01",
+    "rule_text": "Code=32141 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32141"
+  },
+  {
+    "rule_id": "rule_20190604_33243",
+    "created_from_date": "2019-06-04",
+    "used_from_date": "2019-06-05",
+    "rule_text": "Code=33243 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "33243"
+  },
+  {
+    "rule_id": "rule_20190605_44154_fix",
+    "created_from_date": "2019-06-05",
+    "used_from_date": "2019-06-06",
+    "rule_text": "Code=44154 时，预测收涨但实际震荡，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "44154"
+  },
+  {
+    "rule_id": "rule_20190606_42332_fix",
+    "created_from_date": "2019-06-06",
+    "used_from_date": "2019-06-07",
+    "rule_text": "Code=42332 时，预测收跌但实际收涨，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "42332"
+  },
+  {
+    "rule_id": "rule_20190607_33253",
+    "created_from_date": "2019-06-07",
+    "used_from_date": "2019-06-08",
+    "rule_text": "Code=33253 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "33253"
+  },
+  {
+    "rule_id": "rule_20190610_42242_fix",
+    "created_from_date": "2019-06-10",
+    "used_from_date": "2019-06-11",
+    "rule_text": "Code=42242 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "42242"
+  },
+  {
+    "rule_id": "rule_20190611_43142_fix",
+    "created_from_date": "2019-06-11",
+    "used_from_date": "2019-06-12",
+    "rule_text": "Code=43142 时，预测收涨但实际收涨，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "43142"
+  },
+  {
+    "rule_id": "rule_20190612_51444_fix",
+    "created_from_date": "2019-06-12",
+    "used_from_date": "2019-06-13",
+    "rule_text": "Code=51444 时，预测震荡但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "51444"
+  },
+  {
+    "rule_id": "rule_20190614_41244_fix",
+    "created_from_date": "2019-06-14",
+    "used_from_date": "2019-06-15",
+    "rule_text": "Code=41244 时，预测震荡但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "41244"
+  },
+  {
+    "rule_id": "rule_20190617_14115_fix",
+    "created_from_date": "2019-06-17",
+    "used_from_date": "2019-06-18",
+    "rule_text": "Code=14115 时，预测收跌但实际震荡，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "14115"
+  },
+  {
+    "rule_id": "rule_20190618_32233_fix",
+    "created_from_date": "2019-06-18",
+    "used_from_date": "2019-06-19",
+    "rule_text": "Code=32233 时，预测收涨但实际收涨，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32233"
+  },
+  {
+    "rule_id": "rule_20190619_45254_fix",
+    "created_from_date": "2019-06-19",
+    "used_from_date": "2019-06-20",
+    "rule_text": "Code=45254 时，预测收涨但实际震荡，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "45254"
+  },
+  {
+    "rule_id": "rule_20190620_31332_fix",
+    "created_from_date": "2019-06-20",
+    "used_from_date": "2019-06-21",
+    "rule_text": "Code=31332 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31332"
+  },
+  {
+    "rule_id": "rule_20190621_42345_fix",
+    "created_from_date": "2019-06-21",
+    "used_from_date": "2019-06-22",
+    "rule_text": "Code=42345 时，预测震荡但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "42345"
+  },
+  {
+    "rule_id": "rule_20190624_23224_fix",
+    "created_from_date": "2019-06-24",
+    "used_from_date": "2019-06-25",
+    "rule_text": "Code=23224 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "23224"
+  },
+  {
+    "rule_id": "rule_20190625_42141",
+    "created_from_date": "2019-06-25",
+    "used_from_date": "2019-06-26",
+    "rule_text": "Code=42141 时，次日收跌准确率高（本次得分100）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "42141"
+  },
+  {
+    "rule_id": "rule_20190628_43141_fix",
+    "created_from_date": "2019-06-28",
+    "used_from_date": "2019-06-29",
+    "rule_text": "Code=43141 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "43141"
+  },
+  {
+    "rule_id": "rule_20190701_42244_fix",
+    "created_from_date": "2019-07-01",
+    "used_from_date": "2019-07-02",
+    "rule_text": "Code=42244 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "42244"
+  },
+  {
+    "rule_id": "rule_20190702_52354",
+    "created_from_date": "2019-07-02",
+    "used_from_date": "2019-07-03",
+    "rule_text": "Code=52354 时，次日收跌准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "52354"
+  },
+  {
+    "rule_id": "rule_20190703_32321_fix",
+    "created_from_date": "2019-07-03",
+    "used_from_date": "2019-07-04",
+    "rule_text": "Code=32321 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32321"
+  },
+  {
+    "rule_id": "rule_20190705_13114_fix",
+    "created_from_date": "2019-07-05",
+    "used_from_date": "2019-07-06",
+    "rule_text": "Code=13114 时，预测震荡但实际收跌，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "13114"
+  },
+  {
+    "rule_id": "rule_20190708_32221_fix",
+    "created_from_date": "2019-07-08",
+    "used_from_date": "2019-07-09",
+    "rule_text": "Code=32221 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32221"
+  },
+  {
+    "rule_id": "rule_20190709_21313_fix",
+    "created_from_date": "2019-07-09",
+    "used_from_date": "2019-07-10",
+    "rule_text": "Code=21313 时，预测震荡但实际震荡，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "21313"
+  },
+  {
+    "rule_id": "rule_20190710_22131_fix",
+    "created_from_date": "2019-07-10",
+    "used_from_date": "2019-07-11",
+    "rule_text": "Code=22131 时，预测震荡但实际震荡，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "22131"
+  },
+  {
+    "rule_id": "rule_20190712_32241",
+    "created_from_date": "2019-07-12",
+    "used_from_date": "2019-07-13",
+    "rule_text": "Code=32241 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "32241"
+  },
+  {
+    "rule_id": "rule_20190715_34151_fix",
+    "created_from_date": "2019-07-15",
+    "used_from_date": "2019-07-16",
+    "rule_text": "Code=34151 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "34151"
+  },
+  {
+    "rule_id": "rule_20190719_32241_fix",
+    "created_from_date": "2019-07-19",
+    "used_from_date": "2019-07-20",
+    "rule_text": "Code=32241 时，预测收涨但实际震荡，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32241"
+  },
+  {
+    "rule_id": "rule_20190722_41232_fix",
+    "created_from_date": "2019-07-22",
+    "used_from_date": "2019-07-23",
+    "rule_text": "Code=41232 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "41232"
+  },
+  {
+    "rule_id": "rule_20190723_43154",
+    "created_from_date": "2019-07-23",
+    "used_from_date": "2019-07-24",
+    "rule_text": "Code=43154 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "43154"
+  },
+  {
+    "rule_id": "rule_20190724_42142",
+    "created_from_date": "2019-07-24",
+    "used_from_date": "2019-07-25",
+    "rule_text": "Code=42142 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "42142"
+  },
+  {
+    "rule_id": "rule_20190725_32141_fix",
+    "created_from_date": "2019-07-25",
+    "used_from_date": "2019-07-26",
+    "rule_text": "Code=32141 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32141"
+  },
+  {
+    "rule_id": "rule_20190730_31231_fix",
+    "created_from_date": "2019-07-30",
+    "used_from_date": "2019-07-31",
+    "rule_text": "Code=31231 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31231"
+  },
+  {
+    "rule_id": "rule_20190731_22221_fix",
+    "created_from_date": "2019-07-31",
+    "used_from_date": "2019-08-01",
+    "rule_text": "Code=22221 时，预测收涨但实际收跌，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "22221"
+  },
+  {
+    "rule_id": "rule_20190802_34323_fix",
+    "created_from_date": "2019-08-02",
+    "used_from_date": "2019-08-03",
+    "rule_text": "Code=34323 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "34323"
+  },
+  {
+    "rule_id": "rule_20190805_22313_fix",
+    "created_from_date": "2019-08-05",
+    "used_from_date": "2019-08-06",
+    "rule_text": "Code=22313 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "22313"
+  },
+  {
+    "rule_id": "rule_20190806_11314_fix",
+    "created_from_date": "2019-08-06",
+    "used_from_date": "2019-08-07",
+    "rule_text": "Code=11314 时，预测收涨但实际震荡，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "11314"
+  },
+  {
+    "rule_id": "rule_20190807_42333_fix",
+    "created_from_date": "2019-08-07",
+    "used_from_date": "2019-08-08",
+    "rule_text": "Code=42333 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "42333"
+  },
+  {
+    "rule_id": "rule_20190808_24143_fix",
+    "created_from_date": "2019-08-08",
+    "used_from_date": "2019-08-09",
+    "rule_text": "Code=24143 时，预测收涨但实际震荡，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "24143"
+  },
+  {
+    "rule_id": "rule_20190812_24144_fix",
+    "created_from_date": "2019-08-12",
+    "used_from_date": "2019-08-13",
+    "rule_text": "Code=24144 时，预测收涨但实际震荡，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "24144"
+  },
+  {
+    "rule_id": "rule_20190813_23133",
+    "created_from_date": "2019-08-13",
+    "used_from_date": "2019-08-14",
+    "rule_text": "Code=23133 时，次日收涨准确率高（本次得分100）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "23133"
+  },
+  {
+    "rule_id": "rule_20190814_34253_fix",
+    "created_from_date": "2019-08-14",
+    "used_from_date": "2019-08-15",
+    "rule_text": "Code=34253 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "34253"
+  },
+  {
+    "rule_id": "rule_20190816_31323_fix",
+    "created_from_date": "2019-08-16",
+    "used_from_date": "2019-08-17",
+    "rule_text": "Code=31323 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31323"
+  },
+  {
+    "rule_id": "rule_20190819_42142_fix",
+    "created_from_date": "2019-08-19",
+    "used_from_date": "2019-08-20",
+    "rule_text": "Code=42142 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "42142"
+  },
+  {
+    "rule_id": "rule_20190820_51242_fix",
+    "created_from_date": "2019-08-20",
+    "used_from_date": "2019-08-21",
+    "rule_text": "Code=51242 时，预测震荡但实际收涨，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "51242"
+  },
+  {
+    "rule_id": "rule_20190821_33142_fix",
+    "created_from_date": "2019-08-21",
+    "used_from_date": "2019-08-22",
+    "rule_text": "Code=33142 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "33142"
+  },
+  {
+    "rule_id": "rule_20190822_42153_fix",
+    "created_from_date": "2019-08-22",
+    "used_from_date": "2019-08-23",
+    "rule_text": "Code=42153 时，预测收跌但实际震荡，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "42153"
+  },
+  {
+    "rule_id": "rule_20190823_31231_fix",
+    "created_from_date": "2019-08-23",
+    "used_from_date": "2019-08-24",
+    "rule_text": "Code=31231 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31231"
+  },
+  {
+    "rule_id": "rule_20190828_41321",
+    "created_from_date": "2019-08-28",
+    "used_from_date": "2019-08-29",
+    "rule_text": "Code=41321 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "41321"
+  },
+  {
+    "rule_id": "rule_20190829_32232_fix",
+    "created_from_date": "2019-08-29",
+    "used_from_date": "2019-08-30",
+    "rule_text": "Code=32232 时，预测收涨但实际收涨，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32232"
+  },
+  {
+    "rule_id": "rule_20190830_42152_fix",
+    "created_from_date": "2019-08-30",
+    "used_from_date": "2019-08-31",
+    "rule_text": "Code=42152 时，预测震荡但实际震荡，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "42152"
+  },
+  {
+    "rule_id": "rule_20190903_41332_fix",
+    "created_from_date": "2019-09-03",
+    "used_from_date": "2019-09-04",
+    "rule_text": "Code=41332 时，预测震荡但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "41332"
+  },
+  {
+    "rule_id": "rule_20190904_21413_fix",
+    "created_from_date": "2019-09-04",
+    "used_from_date": "2019-09-05",
+    "rule_text": "Code=21413 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "21413"
+  },
+  {
+    "rule_id": "rule_20190905_43153",
+    "created_from_date": "2019-09-05",
+    "used_from_date": "2019-09-06",
+    "rule_text": "Code=43153 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "43153"
+  },
+  {
+    "rule_id": "rule_20190906_43153_fix",
+    "created_from_date": "2019-09-06",
+    "used_from_date": "2019-09-07",
+    "rule_text": "Code=43153 时，预测收涨但实际震荡，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "43153"
+  },
+  {
+    "rule_id": "rule_20190909_31231_fix",
+    "created_from_date": "2019-09-09",
+    "used_from_date": "2019-09-10",
+    "rule_text": "Code=31231 时，预测收涨但实际震荡，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31231"
+  },
+  {
+    "rule_id": "rule_20190910_42334_fix",
+    "created_from_date": "2019-09-10",
+    "used_from_date": "2019-09-11",
+    "rule_text": "Code=42334 时，预测收跌但实际收涨，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "42334"
+  },
+  {
+    "rule_id": "rule_20190911_32244_fix",
+    "created_from_date": "2019-09-11",
+    "used_from_date": "2019-09-12",
+    "rule_text": "Code=32244 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32244"
+  },
+  {
+    "rule_id": "rule_20190912_42243_fix",
+    "created_from_date": "2019-09-12",
+    "used_from_date": "2019-09-13",
+    "rule_text": "Code=42243 时，预测收涨但实际收涨，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "42243"
+  },
+  {
+    "rule_id": "rule_20190916_21415_fix",
+    "created_from_date": "2019-09-16",
+    "used_from_date": "2019-09-17",
+    "rule_text": "Code=21415 时，预测震荡但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "21415"
+  },
+  {
+    "rule_id": "rule_20190917_22123",
+    "created_from_date": "2019-09-17",
+    "used_from_date": "2019-09-18",
+    "rule_text": "Code=22123 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "22123"
+  },
+  {
+    "rule_id": "rule_20190918_31233",
+    "created_from_date": "2019-09-18",
+    "used_from_date": "2019-09-19",
+    "rule_text": "Code=31233 时，次日震荡准确率高（本次得分100）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "31233"
+  },
+  {
+    "rule_id": "rule_20190920_32143_fix",
+    "created_from_date": "2019-09-20",
+    "used_from_date": "2019-09-21",
+    "rule_text": "Code=32143 时，预测震荡但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32143"
+  },
+  {
+    "rule_id": "rule_20190924_32231_fix",
+    "created_from_date": "2019-09-24",
+    "used_from_date": "2019-09-25",
+    "rule_text": "Code=32231 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32231"
+  },
+  {
+    "rule_id": "rule_20190925_42323_fix",
+    "created_from_date": "2019-09-25",
+    "used_from_date": "2019-09-26",
+    "rule_text": "Code=42323 时，预测震荡但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "42323"
+  },
+  {
+    "rule_id": "rule_20190927_32234_fix",
+    "created_from_date": "2019-09-27",
+    "used_from_date": "2019-09-28",
+    "rule_text": "Code=32234 时，预测震荡但实际收跌，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32234"
+  },
+  {
+    "rule_id": "rule_20190930_33224_fix",
+    "created_from_date": "2019-09-30",
+    "used_from_date": "2019-10-01",
+    "rule_text": "Code=33224 时，预测收涨但实际收涨，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "33224"
+  },
+  {
+    "rule_id": "rule_20191002_41332_fix",
+    "created_from_date": "2019-10-02",
+    "used_from_date": "2019-10-03",
+    "rule_text": "Code=41332 时，预测震荡但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "41332"
+  },
+  {
+    "rule_id": "rule_20191003_21322",
+    "created_from_date": "2019-10-03",
+    "used_from_date": "2019-10-04",
+    "rule_text": "Code=21322 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "21322"
+  },
+  {
+    "rule_id": "rule_20191007_42253_fix",
+    "created_from_date": "2019-10-07",
+    "used_from_date": "2019-10-08",
+    "rule_text": "Code=42253 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "42253"
+  },
+  {
+    "rule_id": "rule_20191008_21322_fix",
+    "created_from_date": "2019-10-08",
+    "used_from_date": "2019-10-09",
+    "rule_text": "Code=21322 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "21322"
+  },
+  {
+    "rule_id": "rule_20191011_43131_fix",
+    "created_from_date": "2019-10-11",
+    "used_from_date": "2019-10-12",
+    "rule_text": "Code=43131 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "43131"
+  },
+  {
+    "rule_id": "rule_20191015_32131",
+    "created_from_date": "2019-10-15",
+    "used_from_date": "2019-10-16",
+    "rule_text": "Code=32131 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "32131"
+  },
+  {
+    "rule_id": "rule_20191017_31222_fix",
+    "created_from_date": "2019-10-17",
+    "used_from_date": "2019-10-18",
+    "rule_text": "Code=31222 时，预测收涨但实际震荡，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31222"
+  },
+  {
+    "rule_id": "rule_20191022_42141",
+    "created_from_date": "2019-10-22",
+    "used_from_date": "2019-10-23",
+    "rule_text": "Code=42141 时，次日收跌准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "42141"
+  },
+  {
+    "rule_id": "rule_20191023_31221_fix",
+    "created_from_date": "2019-10-23",
+    "used_from_date": "2019-10-24",
+    "rule_text": "Code=31221 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31221"
+  },
+  {
+    "rule_id": "rule_20191024_21213",
+    "created_from_date": "2019-10-24",
+    "used_from_date": "2019-10-25",
+    "rule_text": "Code=21213 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "21213"
+  },
+  {
+    "rule_id": "rule_20191025_41242_fix",
+    "created_from_date": "2019-10-25",
+    "used_from_date": "2019-10-26",
+    "rule_text": "Code=41242 时，预测震荡但实际收涨，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "41242"
+  },
+  {
+    "rule_id": "rule_20191031_41243_fix",
+    "created_from_date": "2019-10-31",
+    "used_from_date": "2019-11-01",
+    "rule_text": "Code=41243 时，预测震荡但实际收涨，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "41243"
+  },
+  {
+    "rule_id": "rule_20191105_43155",
+    "created_from_date": "2019-11-05",
+    "used_from_date": "2019-11-06",
+    "rule_text": "Code=43155 时，次日收涨准确率高（本次得分100）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "43155"
+  },
+  {
+    "rule_id": "rule_20191106_34155_fix",
+    "created_from_date": "2019-11-06",
+    "used_from_date": "2019-11-07",
+    "rule_text": "Code=34155 时，预测收涨但实际震荡，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "34155"
+  },
+  {
+    "rule_id": "rule_20191107_22233_fix",
+    "created_from_date": "2019-11-07",
+    "used_from_date": "2019-11-08",
+    "rule_text": "Code=22233 时，预测收涨但实际震荡，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "22233"
+  },
+  {
+    "rule_id": "rule_20191108_42334_fix",
+    "created_from_date": "2019-11-08",
+    "used_from_date": "2019-11-09",
+    "rule_text": "Code=42334 时，预测收跌但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "42334"
+  },
+  {
+    "rule_id": "rule_20191111_22342_fix",
+    "created_from_date": "2019-11-11",
+    "used_from_date": "2019-11-12",
+    "rule_text": "Code=22342 时，预测收涨但实际震荡，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "22342"
+  },
+  {
+    "rule_id": "rule_20191114_22121_fix",
+    "created_from_date": "2019-11-14",
+    "used_from_date": "2019-11-15",
+    "rule_text": "Code=22121 时，预测震荡但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "22121"
+  },
+  {
+    "rule_id": "rule_20191115_21223",
+    "created_from_date": "2019-11-15",
+    "used_from_date": "2019-11-16",
+    "rule_text": "Code=21223 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "21223"
+  },
+  {
+    "rule_id": "rule_20191119_32222_fix",
+    "created_from_date": "2019-11-19",
+    "used_from_date": "2019-11-20",
+    "rule_text": "Code=32222 时，预测收涨但实际收涨，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32222"
+  },
+  {
+    "rule_id": "rule_20191120_43155_fix",
+    "created_from_date": "2019-11-20",
+    "used_from_date": "2019-11-21",
+    "rule_text": "Code=43155 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "43155"
+  },
+  {
+    "rule_id": "rule_20191121_21323",
+    "created_from_date": "2019-11-21",
+    "used_from_date": "2019-11-22",
+    "rule_text": "Code=21323 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "21323"
+  },
+  {
+    "rule_id": "rule_20191125_32231_fix",
+    "created_from_date": "2019-11-25",
+    "used_from_date": "2019-11-26",
+    "rule_text": "Code=32231 时，预测收涨但实际收涨，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32231"
+  },
+  {
+    "rule_id": "rule_20191126_42143_fix",
+    "created_from_date": "2019-11-26",
+    "used_from_date": "2019-11-27",
+    "rule_text": "Code=42143 时，预测震荡但实际收跌，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "42143"
+  },
+  {
+    "rule_id": "rule_20191127_31225_fix",
+    "created_from_date": "2019-11-27",
+    "used_from_date": "2019-11-28",
+    "rule_text": "Code=31225 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31225"
+  },
+  {
+    "rule_id": "rule_20191129_42143_fix",
+    "created_from_date": "2019-11-29",
+    "used_from_date": "2019-11-30",
+    "rule_text": "Code=42143 时，预测震荡但实际收跌，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "42143"
+  },
+  {
+    "rule_id": "rule_20191203_31324_fix",
+    "created_from_date": "2019-12-03",
+    "used_from_date": "2019-12-04",
+    "rule_text": "Code=31324 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31324"
+  },
+  {
+    "rule_id": "rule_20191205_42242",
+    "created_from_date": "2019-12-05",
+    "used_from_date": "2019-12-06",
+    "rule_text": "Code=42242 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "42242"
+  },
+  {
+    "rule_id": "rule_20191206_32132_fix",
+    "created_from_date": "2019-12-06",
+    "used_from_date": "2019-12-07",
+    "rule_text": "Code=32132 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32132"
+  },
+  {
+    "rule_id": "rule_20191209_42243_fix",
+    "created_from_date": "2019-12-09",
+    "used_from_date": "2019-12-10",
+    "rule_text": "Code=42243 时，预测震荡但实际收跌，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "42243"
+  },
+  {
+    "rule_id": "rule_20191210_31224",
+    "created_from_date": "2019-12-10",
+    "used_from_date": "2019-12-11",
+    "rule_text": "Code=31224 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "31224"
+  },
+  {
+    "rule_id": "rule_20191212_33144",
+    "created_from_date": "2019-12-12",
+    "used_from_date": "2019-12-13",
+    "rule_text": "Code=33144 时，次日收涨准确率高（本次得分100）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "33144"
+  },
+  {
+    "rule_id": "rule_20191213_34155_fix",
+    "created_from_date": "2019-12-13",
+    "used_from_date": "2019-12-14",
+    "rule_text": "Code=34155 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "34155"
+  },
+  {
+    "rule_id": "rule_20191216_12315_fix",
+    "created_from_date": "2019-12-16",
+    "used_from_date": "2019-12-17",
+    "rule_text": "Code=12315 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "12315"
+  },
+  {
+    "rule_id": "rule_20191217_44155_fix",
+    "created_from_date": "2019-12-17",
+    "used_from_date": "2019-12-18",
+    "rule_text": "Code=44155 时，预测收涨但实际震荡，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "44155"
+  },
+  {
+    "rule_id": "rule_20191219_33144_fix",
+    "created_from_date": "2019-12-19",
+    "used_from_date": "2019-12-20",
+    "rule_text": "Code=33144 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "33144"
+  },
+  {
+    "rule_id": "rule_20191224_32232",
+    "created_from_date": "2019-12-24",
+    "used_from_date": "2019-12-25",
+    "rule_text": "Code=32232 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "32232"
+  },
+  {
+    "rule_id": "rule_20191227_31221",
+    "created_from_date": "2019-12-27",
+    "used_from_date": "2019-12-28",
+    "rule_text": "Code=31221 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "31221"
+  },
+  {
+    "rule_id": "rule_20191230_31231",
+    "created_from_date": "2019-12-30",
+    "used_from_date": "2019-12-31",
+    "rule_text": "Code=31231 时，次日收跌准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "31231"
+  },
+  {
+    "rule_id": "rule_20191231_31221",
+    "created_from_date": "2019-12-31",
+    "used_from_date": "2020-01-01",
+    "rule_text": "Code=31221 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "31221"
+  },
+  {
+    "rule_id": "rule_20200103_42252_fix",
+    "created_from_date": "2020-01-03",
+    "used_from_date": "2020-01-04",
+    "rule_text": "Code=42252 时，预测震荡但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "42252"
+  },
+  {
+    "rule_id": "rule_20200106_22213_fix",
+    "created_from_date": "2020-01-06",
+    "used_from_date": "2020-01-07",
+    "rule_text": "Code=22213 时，预测收涨但实际震荡，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "22213"
+  },
+  {
+    "rule_id": "rule_20200107_22132_fix",
+    "created_from_date": "2020-01-07",
+    "used_from_date": "2020-01-08",
+    "rule_text": "Code=22132 时，预测收涨但实际震荡，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "22132"
+  },
+  {
+    "rule_id": "rule_20200110_41325",
+    "created_from_date": "2020-01-10",
+    "used_from_date": "2020-01-11",
+    "rule_text": "Code=41325 时，次日收跌准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "41325"
+  },
+  {
+    "rule_id": "rule_20200116_31322_fix",
+    "created_from_date": "2020-01-16",
+    "used_from_date": "2020-01-17",
+    "rule_text": "Code=31322 时，预测收涨但实际收涨，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31322"
+  },
+  {
+    "rule_id": "rule_20200117_42142_fix",
+    "created_from_date": "2020-01-17",
+    "used_from_date": "2020-01-18",
+    "rule_text": "Code=42142 时，预测收跌但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "42142"
+  },
+  {
+    "rule_id": "rule_20200121_41243",
+    "created_from_date": "2020-01-21",
+    "used_from_date": "2020-01-22",
+    "rule_text": "Code=41243 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "41243"
+  },
+  {
+    "rule_id": "rule_20200124_42254_fix",
+    "created_from_date": "2020-01-24",
+    "used_from_date": "2020-01-25",
+    "rule_text": "Code=42254 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "42254"
+  },
+  {
+    "rule_id": "rule_20200127_51345",
+    "created_from_date": "2020-01-27",
+    "used_from_date": "2020-01-28",
+    "rule_text": "Code=51345 时，次日收跌准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "51345"
+  },
+  {
+    "rule_id": "rule_20200128_12315_fix",
+    "created_from_date": "2020-01-28",
+    "used_from_date": "2020-01-29",
+    "rule_text": "Code=12315 时，预测收涨但实际收涨，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "12315"
+  },
+  {
+    "rule_id": "rule_20200129_43152_fix",
+    "created_from_date": "2020-01-29",
+    "used_from_date": "2020-01-30",
+    "rule_text": "Code=43152 时，预测收涨但实际震荡，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "43152"
+  },
+  {
+    "rule_id": "rule_20200130_42232_fix",
+    "created_from_date": "2020-01-30",
+    "used_from_date": "2020-01-31",
+    "rule_text": "Code=42232 时，预测震荡但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "42232"
+  },
+  {
+    "rule_id": "rule_20200203_31412",
+    "created_from_date": "2020-02-03",
+    "used_from_date": "2020-02-04",
+    "rule_text": "Code=31412 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "31412"
+  },
+  {
+    "rule_id": "rule_20200204_31232_fix",
+    "created_from_date": "2020-02-04",
+    "used_from_date": "2020-02-05",
+    "rule_text": "Code=31232 时，预测收涨但实际收涨，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31232"
+  },
+  {
+    "rule_id": "rule_20200205_52252_fix",
+    "created_from_date": "2020-02-05",
+    "used_from_date": "2020-02-06",
+    "rule_text": "Code=52252 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "52252"
+  },
+  {
+    "rule_id": "rule_20200206_42242_fix",
+    "created_from_date": "2020-02-06",
+    "used_from_date": "2020-02-07",
+    "rule_text": "Code=42242 时，预测震荡但实际收涨，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "42242"
+  },
+  {
+    "rule_id": "rule_20200207_31242",
+    "created_from_date": "2020-02-07",
+    "used_from_date": "2020-02-08",
+    "rule_text": "Code=31242 时，次日收跌准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "31242"
+  },
+  {
+    "rule_id": "rule_20200210_31221_fix",
+    "created_from_date": "2020-02-10",
+    "used_from_date": "2020-02-11",
+    "rule_text": "Code=31221 时，预测收涨但实际震荡，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31221"
+  },
+  {
+    "rule_id": "rule_20200213_42141",
+    "created_from_date": "2020-02-13",
+    "used_from_date": "2020-02-14",
+    "rule_text": "Code=42141 时，次日震荡准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "42141"
+  },
+  {
+    "rule_id": "rule_20200214_22131_fix",
+    "created_from_date": "2020-02-14",
+    "used_from_date": "2020-02-15",
+    "rule_text": "Code=22131 时，预测震荡但实际收跌，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "22131"
+  },
+  {
+    "rule_id": "rule_20200218_31322_fix",
+    "created_from_date": "2020-02-18",
+    "used_from_date": "2020-02-19",
+    "rule_text": "Code=31322 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31322"
+  },
+  {
+    "rule_id": "rule_20200219_21314_fix",
+    "created_from_date": "2020-02-19",
+    "used_from_date": "2020-02-20",
+    "rule_text": "Code=21314 时，预测收涨但实际收涨，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "21314"
+  },
+  {
+    "rule_id": "rule_20200220_42142_fix",
+    "created_from_date": "2020-02-20",
+    "used_from_date": "2020-02-21",
+    "rule_text": "Code=42142 时，预测收跌但实际收跌，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "42142"
+  },
+  {
+    "rule_id": "rule_20200221_22313",
+    "created_from_date": "2020-02-21",
+    "used_from_date": "2020-02-22",
+    "rule_text": "Code=22313 时，次日收跌准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "22313"
+  },
+  {
+    "rule_id": "rule_20200224_31323_fix",
+    "created_from_date": "2020-02-24",
+    "used_from_date": "2020-02-25",
+    "rule_text": "Code=31323 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31323"
+  },
+  {
+    "rule_id": "rule_20200226_42414_fix",
+    "created_from_date": "2020-02-26",
+    "used_from_date": "2020-02-27",
+    "rule_text": "Code=42414 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "42414"
+  },
+  {
+    "rule_id": "rule_20200227_42143_fix",
+    "created_from_date": "2020-02-27",
+    "used_from_date": "2020-02-28",
+    "rule_text": "Code=42143 时，预测震荡但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "42143"
+  },
+  {
+    "rule_id": "rule_20200303_44354_fix",
+    "created_from_date": "2020-03-03",
+    "used_from_date": "2020-03-04",
+    "rule_text": "Code=44354 时，预测收涨但实际收跌，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "44354"
+  },
+  {
+    "rule_id": "rule_20200304_32414_fix",
+    "created_from_date": "2020-03-04",
+    "used_from_date": "2020-03-05",
+    "rule_text": "Code=32414 时，预测收涨但实际收涨，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32414"
+  },
+  {
+    "rule_id": "rule_20200305_43253_fix",
+    "created_from_date": "2020-03-05",
+    "used_from_date": "2020-03-06",
+    "rule_text": "Code=43253 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "43253"
+  },
+  {
+    "rule_id": "rule_20200309_12324_fix",
+    "created_from_date": "2020-03-09",
+    "used_from_date": "2020-03-10",
+    "rule_text": "Code=12324 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "12324"
+  },
+  {
+    "rule_id": "rule_20200310_14315_fix",
+    "created_from_date": "2020-03-10",
+    "used_from_date": "2020-03-11",
+    "rule_text": "Code=14315 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "14315"
+  },
+  {
+    "rule_id": "rule_20200311_53555_fix",
+    "created_from_date": "2020-03-11",
+    "used_from_date": "2020-03-12",
+    "rule_text": "Code=53555 时，预测震荡但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "53555"
+  },
+  {
+    "rule_id": "rule_20200312_12414_fix",
+    "created_from_date": "2020-03-12",
+    "used_from_date": "2020-03-13",
+    "rule_text": "Code=12414 时，预测震荡但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "12414"
+  },
+  {
+    "rule_id": "rule_20200313_15415_fix",
+    "created_from_date": "2020-03-13",
+    "used_from_date": "2020-03-14",
+    "rule_text": "Code=15415 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "15415"
+  },
+  {
+    "rule_id": "rule_20200316_54555_fix",
+    "created_from_date": "2020-03-16",
+    "used_from_date": "2020-03-17",
+    "rule_text": "Code=54555 时，预测震荡但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "54555"
+  },
+  {
+    "rule_id": "rule_20200318_54555_fix",
+    "created_from_date": "2020-03-18",
+    "used_from_date": "2020-03-19",
+    "rule_text": "Code=54555 时，预测震荡但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "54555"
+  },
+  {
+    "rule_id": "rule_20200320_35355_fix",
+    "created_from_date": "2020-03-20",
+    "used_from_date": "2020-03-21",
+    "rule_text": "Code=35355 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "35355"
+  },
+  {
+    "rule_id": "rule_20200323_54545_fix",
+    "created_from_date": "2020-03-23",
+    "used_from_date": "2020-03-24",
+    "rule_text": "Code=54545 时，预测震荡但实际收涨，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "54545"
+  },
+  {
+    "rule_id": "rule_20200326_35254_fix",
+    "created_from_date": "2020-03-26",
+    "used_from_date": "2020-03-27",
+    "rule_text": "Code=35254 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "35254"
+  },
+  {
+    "rule_id": "rule_20200327_55154_fix",
+    "created_from_date": "2020-03-27",
+    "used_from_date": "2020-03-28",
+    "rule_text": "Code=55154 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "55154"
+  },
+  {
+    "rule_id": "rule_20200401_25223_fix",
+    "created_from_date": "2020-04-01",
+    "used_from_date": "2020-04-02",
+    "rule_text": "Code=25223 时，预测震荡但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "25223"
+  },
+  {
+    "rule_id": "rule_20200402_13412_fix",
+    "created_from_date": "2020-04-02",
+    "used_from_date": "2020-04-03",
+    "rule_text": "Code=13412 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "13412"
+  },
+  {
+    "rule_id": "rule_20200407_54151_fix",
+    "created_from_date": "2020-04-07",
+    "used_from_date": "2020-04-08",
+    "rule_text": "Code=54151 时，预测震荡但实际震荡，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "54151"
+  },
+  {
+    "rule_id": "rule_20200408_52432_fix",
+    "created_from_date": "2020-04-08",
+    "used_from_date": "2020-04-09",
+    "rule_text": "Code=52432 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "52432"
+  },
+  {
+    "rule_id": "rule_20200409_43251_fix",
+    "created_from_date": "2020-04-09",
+    "used_from_date": "2020-04-10",
+    "rule_text": "Code=43251 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "43251"
+  },
+  {
+    "rule_id": "rule_20200414_34151_fix",
+    "created_from_date": "2020-04-14",
+    "used_from_date": "2020-04-15",
+    "rule_text": "Code=34151 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "34151"
+  },
+  {
+    "rule_id": "rule_20200417_41331_fix",
+    "created_from_date": "2020-04-17",
+    "used_from_date": "2020-04-18",
+    "rule_text": "Code=41331 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "41331"
+  },
+  {
+    "rule_id": "rule_20200420_43352_fix",
+    "created_from_date": "2020-04-20",
+    "used_from_date": "2020-04-21",
+    "rule_text": "Code=43352 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "43352"
+  },
+  {
+    "rule_id": "rule_20200421_13211_fix",
+    "created_from_date": "2020-04-21",
+    "used_from_date": "2020-04-22",
+    "rule_text": "Code=13211 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "13211"
+  },
+  {
+    "rule_id": "rule_20200422_21412_fix",
+    "created_from_date": "2020-04-22",
+    "used_from_date": "2020-04-23",
+    "rule_text": "Code=21412 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "21412"
+  },
+  {
+    "rule_id": "rule_20200423_53353_fix",
+    "created_from_date": "2020-04-23",
+    "used_from_date": "2020-04-24",
+    "rule_text": "Code=53353 时，预测收涨但实际震荡，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "53353"
+  },
+  {
+    "rule_id": "rule_20200424_33231",
+    "created_from_date": "2020-04-24",
+    "used_from_date": "2020-04-25",
+    "rule_text": "Code=33231 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "33231"
+  },
+  {
+    "rule_id": "rule_20200427_33151",
+    "created_from_date": "2020-04-27",
+    "used_from_date": "2020-04-28",
+    "rule_text": "Code=33151 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "33151"
+  },
+  {
+    "rule_id": "rule_20200428_33141_fix",
+    "created_from_date": "2020-04-28",
+    "used_from_date": "2020-04-29",
+    "rule_text": "Code=33141 时，预测震荡但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "33141"
+  },
+  {
+    "rule_id": "rule_20200429_52421_fix",
+    "created_from_date": "2020-04-29",
+    "used_from_date": "2020-04-30",
+    "rule_text": "Code=52421 时，预测收跌但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "52421"
+  },
+  {
+    "rule_id": "rule_20200430_53253_fix",
+    "created_from_date": "2020-04-30",
+    "used_from_date": "2020-05-01",
+    "rule_text": "Code=53253 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "53253"
+  },
+  {
+    "rule_id": "rule_20200501_21322_fix",
+    "created_from_date": "2020-05-01",
+    "used_from_date": "2020-05-02",
+    "rule_text": "Code=21322 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "21322"
+  },
+  {
+    "rule_id": "rule_20200507_42332_fix",
+    "created_from_date": "2020-05-07",
+    "used_from_date": "2020-05-08",
+    "rule_text": "Code=42332 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "42332"
+  },
+  {
+    "rule_id": "rule_20200508_51242_fix",
+    "created_from_date": "2020-05-08",
+    "used_from_date": "2020-05-09",
+    "rule_text": "Code=51242 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "51242"
+  },
+  {
+    "rule_id": "rule_20200511_42251_fix",
+    "created_from_date": "2020-05-11",
+    "used_from_date": "2020-05-12",
+    "rule_text": "Code=42251 时，预测收跌但实际震荡，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "42251"
+  },
+  {
+    "rule_id": "rule_20200512_22232_fix",
+    "created_from_date": "2020-05-12",
+    "used_from_date": "2020-05-13",
+    "rule_text": "Code=22232 时，预测收涨但实际收跌，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "22232"
+  },
+  {
+    "rule_id": "rule_20200513_31412_fix",
+    "created_from_date": "2020-05-13",
+    "used_from_date": "2020-05-14",
+    "rule_text": "Code=31412 时，预测震荡但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31412"
+  },
+  {
+    "rule_id": "rule_20200514_41423_fix",
+    "created_from_date": "2020-05-14",
+    "used_from_date": "2020-05-15",
+    "rule_text": "Code=41423 时，预测收跌但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "41423"
+  },
+  {
+    "rule_id": "rule_20200515_23342_fix",
+    "created_from_date": "2020-05-15",
+    "used_from_date": "2020-05-16",
+    "rule_text": "Code=23342 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "23342"
+  },
+  {
+    "rule_id": "rule_20200520_32222_fix",
+    "created_from_date": "2020-05-20",
+    "used_from_date": "2020-05-21",
+    "rule_text": "Code=32222 时，预测收涨但实际收涨，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32222"
+  },
+  {
+    "rule_id": "rule_20200526_32242_fix",
+    "created_from_date": "2020-05-26",
+    "used_from_date": "2020-05-27",
+    "rule_text": "Code=32242 时，预测收涨但实际收涨，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32242"
+  },
+  {
+    "rule_id": "rule_20200527_52244_fix",
+    "created_from_date": "2020-05-27",
+    "used_from_date": "2020-05-28",
+    "rule_text": "Code=52244 时，预测收跌但实际收涨，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "52244"
+  },
+  {
+    "rule_id": "rule_20200601_34154_fix",
+    "created_from_date": "2020-06-01",
+    "used_from_date": "2020-06-02",
+    "rule_text": "Code=34154 时，预测收涨但实际震荡，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "34154"
+  },
+  {
+    "rule_id": "rule_20200603_33155",
+    "created_from_date": "2020-06-03",
+    "used_from_date": "2020-06-04",
+    "rule_text": "Code=33155 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "33155"
+  },
+  {
+    "rule_id": "rule_20200609_31233_fix",
+    "created_from_date": "2020-06-09",
+    "used_from_date": "2020-06-10",
+    "rule_text": "Code=31233 时，预测震荡但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31233"
+  },
+  {
+    "rule_id": "rule_20200611_32233_fix",
+    "created_from_date": "2020-06-11",
+    "used_from_date": "2020-06-12",
+    "rule_text": "Code=32233 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32233"
+  },
+  {
+    "rule_id": "rule_20200615_51455_fix",
+    "created_from_date": "2020-06-15",
+    "used_from_date": "2020-06-16",
+    "rule_text": "Code=51455 时，预测收跌但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "51455"
+  },
+  {
+    "rule_id": "rule_20200616_24244_fix",
+    "created_from_date": "2020-06-16",
+    "used_from_date": "2020-06-17",
+    "rule_text": "Code=24244 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "24244"
+  },
+  {
+    "rule_id": "rule_20200617_42354_fix",
+    "created_from_date": "2020-06-17",
+    "used_from_date": "2020-06-18",
+    "rule_text": "Code=42354 时，预测震荡但实际收涨，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "42354"
+  },
+  {
+    "rule_id": "rule_20200618_42242_fix",
+    "created_from_date": "2020-06-18",
+    "used_from_date": "2020-06-19",
+    "rule_text": "Code=42242 时，预测收跌但实际收涨，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "42242"
+  },
+  {
+    "rule_id": "rule_20200622_31415_fix",
+    "created_from_date": "2020-06-22",
+    "used_from_date": "2020-06-23",
+    "rule_text": "Code=31415 时，预测收涨但实际收涨，需修正（gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "31415"
+  },
+  {
+    "rule_id": "rule_20200623_43252_fix",
+    "created_from_date": "2020-06-23",
+    "used_from_date": "2020-06-24",
+    "rule_text": "Code=43252 时，预测收涨但实际收跌，需修正（close_direction_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "43252"
+  },
+  {
+    "rule_id": "rule_20200624_32222_fix",
+    "created_from_date": "2020-06-24",
+    "used_from_date": "2020-06-25",
+    "rule_text": "Code=32222 时，预测收涨但实际收跌，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32222"
+  },
+  {
+    "rule_id": "rule_20200625_22321",
+    "created_from_date": "2020-06-25",
+    "used_from_date": "2020-06-26",
+    "rule_text": "Code=22321 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "22321"
+  },
+  {
+    "rule_id": "rule_20200626_32241_fix",
+    "created_from_date": "2020-06-26",
+    "used_from_date": "2020-06-27",
+    "rule_text": "Code=32241 时，预测收涨但实际震荡，需修正（direction_and_gap_error）",
+    "rule_type": "correction",
+    "confidence_delta": -0.05,
+    "trigger_code": "32241"
+  },
+  {
+    "rule_id": "rule_20200629_42433",
+    "created_from_date": "2020-06-29",
+    "used_from_date": "2020-06-30",
+    "rule_text": "Code=42433 时，次日收涨准确率高（本次得分80）",
+    "rule_type": "effective",
+    "confidence_delta": 0.05,
+    "trigger_code": "42433"
+  }
+]

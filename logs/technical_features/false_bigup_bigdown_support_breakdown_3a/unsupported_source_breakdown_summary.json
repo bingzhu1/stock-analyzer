@@ -1,0 +1,155 @@
+{
+  "source": {
+    "details_path": "/Users/may/Desktop/stock-analyzer-main/logs/historical_training/exclusion_action_validation_2e_v2/false_exclusion_validation_details.csv",
+    "summary_path": "/Users/may/Desktop/stock-analyzer-main/logs/historical_training/exclusion_action_validation_2e_v2/false_exclusion_validation_summary.json",
+    "v4_path": "/Users/may/Desktop/stock-analyzer-main/.claude/worktrees/eloquent-stonebraker-e0cd86/logs/historical_training/exclusion_log_enriched/enriched_conflict_analysis_v4.csv",
+    "v4_source": "sibling_worktree",
+    "input_source": "task_2e_v2_fallback"
+  },
+  "summary": {
+    "baseline": {
+      "false_big_up": 105,
+      "false_big_down": 60,
+      "false_total": 165,
+      "unsupported_by_raw_enriched": 92,
+      "unsupported_by_technical_features": 56,
+      "unsupported_combined": 111
+    },
+    "unsupported_total": 111,
+    "support_mix_counts": {
+      "raw_only": 55,
+      "technical_only": 19,
+      "raw_and_technical": 37
+    },
+    "raw_source_counts": {
+      "sample_confidence_invalidation": 77,
+      "macro_contradiction": 47,
+      "dual_extremes": 8,
+      "post_earnings_window": 8,
+      "high_vol_or_crisis": 7,
+      "p_big_up_compressed": 7,
+      "predicted_neutral": 6,
+      "recent_volatility_expansion": 4,
+      "volume_expansion": 4
+    },
+    "technical_source_counts": {
+      "macd_bullish": 34,
+      "positive_momentum": 31,
+      "trend_above_ma20_ma50": 27,
+      "high_position": 19,
+      "macd_bearish": 18,
+      "rsi_bullish": 16,
+      "negative_momentum": 15,
+      "trend_below_ma20_ma50": 14,
+      "low_position": 11,
+      "rsi_bearish": 10,
+      "volume_confirmation": 10,
+      "volume_stress": 3
+    },
+    "raw_combo_counts": {
+      "macro_contradiction|sample_confidence_invalidation": 40,
+      "sample_confidence_invalidation": 31,
+      "macro_contradiction": 5,
+      "post_earnings_window|sample_confidence_invalidation": 4,
+      "dual_extremes|high_vol_or_crisis|p_big_up_compressed|predicted_neutral": 2,
+      "dual_extremes|high_vol_or_crisis|p_big_up_compressed|predicted_neutral|recent_volatility_expansion|volume_expansion": 2,
+      "macro_contradiction|post_earnings_window|sample_confidence_invalidation": 2,
+      "post_earnings_window": 2,
+      "dual_extremes|high_vol_or_crisis|p_big_up_compressed|recent_volatility_expansion": 1,
+      "dual_extremes|high_vol_or_crisis|p_big_up_compressed|volume_expansion": 1,
+      "dual_extremes|high_vol_or_crisis|predicted_neutral|recent_volatility_expansion": 1,
+      "dual_extremes|p_big_up_compressed|predicted_neutral|volume_expansion": 1
+    },
+    "technical_combo_counts": {
+      "macd_bullish|positive_momentum": 9,
+      "high_position|macd_bullish|positive_momentum|rsi_bullish|trend_above_ma20_ma50": 7,
+      "low_position|macd_bearish|negative_momentum|rsi_bearish|trend_below_ma20_ma50": 7,
+      "high_position|macd_bullish|positive_momentum|rsi_bullish|trend_above_ma20_ma50|volume_confirmation": 6,
+      "macd_bearish|negative_momentum": 4,
+      "macd_bullish|trend_above_ma20_ma50": 4,
+      "high_position|macd_bullish|positive_momentum|trend_above_ma20_ma50": 2,
+      "low_position|macd_bearish|negative_momentum|rsi_bearish|trend_below_ma20_ma50|volume_stress": 2,
+      "low_position|macd_bearish|trend_below_ma20_ma50": 2,
+      "positive_momentum|volume_confirmation": 2,
+      "high_position|macd_bullish|positive_momentum|trend_above_ma20_ma50|volume_confirmation": 1,
+      "high_position|macd_bullish|rsi_bullish|trend_above_ma20_ma50": 1,
+      "high_position|macd_bullish|trend_above_ma20_ma50": 1,
+      "high_position|trend_above_ma20_ma50": 1,
+      "macd_bearish|negative_momentum|rsi_bearish|trend_below_ma20_ma50": 1,
+      "macd_bearish|negative_momentum|trend_below_ma20_ma50|volume_stress": 1,
+      "macd_bearish|trend_below_ma20_ma50": 1,
+      "macd_bullish|positive_momentum|rsi_bullish|trend_above_ma20_ma50": 1,
+      "macd_bullish|positive_momentum|rsi_bullish|trend_above_ma20_ma50|volume_confirmation": 1,
+      "macd_bullish|positive_momentum|trend_above_ma20_ma50": 1
+    },
+    "cross_source_combo_counts": {
+      "high_position|macd_bullish|positive_momentum|rsi_bullish|sample_confidence_invalidation|trend_above_ma20_ma50|volume_confirmation": 5,
+      "macd_bullish|macro_contradiction|positive_momentum|sample_confidence_invalidation": 5,
+      "high_position|macd_bullish|positive_momentum|rsi_bullish|sample_confidence_invalidation|trend_above_ma20_ma50": 4,
+      "high_position|macd_bullish|macro_contradiction|positive_momentum|sample_confidence_invalidation|trend_above_ma20_ma50": 2,
+      "macd_bullish|positive_momentum|sample_confidence_invalidation": 2,
+      "macd_bullish|sample_confidence_invalidation|trend_above_ma20_ma50": 2,
+      "macro_contradiction|positive_momentum|sample_confidence_invalidation|volume_confirmation": 2,
+      "dual_extremes|high_vol_or_crisis|low_position|macd_bearish|negative_momentum|p_big_up_compressed|predicted_neutral|recent_volatility_expansion|rsi_bearish|trend_below_ma20_ma50|volume_expansion": 1,
+      "dual_extremes|high_vol_or_crisis|low_position|macd_bearish|negative_momentum|p_big_up_compressed|rsi_bearish|trend_below_ma20_ma50|volume_expansion": 1,
+      "dual_extremes|high_vol_or_crisis|macd_bearish|negative_momentum|p_big_up_compressed|predicted_neutral": 1,
+      "dual_extremes|low_position|macd_bearish|negative_momentum|p_big_up_compressed|predicted_neutral|rsi_bearish|trend_below_ma20_ma50|volume_expansion": 1,
+      "high_position|macd_bullish|macro_contradiction|positive_momentum|rsi_bullish|sample_confidence_invalidation|trend_above_ma20_ma50|volume_confirmation": 1,
+      "high_position|macd_bullish|macro_contradiction|positive_momentum|sample_confidence_invalidation|trend_above_ma20_ma50|volume_confirmation": 1,
+      "high_position|macd_bullish|macro_contradiction|sample_confidence_invalidation|trend_above_ma20_ma50": 1,
+      "high_position|macd_bullish|positive_momentum|post_earnings_window|rsi_bullish|sample_confidence_invalidation|trend_above_ma20_ma50": 1,
+      "high_position|macro_contradiction|trend_above_ma20_ma50": 1,
+      "macd_bullish|macro_contradiction|positive_momentum": 1,
+      "macd_bullish|macro_contradiction|sample_confidence_invalidation|trend_above_ma20_ma50": 1,
+      "macd_bullish|positive_momentum|post_earnings_window|rsi_bullish|sample_confidence_invalidation|trend_above_ma20_ma50|volume_confirmation": 1,
+      "macd_bullish|positive_momentum|post_earnings_window|sample_confidence_invalidation": 1
+    },
+    "by_state": {
+      "大涨": {
+        "unsupported_total": 89,
+        "support_mix_counts": {
+          "raw_only": 51,
+          "technical_only": 5,
+          "raw_and_technical": 33
+        },
+        "raw_source_counts": {
+          "sample_confidence_invalidation": 77,
+          "macro_contradiction": 47,
+          "post_earnings_window": 8
+        },
+        "technical_source_counts": {
+          "macd_bullish": 34,
+          "positive_momentum": 31,
+          "trend_above_ma20_ma50": 27,
+          "high_position": 19,
+          "rsi_bullish": 16,
+          "volume_confirmation": 10
+        }
+      },
+      "大跌": {
+        "unsupported_total": 22,
+        "support_mix_counts": {
+          "raw_only": 4,
+          "technical_only": 14,
+          "raw_and_technical": 4
+        },
+        "raw_source_counts": {
+          "dual_extremes": 8,
+          "high_vol_or_crisis": 7,
+          "p_big_up_compressed": 7,
+          "predicted_neutral": 6,
+          "recent_volatility_expansion": 4,
+          "volume_expansion": 4
+        },
+        "technical_source_counts": {
+          "macd_bearish": 18,
+          "negative_momentum": 15,
+          "trend_below_ma20_ma50": 14,
+          "low_position": 11,
+          "rsi_bearish": 10,
+          "volume_stress": 3
+        }
+      }
+    }
+  }
+}
