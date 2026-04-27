@@ -1,0 +1,52 @@
+{
+  "source": {
+    "enriched_path": "/Users/may/Desktop/stock-analyzer-main/.claude/worktrees/beautiful-mcclintock-1dcda2/logs/historical_training/state_probabilities_v1/replay_full_prob_rows_enriched.jsonl",
+    "technical_path": "/Users/may/Desktop/stock-analyzer-main/.claude/worktrees/beautiful-mcclintock-1dcda2/logs/historical_training/state_probabilities_v1/replay_full_prob_rows_with_technical_features.jsonl",
+    "enriched_source": "sibling_worktree",
+    "technical_source": "sibling_worktree"
+  },
+  "merge_summary": {
+    "rows_enriched": 1000,
+    "rows_technical": 1000,
+    "rows_merged": 1000,
+    "missing_technical_dates_count": 0,
+    "missing_technical_dates_examples": []
+  },
+  "summary": {
+    "overall": {
+      "total_exclusion_actions": 725,
+      "unsupported_actions": 556,
+      "unsupported_rate": 0.766896551724138,
+      "unsupported_by_raw_data": 360,
+      "unsupported_by_technical_features": 438,
+      "unsupported_by_both": 242,
+      "unsupported_by_raw_only": 118,
+      "unsupported_by_technical_only": 196,
+      "supported_actions": 169
+    },
+    "by_state": {
+      "大涨": {
+        "total_exclusion_actions": 511,
+        "unsupported_actions": 459,
+        "unsupported_rate": 0.898238747553816,
+        "unsupported_by_raw_data": 360,
+        "unsupported_by_technical_features": 341,
+        "unsupported_by_both": 242,
+        "unsupported_by_raw_only": 118,
+        "unsupported_by_technical_only": 99,
+        "supported_actions": 52
+      },
+      "大跌": {
+        "total_exclusion_actions": 214,
+        "unsupported_actions": 97,
+        "unsupported_rate": 0.4532710280373832,
+        "unsupported_by_raw_data": 0,
+        "unsupported_by_technical_features": 97,
+        "unsupported_by_both": 0,
+        "unsupported_by_raw_only": 0,
+        "unsupported_by_technical_only": 97,
+        "supported_actions": 117
+      }
+    }
+  }
+}

@@ -1,0 +1,78 @@
+{
+  "task": "3C-5",
+  "shadow_rule": {
+    "name": "downgrade_strong_exclusion_when_review_has_strong_evidence",
+    "trigger_definition": "strongest_tier_cn == \"强证据\"",
+    "prediction_fields_changed": false
+  },
+  "source_info": {
+    "preferred_replay_jsonl": "/Users/may/Desktop/stock-analyzer-main/replay_full_prob_rows_with_technical_features.jsonl",
+    "preferred_replay_jsonl_exists": false,
+    "v4_path": "/Users/may/Desktop/stock-analyzer-main/.claude/worktrees/eloquent-stonebraker-e0cd86/logs/historical_training/exclusion_log_enriched/enriched_conflict_analysis_v4.csv",
+    "v4_source": "sibling_worktree",
+    "replay_review_details_path": "/Users/may/Desktop/stock-analyzer-main/logs/technical_features/exclusion_reliability_review_batch_3c3/replay_batch_review_details.csv",
+    "false_validation_details_path": "/Users/may/Desktop/stock-analyzer-main/logs/historical_training/exclusion_action_validation_2e_v2/false_exclusion_validation_details.csv",
+    "false_review_details_path": "/Users/may/Desktop/stock-analyzer-main/logs/technical_features/exclusion_reliability_review_batch_3c3/false_exclusion_batch_review_details.csv"
+  },
+  "verification": {
+    "replay_days": 1005,
+    "replay_rows_with_big_exclusions": 996,
+    "replay_actions_total": 1258,
+    "baseline_false_big_up": 105,
+    "baseline_false_big_down": 60,
+    "baseline_false_total": 165
+  },
+  "overall": {
+    "actions_total": 1258,
+    "false_exclusions_total": 165,
+    "correct_exclusions_total": 1093,
+    "shadow_downgrade_triggered": 575,
+    "rescued_false_exclusions": 91,
+    "hurt_correct_exclusions": 484,
+    "remaining_false_exclusions_after_shadow": 74,
+    "remaining_correct_exclusions_after_shadow": 609,
+    "false_rescue_rate": 55.15,
+    "correct_hurt_rate": 44.28,
+    "flagged_false_precision": 15.83
+  },
+  "by_excluded_state": {
+    "大涨": {
+      "actions_total": 734,
+      "false_exclusions_total": 105,
+      "correct_exclusions_total": 629,
+      "shadow_downgrade_triggered": 412,
+      "rescued_false_exclusions": 69,
+      "hurt_correct_exclusions": 343,
+      "remaining_false_exclusions_after_shadow": 36,
+      "remaining_correct_exclusions_after_shadow": 286,
+      "false_rescue_rate": 65.71,
+      "correct_hurt_rate": 54.53,
+      "flagged_false_precision": 16.75
+    },
+    "大跌": {
+      "actions_total": 524,
+      "false_exclusions_total": 60,
+      "correct_exclusions_total": 464,
+      "shadow_downgrade_triggered": 163,
+      "rescued_false_exclusions": 22,
+      "hurt_correct_exclusions": 141,
+      "remaining_false_exclusions_after_shadow": 38,
+      "remaining_correct_exclusions_after_shadow": 323,
+      "false_rescue_rate": 36.67,
+      "correct_hurt_rate": 30.39,
+      "flagged_false_precision": 13.5
+    }
+  },
+  "strongest_tier_counts": {
+    "无": 633,
+    "强证据": 575,
+    "数据缺口提醒": 42,
+    "辅助证据": 8
+  },
+  "support_mix_counts": {
+    "supported": 633,
+    "technical_only": 456,
+    "raw_only": 104,
+    "raw_and_technical": 65
+  }
+}

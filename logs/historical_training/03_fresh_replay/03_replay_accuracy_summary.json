@@ -1,0 +1,214 @@
+{
+  "kind": "03_replay_accuracy_summary",
+  "source": "B-path scripts/run_historical_training.py — original main pipeline",
+  "scope_excluded": [
+    "projection_v2",
+    "rule_scoring",
+    "rule_lifecycle",
+    "active_rule_pool",
+    "AVGO_technical_features",
+    "exclusion_reliability_review",
+    "contradiction_card",
+    "shadow_backtest",
+    "3C review payloads",
+    "yfinance live calls"
+  ],
+  "total_days": 1005,
+  "is_exactly_1005": true,
+  "date_range": {
+    "start_prediction_date": "2016-07-01",
+    "end_prediction_date": "2020-06-29",
+    "start_actual_date": "2016-07-05",
+    "end_actual_date": "2020-06-30"
+  },
+  "five_state_overall_accuracy": {
+    "correct": 277,
+    "total": 1005,
+    "accuracy": 0.27562189054726366
+  },
+  "predicted_state_distribution": {
+    "震荡": 416,
+    "小跌": 58,
+    "小涨": 528,
+    "大涨": 3
+  },
+  "actual_state_distribution": {
+    "大跌": 115,
+    "震荡": 263,
+    "大涨": 142,
+    "小涨": 274,
+    "小跌": 211
+  },
+  "confusion_matrix": {
+    "大涨": {
+      "大涨": 1,
+      "小涨": 0,
+      "震荡": 2,
+      "小跌": 0,
+      "大跌": 0
+    },
+    "小涨": {
+      "大涨": 70,
+      "小涨": 151,
+      "震荡": 136,
+      "小跌": 105,
+      "大跌": 66
+    },
+    "震荡": {
+      "大涨": 63,
+      "小涨": 105,
+      "震荡": 112,
+      "小跌": 93,
+      "大跌": 43
+    },
+    "小跌": {
+      "大涨": 8,
+      "小涨": 18,
+      "震荡": 13,
+      "小跌": 13,
+      "大跌": 6
+    },
+    "大跌": {
+      "大涨": 0,
+      "小涨": 0,
+      "震荡": 0,
+      "小跌": 0,
+      "大跌": 0
+    }
+  },
+  "recall_by_actual_state": {
+    "大涨": {
+      "true_positive": 1,
+      "actual_total": 142,
+      "recall": 0.007042253521126761
+    },
+    "小涨": {
+      "true_positive": 151,
+      "actual_total": 274,
+      "recall": 0.551094890510949
+    },
+    "震荡": {
+      "true_positive": 112,
+      "actual_total": 263,
+      "recall": 0.42585551330798477
+    },
+    "小跌": {
+      "true_positive": 13,
+      "actual_total": 211,
+      "recall": 0.061611374407582936
+    },
+    "大跌": {
+      "true_positive": 0,
+      "actual_total": 115,
+      "recall": 0.0
+    }
+  },
+  "precision_by_predicted_state": {
+    "大涨": {
+      "true_positive": 1,
+      "predicted_total": 3,
+      "precision": 0.3333333333333333
+    },
+    "小涨": {
+      "true_positive": 151,
+      "predicted_total": 528,
+      "precision": 0.2859848484848485
+    },
+    "震荡": {
+      "true_positive": 112,
+      "predicted_total": 416,
+      "precision": 0.2692307692307692
+    },
+    "小跌": {
+      "true_positive": 13,
+      "predicted_total": 58,
+      "precision": 0.22413793103448276
+    },
+    "大跌": {
+      "true_positive": 0,
+      "predicted_total": 0,
+      "precision": null
+    }
+  },
+  "exclusion_action_totals": {
+    "total_exclusion_actions": 2010,
+    "correct_exclusion_actions": 1737,
+    "false_exclusion_actions": 273,
+    "exclusion_accuracy": 0.8641791044776119,
+    "false_exclusion_rate": 0.13582089552238805
+  },
+  "exclusion_accuracy_by_excluded_state": {
+    "大涨": {
+      "total_actions": 802,
+      "correct_actions": 683,
+      "false_actions": 119,
+      "accuracy": 0.8516209476309227
+    },
+    "小涨": {
+      "total_actions": 14,
+      "correct_actions": 10,
+      "false_actions": 4,
+      "accuracy": 0.7142857142857143
+    },
+    "震荡": {
+      "total_actions": 0,
+      "correct_actions": 0,
+      "false_actions": 0,
+      "accuracy": null
+    },
+    "小跌": {
+      "total_actions": 203,
+      "correct_actions": 166,
+      "false_actions": 37,
+      "accuracy": 0.8177339901477833
+    },
+    "大跌": {
+      "total_actions": 991,
+      "correct_actions": 878,
+      "false_actions": 113,
+      "accuracy": 0.8859737638748738
+    }
+  },
+  "false_exclusion_p_excluded_distribution_overall": {
+    "n": 273,
+    "min": 1e-06,
+    "p25": 0.000259,
+    "median": 0.002941,
+    "mean": 0.014055197802197801,
+    "p75": 0.026647,
+    "max": 0.060687
+  },
+  "false_exclusion_p_excluded_distribution_by_state": {
+    "大涨": {
+      "n": 119,
+      "min": 1.3e-05,
+      "median": 0.006986,
+      "mean": 0.015303789915966388,
+      "max": 0.059989
+    },
+    "小涨": {
+      "n": 4,
+      "min": 0.044852,
+      "median": 0.0473045,
+      "mean": 0.04689775,
+      "max": 0.04813
+    },
+    "震荡": {
+      "n": 0
+    },
+    "小跌": {
+      "n": 37,
+      "min": 0.013567,
+      "median": 0.043248,
+      "mean": 0.04172751351351352,
+      "max": 0.060585
+    },
+    "大跌": {
+      "n": 113,
+      "min": 1e-06,
+      "median": 0.000198,
+      "mean": 0.0025168938053097348,
+      "max": 0.060687
+    }
+  }
+}

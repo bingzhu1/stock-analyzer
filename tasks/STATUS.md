@@ -70,6 +70,7 @@
 - 069 — `avgo_1000day_replay_training_and_rule_summary`
 - 06Q — `projection_output_three_systems`
 - 070 — `dual_price_track_foundation`
+- 071 — `exclusion_accuracy_chain`
 
 ## Handoff status rules
 
@@ -152,3 +153,4 @@
 | 069 | avgo_1000day_replay_training_and_rule_summary | tester | done | 2026-04-22 | Tester closeout passed: direct Task 069 tests confirm stable avgo_1000day_training_report shape, correct ordered (T,T+1) sample construction, conservative malformed replay handling, explicit skipped validation tail semantics without paired inputs, degraded-path resilience, and aligned findings/insights outputs (10/10); see task_069_tester.md |
 | 06Q | projection_output_three_systems | builder | in-review | 2026-04-27 | Additive output-architecture refactor: new services/projection_three_systems_renderer.py exposes negative_system / record_02_projection_system / confidence_evaluator from existing v2_raw without changing rules; entrypoint adds projection_three_systems field with degraded fallback; 21 new tests pass + 56 related regression tests pass; see task_06Q_builder.md |
 | 070 | dual_price_track_foundation | builder | in-review | 2026-04-27 | Hard-rule extension: introduces parallel Adj Close track alongside raw price track. encoder.py C_code now uses dividend-adjusted return (C_adj) when present, falling back to raw C_move otherwise; O / H / L / V positions unchanged. data_fetcher / feature_builder / services/data_query updated additively. Backwards-compatible with legacy CSVs (no Adj Close → original C_code). 72 / 72 focused tests pass. See tasks/06S_H1_hard_rule_layer_audit.md for full hard-rule analysis. |
+| 071 | exclusion_accuracy_chain | builder | in-review | 2026-04-27 | Recovered Task 03 / 3A / 3B / 3C1 / 3C3 / 3C5 / 2E exclusion-accuracy chain (PR-A of the recovered-work split). 11 code files (8 scripts + 2 services + 1 UI), 10 tests, 1 records doc, 21 lightweight logs (option-a — reports + summaries + Task 03 baseline only; bulk *_details.csv excluded). 04A–04E2 logs deferred to PR-B. Standalone `ui/exclusion_reliability_review.py` UI surface — does not modify `ui/predict_tab.py`. Based on main @ 32ce79a (post PR-0 merge). See tasks/071_exclusion_accuracy_chain.md and tasks/06S_recovered_experimental_branch_audit.md. |
