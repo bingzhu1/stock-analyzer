@@ -22,6 +22,8 @@ from services.review_agent import generate_review
 from services.review_orchestrator import run_review_for_prediction
 from services.review_analyzer import summarize_review_history, extract_review_rules
 from services.pre_prediction_briefing import build_pre_prediction_briefing
+from services.big_up_contradiction_card import build_contradiction_card_payload
+from ui.exclusion_reliability_review import render_exclusion_reliability_review_for_row
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1071,6 +1073,20 @@ def _status_badge(step_label: str, status_text: str, *, done: bool) -> None:
         unsafe_allow_html=True,
     )
     st.markdown("")
+
+
+def _render_exclusion_reliability_review(predict_result: dict | None) -> None:
+    prediction_date = None
+    if isinstance(predict_result, dict):
+        prediction_date = (
+            predict_result.get("analysis_date")
+            or predict_result.get("prediction_date")
+        )
+    row = build_contradiction_card_payload(
+        predict_result,
+        prediction_date=prediction_date,
+    )
+    render_exclusion_reliability_review_for_row(row)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
