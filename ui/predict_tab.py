@@ -754,6 +754,8 @@ def _render_layer3_evidence(
     with st.expander("生成 AI 推演总结（可选）"):
         _render_projection_ai_summary_entry_compact(predict_result, scan_result, research_result)
 
+    _render_exclusion_reliability_review(predict_result)
+
     # Raw JSON (collapsed)
     with st.expander("推演原始数据（调试用）"):
         st.json(predict_result)
