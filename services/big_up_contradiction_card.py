@@ -291,8 +291,66 @@ def build_contradiction_card(
     }
 
 
+def build_contradiction_card_payload(
+    predict_result: dict[str, Any] | None,
+    *,
+    prediction_date: str | None = None,
+) -> dict[str, Any]:
+    """Adapt a live ``predict_result`` into a row dict for downstream
+    contradiction-card / exclusion-reliability-review consumers.
+
+    Pure read. ``predict_result`` is never mutated. Safe on ``None`` or
+    partial inputs — missing fields are simply omitted. The returned
+    row carries ``prediction_date`` (and a duplicate ``analysis_date``)
+    when provided so downstream code that keys on either name works.
+    """
+    row: dict[str, Any] = {}
+
+    if isinstance(predict_result, dict):
+        for key in (
+            "predicted_state",
+            "forced_excluded_states",
+            "excluded_states",
+            "p_大涨",
+            "p_大跌",
+            "p_小涨",
+            "p_小跌",
+            "p_震荡",
+            "state_probabilities",
+            "final_direction",
+            "final_confidence",
+            "five_state_top1",
+            "five_state_distribution",
+            "five_state_top1_margin",
+            "five_state_margin_band",
+            "five_state_display_state",
+            "five_state_secondary_state",
+            "exclusion_triggered_rule",
+            "exclusion_triggered_state",
+            "excluded_state_under_validation",
+            "support_mix",
+            "raw_source_labels",
+            "technical_source_labels",
+            "unsupported_by_raw_enriched",
+            "unsupported_by_technical_features",
+            "data_health_summary",
+            "contradiction_inputs_available",
+            "actual_state",
+            "symbol",
+        ):
+            if key in predict_result:
+                row[key] = predict_result[key]
+
+    if prediction_date:
+        row["prediction_date"] = prediction_date
+        row["analysis_date"] = prediction_date
+
+    return row
+
+
 __all__ = (
     "DEFAULT_CARD_CONFIG",
     "FLAG_REASONS_CN",
     "build_contradiction_card",
+    "build_contradiction_card_payload",
 )
