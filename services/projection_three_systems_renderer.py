@@ -15,6 +15,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from services.five_state_margin_policy import apply_five_state_margin_policy
+
 
 _VALID_LEVELS = {"low", "medium", "high", "unknown"}
 _LEVEL_TO_SCORE: dict[str, float | None] = {
@@ -232,6 +234,22 @@ def _main_projection_text(final: dict[str, Any]) -> str:
     return base
 
 
+def _final_direction_value(final: dict[str, Any]) -> str:
+    return _clean_str(final.get("final_direction") or final.get("direction")) or "unknown"
+
+
+def _five_state_top1(
+    main_projection: dict[str, Any],
+    five_state_distribution: dict[str, float],
+) -> str:
+    predicted_top1 = _as_dict(main_projection.get("predicted_top1"))
+    top1_state = _clean_str(predicted_top1.get("state"))
+    if top1_state:
+        return top1_state
+    margin_policy = apply_five_state_margin_policy(five_state_distribution)
+    return _clean_str(margin_policy.get("primary_state")) or "unknown"
+
+
 def _five_state_projection(main_projection: dict[str, Any]) -> dict[str, float]:
     distribution = _as_dict(main_projection.get("state_probabilities"))
     output: dict[str, float] = {}
@@ -338,6 +356,67 @@ def _final_summary_text(final: dict[str, Any]) -> str:
     return "最终结论暂未就绪。"
 
 
+def _five_state_display_summary(
+    *,
+    five_state_top1: str,
+    final_direction: str,
+    margin_policy: dict[str, Any],
+) -> str:
+    display_state = _clean_str(margin_policy.get("display_state")) or "unknown"
+    margin_band = _clean_str(margin_policy.get("margin_band")) or "unknown"
+    secondary_state = _clean_str(margin_policy.get("secondary_state"))
+    policy_note = _clean_str(margin_policy.get("policy_note"))
+    top1_margin = _safe_float(margin_policy.get("top1_margin"))
+    state_conflict = bool(margin_policy.get("state_conflict"))
+
+    if margin_band == "low_margin":
+        margin_text = (
+            f"top1 margin 约为 {top1_margin:.2f}，属于微弱优势。"
+            if top1_margin is not None
+            else "top1 margin 较小，属于微弱优势。"
+        )
+        secondary_text = f"{secondary_state} 概率接近，形成分歧。" if secondary_state else "次高状态概率接近，形成分歧。"
+        summary = (
+            f"五状态原始 top1 为{five_state_top1}，当前展示为{display_state}；"
+            f"{secondary_text}{margin_text} final_direction={final_direction}。"
+        )
+        if state_conflict and policy_note:
+            return f"{summary} {policy_note}"
+        return summary
+
+    if margin_band == "watch_margin":
+        margin_text = (
+            f"top1 margin 约为 {top1_margin:.2f}。"
+            if top1_margin is not None
+            else "top1 margin 处于观察区间。"
+        )
+        secondary_text = f"{secondary_state} 仍然接近。" if secondary_state else "次高状态仍然接近。"
+        summary = (
+            f"五状态原始 top1 为{five_state_top1}，当前展示为{display_state}；"
+            f"{secondary_text}{margin_text} final_direction={final_direction}。"
+        )
+        if policy_note:
+            return f"{summary} {policy_note}"
+        return summary
+
+    if margin_band == "clear_top1":
+        summary = (
+            f"五状态原始 top1 为{five_state_top1}，当前展示为{display_state}；"
+            f"final_direction={final_direction}。"
+        )
+        if policy_note:
+            return f"{summary} {policy_note}"
+        return summary
+
+    summary = (
+        f"五状态原始 top1 为{five_state_top1}，当前展示状态暂不可用；"
+        f"final_direction={final_direction}。"
+    )
+    if policy_note:
+        return f"{summary} {policy_note}"
+    return summary
+
+
 def build_record_02_projection_system(v2_raw: dict[str, Any] | None) -> dict[str, Any]:
     v2 = _as_dict(v2_raw)
     primary = _as_dict(v2.get("primary_analysis"))
@@ -346,11 +425,33 @@ def build_record_02_projection_system(v2_raw: dict[str, Any] | None) -> dict[str
     final = _as_dict(v2.get("final_decision"))
     main_projection = _as_dict(v2.get("main_projection"))
     consistency = _as_dict(v2.get("consistency"))
+    five_state_distribution = _five_state_projection(main_projection)
+    final_direction = _final_direction_value(final)
+    five_state_top1 = _five_state_top1(main_projection, five_state_distribution)
+    margin_policy = apply_five_state_margin_policy(
+        five_state_distribution,
+        final_direction=final_direction,
+    )
 
     return {
         "current_structure": _current_structure(primary),
         "main_projection": _main_projection_text(final),
-        "five_state_projection": _five_state_projection(main_projection),
+        "five_state_top1": five_state_top1,
+        "five_state_projection": five_state_distribution,
+        "final_direction": final_direction,
+        "five_state_display_state": margin_policy.get("display_state"),
+        "five_state_margin_band": margin_policy.get("margin_band"),
+        "five_state_top2_states": margin_policy.get("top2_states"),
+        "five_state_top1_margin": margin_policy.get("top1_margin"),
+        "five_state_secondary_state": margin_policy.get("secondary_state"),
+        "five_state_secondary_probability": margin_policy.get("secondary_probability"),
+        "five_state_state_conflict": bool(margin_policy.get("state_conflict")),
+        "five_state_policy_note": _clean_str(margin_policy.get("policy_note")),
+        "five_state_display_summary": _five_state_display_summary(
+            five_state_top1=five_state_top1,
+            final_direction=final_direction,
+            margin_policy=margin_policy,
+        ),
         "open_path_close_projection": _open_path_close(final),
         "historical_sample_summary": _historical_sample_summary(historical),
         "peer_market_confirmation": _peer_market_confirmation(peer),
@@ -654,7 +755,18 @@ def _empty_record_02_projection_system(reason: str) -> dict[str, Any]:
     return {
         "current_structure": "02 推演系统不可用，无法描述当前结构。",
         "main_projection": "02 推演系统不可用，无法生成主推演。",
+        "five_state_top1": "unknown",
         "five_state_projection": {},
+        "final_direction": "unknown",
+        "five_state_display_state": "unknown",
+        "five_state_margin_band": "unknown",
+        "five_state_top2_states": [],
+        "five_state_top1_margin": None,
+        "five_state_secondary_state": None,
+        "five_state_secondary_probability": None,
+        "five_state_state_conflict": False,
+        "five_state_policy_note": "五状态分布不可用。",
+        "five_state_display_summary": "五状态原始 top1 暂不可用，展示状态已按 unknown 安全降级。",
         "open_path_close_projection": {
             "open": "02 推演系统不可用，开盘倾向暂不输出。",
             "intraday": "02 推演系统不可用，日内结构暂不输出。",
