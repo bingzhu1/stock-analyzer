@@ -188,11 +188,22 @@ def build_primary_20day_analysis(
     warnings: list[str] = []
 
     try:
-        df = data.copy() if data is not None else load_symbol_data(
-            clean_symbol,
-            window=lookback_days,
-            fields=_ANALYSIS_FIELDS,
-        )
+        if data is not None:
+            df = data.copy()
+        elif target_date:
+            # When target_date is provided, load all rows and slice below;
+            # the live "latest N rows" path would skip past target_date.
+            df = load_symbol_data(
+                clean_symbol,
+                window=0,
+                fields=_ANALYSIS_FIELDS,
+            )
+        else:
+            df = load_symbol_data(
+                clean_symbol,
+                window=lookback_days,
+                fields=_ANALYSIS_FIELDS,
+            )
     except Exception as exc:
         return _unknown_result(
             symbol=clean_symbol,
@@ -221,6 +232,22 @@ def build_primary_20day_analysis(
             summary="最近20天主分析不可用，关键字段缺失。",
             days_used=int(len(df)),
         )
+
+    # When target_date is provided, restrict to rows on/before that date so the
+    # analysis sees only data available as-of that date. Live behaviour (no
+    # filter) is preserved when target_date is None.
+    if target_date and "Date" in df.columns:
+        df = df.copy()
+        df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+        df = df[df["Date"] <= pd.to_datetime(target_date)].reset_index(drop=True)
+        if df.empty:
+            return _unknown_result(
+                symbol=clean_symbol,
+                lookback_days=lookback_days,
+                target_date=target_date,
+                warnings=[f"最近20天主分析不可用：{target_date} 之前没有可用数据。"],
+                summary="最近20天主分析不可用，as-of 日期之前没有数据。",
+            )
 
     df = df.copy().tail(max(int(lookback_days or 20), 1)).reset_index(drop=True)
     days_used = int(len(df))
