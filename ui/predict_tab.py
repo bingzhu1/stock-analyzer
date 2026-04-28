@@ -22,7 +22,11 @@ from services.review_agent import generate_review
 from services.review_orchestrator import run_review_for_prediction
 from services.review_analyzer import summarize_review_history, extract_review_rules
 from services.pre_prediction_briefing import build_pre_prediction_briefing
-from services.big_up_contradiction_card import build_contradiction_card_payload
+from services.big_up_contradiction_card import (
+    build_contradiction_card,
+    build_contradiction_card_payload,
+)
+from ui.big_up_contradiction_card import render_contradiction_card
 from ui.exclusion_reliability_review import render_exclusion_reliability_review_for_row
 
 
@@ -755,6 +759,7 @@ def _render_layer3_evidence(
         _render_projection_ai_summary_entry_compact(predict_result, scan_result, research_result)
 
     _render_exclusion_reliability_review(predict_result)
+    _render_contradiction_card(predict_result)
 
     # Raw JSON (collapsed)
     with st.expander("推演原始数据（调试用）"):
@@ -1089,6 +1094,21 @@ def _render_exclusion_reliability_review(predict_result: dict | None) -> None:
         prediction_date=prediction_date,
     )
     render_exclusion_reliability_review_for_row(row)
+
+
+def _render_contradiction_card(predict_result: dict | None) -> None:
+    prediction_date = None
+    if isinstance(predict_result, dict):
+        prediction_date = (
+            predict_result.get("analysis_date")
+            or predict_result.get("prediction_date")
+        )
+    row = build_contradiction_card_payload(
+        predict_result,
+        prediction_date=prediction_date,
+    )
+    payload = build_contradiction_card(row)
+    render_contradiction_card(payload)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
