@@ -373,5 +373,161 @@ class RunPredictThreeSystemsAttachmentTests(unittest.TestCase):
         self.assertEqual(evaluator["overall_confidence"]["level"], "unknown")
 
 
+class ProjectionThreeSystemsReentryGuardTests(unittest.TestCase):
+    """Task 108 — verify the re-entry guard around
+    `_build_projection_three_systems_attachment` prevents recursive
+    `run_predict → run_projection_v2 → legacy orchestrator → run_predict`
+    cycles caused by PR-I.
+
+    The guard turns a nested attachment call into a single deterministic
+    degraded payload instead of letting the chain re-fan-out into
+    ~30 stack levels of CSV-load + match-table + scan + run_predict
+    work per replay case.
+    """
+
+    _CONFIDENCE_KEYS = {
+        "negative_system_confidence",
+        "projection_system_confidence",
+        "overall_confidence",
+        "conflicts",
+        "reliability_warnings",
+    }
+
+    def test_projection_three_systems_attachment_reentry_degrades_without_calling_v2(
+        self,
+    ) -> None:
+        """When the guard is active (simulating mid-recursion state), the
+        attachment helper must short-circuit to a degraded payload and
+        must NOT call run_projection_v2."""
+        import predict
+        from services import projection_orchestrator_v2
+
+        original_v2 = projection_orchestrator_v2.run_projection_v2
+        v2_call_count = {"n": 0}
+
+        def fake_v2(*_args, **_kwargs):
+            v2_call_count["n"] += 1
+            raise AssertionError("run_projection_v2 must not be called when re-entry guard is active")
+
+        # Activate the guard manually and verify the attachment helper
+        # short-circuits without touching v2.
+        state = predict._projection_three_systems_attachment_state
+        had_active_attr = hasattr(state, "active")
+        prior_active = getattr(state, "active", None)
+
+        projection_orchestrator_v2.run_projection_v2 = fake_v2
+        try:
+            state.active = True
+            payload = predict._build_projection_three_systems_attachment(symbol="AVGO")
+        finally:
+            projection_orchestrator_v2.run_projection_v2 = original_v2
+            if had_active_attr:
+                state.active = prior_active
+            else:
+                # Restore clean state — no `active` attribute on a fresh thread-local.
+                try:
+                    delattr(state, "active")
+                except AttributeError:
+                    pass
+
+        self.assertEqual(v2_call_count["n"], 0,
+                         "run_projection_v2 should not be invoked under the guard")
+        self.assertEqual(payload["kind"], "projection_three_systems")
+        self.assertEqual(payload["symbol"], "AVGO")
+        self.assertFalse(payload["ready"])
+        evaluator = payload["confidence_evaluator"]
+        self.assertEqual(set(evaluator.keys()), self._CONFIDENCE_KEYS)
+        self.assertEqual(evaluator["projection_system_confidence"]["level"],
+                         "unknown")
+        self.assertEqual(evaluator["negative_system_confidence"]["level"],
+                         "unknown")
+        self.assertEqual(evaluator["overall_confidence"]["level"], "unknown")
+
+        # Re-entry message must surface in reasoning so future debugging
+        # can spot the guard firing.
+        reasoning_text = " ".join(
+            str(line) for line in evaluator["projection_system_confidence"]["reasoning"]
+        )
+        self.assertIn("re-entry", reasoning_text)
+
+    def test_run_predict_attachment_does_not_recursively_reenter_v2(self) -> None:
+        """Simulate the real recursion shape: a fake run_projection_v2
+        re-enters predict.run_predict mid-call. Without the guard this
+        would explode the call stack; with the guard the inner attachment
+        degrades and the outer run_predict completes with v2 invoked
+        exactly once.
+        """
+        import predict
+        from services import projection_orchestrator_v2
+
+        original_v2 = projection_orchestrator_v2.run_projection_v2
+        call_count = {"v2": 0, "inner_run_predict": 0}
+
+        def fake_v2(*_args, **_kwargs):
+            call_count["v2"] += 1
+            # Exactly one re-entrant run_predict, mirroring how the legacy
+            # orchestrator's _build_predict_result invokes run_predict.
+            inner = run_predict(_scan(), research_result=None, symbol="AVGO")
+            call_count["inner_run_predict"] += 1
+            # Hand the outer caller a tiny v2_raw so the renderer can run.
+            inner_three = inner.get("projection_three_systems") or {}
+            return {
+                "kind": "projection_v2_raw",
+                "symbol": "AVGO",
+                "ready": False,
+                "_inner_three_systems": inner_three,
+            }
+
+        projection_orchestrator_v2.run_projection_v2 = fake_v2
+        try:
+            outer = run_predict(_scan(), research_result=None, symbol="AVGO")
+        finally:
+            projection_orchestrator_v2.run_projection_v2 = original_v2
+
+        # v2 invoked exactly once (outer attachment); inner run_predict
+        # took the guard path and did NOT trigger another v2 call.
+        self.assertEqual(call_count["v2"], 1,
+                         f"run_projection_v2 should be called exactly once, got {call_count['v2']}")
+        self.assertEqual(call_count["inner_run_predict"], 1,
+                         "inner run_predict should have been invoked exactly once by the fake v2")
+
+        # Outer run_predict still returns its legacy answer.
+        self.assertEqual(outer["final_bias"],
+                         outer["final_projection"]["final_bias"])
+        self.assertEqual(outer["primary_projection"]["status"], "computed")
+        self.assertEqual(outer["final_projection"]["status"], "computed")
+
+        # Outer attachment carries the _inner_three_systems sentinel
+        # under the build_projection_three_systems envelope (renderer is
+        # a pure transform on whatever v2_raw it receives).
+        outer_three = outer["projection_three_systems"]
+        self.assertEqual(outer_three["kind"], "projection_three_systems")
+        self.assertEqual(outer_three["symbol"], "AVGO")
+
+    def test_guard_is_cleared_after_normal_attachment_run(self) -> None:
+        """After a normal (non-re-entry) call returns, the guard must be
+        cleared so subsequent calls in the same thread are not blocked."""
+        import predict
+        from services import projection_orchestrator_v2
+
+        original_v2 = projection_orchestrator_v2.run_projection_v2
+
+        def fake_v2(*_args, **_kwargs):
+            return {"kind": "projection_v2_raw", "symbol": "AVGO", "ready": False}
+
+        projection_orchestrator_v2.run_projection_v2 = fake_v2
+        try:
+            predict._build_projection_three_systems_attachment(symbol="AVGO")
+            state_after = getattr(
+                predict._projection_three_systems_attachment_state, "active", False
+            )
+            # Second call must not be blocked by leftover guard state.
+            predict._build_projection_three_systems_attachment(symbol="AVGO")
+        finally:
+            projection_orchestrator_v2.run_projection_v2 = original_v2
+
+        self.assertFalse(state_after, "guard must be cleared in finally block")
+
+
 if __name__ == "__main__":
     unittest.main()

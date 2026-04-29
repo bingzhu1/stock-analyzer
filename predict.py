@@ -9,8 +9,20 @@ trading assistance, not an ML forecaster.
 
 from __future__ import annotations
 
+import threading
 from datetime import datetime
 from typing import Any, TypedDict
+
+
+# Re-entry guard for the projection_three_systems attachment (Task 108).
+# The legacy projection orchestrator's _build_predict_result calls run_predict,
+# and run_predict (PR-I / Task 104) attaches projection_three_systems by calling
+# run_projection_v2, which itself goes back through the legacy orchestrator —
+# so without this guard each replay case fans out into ~30 stack levels of
+# redundant CSV-load + match-table + scan + run_predict work before Python's
+# recursion limit aborts the deepest frame. The guard turns the inner re-entry
+# into a single deterministic degraded payload.
+_projection_three_systems_attachment_state = threading.local()
 
 
 class PredictResult(TypedDict):
@@ -844,6 +856,21 @@ def _build_projection_three_systems_attachment(
     if reason:
         from services.projection_entrypoint import _degraded_projection_three_systems
         return _degraded_projection_three_systems(symbol=symbol, error_message=reason)
+
+    # Re-entry guard: when run_predict is called from inside the legacy
+    # projection orchestrator (which is itself called from run_projection_v2),
+    # skip the inner v2 invocation to avoid recursive pipeline work. The
+    # outer call has already produced the projection result; the inner
+    # attachment would just rerun the same chain.
+    state = _projection_three_systems_attachment_state
+    if getattr(state, "active", False):
+        from services.projection_entrypoint import _degraded_projection_three_systems
+        return _degraded_projection_three_systems(
+            symbol=symbol,
+            error_message="projection_three_systems attachment skipped during re-entry",
+        )
+
+    state.active = True
     try:
         from services.projection_orchestrator_v2 import run_projection_v2
         from services.projection_three_systems_renderer import build_projection_three_systems
@@ -855,6 +882,8 @@ def _build_projection_three_systems_attachment(
 
         message = str(exc).strip() or exc.__class__.__name__
         return _degraded_projection_three_systems(symbol=symbol, error_message=message)
+    finally:
+        state.active = False
 
 
 _CONFIDENCE_ORDER = ["low", "medium", "high"]
