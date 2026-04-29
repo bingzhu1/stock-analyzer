@@ -538,11 +538,8 @@ def _render_briefing_compact(briefing: dict) -> None:
 def _render_layer2_conclusion(predict_result: dict, scan_result: dict | None) -> None:
     """第二层：主结论卡"""
     bias = str(predict_result.get("final_bias") or "neutral")
-    confidence = str(predict_result.get("final_confidence") or "low")
     bias_cn = _cn(_BIAS_CN, bias, bias)
-    conf_cn = _cn(_CONFIDENCE_CN, confidence, confidence)
     bias_color = _BIAS_COLOR.get(bias, "#6b7280")
-    conf_bg = {"high": "rgba(22,163,74,0.15)", "medium": "rgba(59,130,246,0.15)", "low": "rgba(107,114,128,0.15)"}.get(confidence, "rgba(107,114,128,0.15)")
 
     final_proj = _as_dict(predict_result.get("final_projection"))
     pred_open = str(final_proj.get("pred_open") or predict_result.get("pred_open") or _cn(_OPEN_CN, predict_result.get("open_tendency"), "—"))
@@ -564,12 +561,10 @@ def _render_layer2_conclusion(predict_result: dict, scan_result: dict | None) ->
         <div class="pt-hero">
             <div style="font-size:0.78rem;opacity:0.7;letter-spacing:0.06em;">最终判断</div>
             <div class="pt-hero-dir" style="color:{bias_color};">{bias_cn}</div>
-            <div>
-                <span class="pt-hero-conf" style="background:{conf_bg};color:{bias_color};">
-                    置信度：{conf_cn}
-                </span>
-            </div>
             <div class="pt-hero-summary">{summary_text}</div>
+            <div style="margin-top:10px;font-size:0.78rem;opacity:0.7;">
+                置信度评估：详见下方「推演置信度 / 否定置信度 / 综合使用建议」三栏。
+            </div>
         </div>
         """, unsafe_allow_html=True)
 
@@ -609,6 +604,143 @@ def _render_layer2_conclusion(predict_result: dict, scan_result: dict | None) ->
                 st.caption(f"**开盘判断：** {open_text}")
             if close_text:
                 st.caption(f"**收盘判断：** {close_text}")
+
+    _render_confidence_three_columns(predict_result)
+
+
+_LEVEL_CN = {"high": "高", "medium": "中", "low": "低", "unknown": "未知"}
+
+
+def _level_token(value: Any) -> str:
+    text = str(value or "").strip().lower()
+    return text if text in {"high", "medium", "low", "unknown"} else "unknown"
+
+
+def _level_cn(value: Any) -> str:
+    return _LEVEL_CN.get(_level_token(value), "未知")
+
+
+def _format_score(value: Any) -> str:
+    if value is None:
+        return "—"
+    try:
+        return f"{float(value):.2f}"
+    except (TypeError, ValueError):
+        return "—"
+
+
+def _derive_confidence_usage_suggestion(projection_level: Any, negative_level: Any) -> str:
+    """Map (推演 level, 否定 level) → user-facing usage suggestion.
+
+    Per task 103 spec — 4 named cases plus a conservative fallback for
+    medium/mixed combinations.
+    """
+    proj = _level_token(projection_level)
+    neg = _level_token(negative_level)
+    proj_strong = proj == "high"
+    proj_weak = proj in {"low", "unknown"}
+    neg_strong = neg == "high"
+    neg_weak = neg in {"low", "unknown"}
+    if proj_strong and neg_strong:
+        return "可作为较强结构参考，仍需价格确认。"
+    if proj_strong and neg_weak:
+        return "方向可参考，但排除信号需复核。"
+    if proj_weak and neg_strong:
+        return "优先作为排除法参考，不适合重仓押方向。"
+    if proj_weak and neg_weak:
+        return "只观察，等待确认。"
+    return "仅作辅助参考，等待价格信号或样本质量提升后再行动。"
+
+
+def _render_confidence_three_columns(predict_result: dict | None) -> None:
+    """Task 103 — three-column confidence output.
+
+    Splits the previously single confidence badge into:
+        A. 推演置信度  — projection-side reliability
+        B. 否定置信度  — negative/exclusion reliability
+        C. 综合使用建议 — derived usage suggestion (UI-only, not new business logic)
+
+    Reads ``predict_result["projection_three_systems"]["confidence_evaluator"]``
+    when available; falls back to a safe degraded view otherwise so the
+    block never breaks rendering.
+    """
+    pr = _as_dict(predict_result)
+    three_systems = _as_dict(pr.get("projection_three_systems"))
+    evaluator = _as_dict(three_systems.get("confidence_evaluator"))
+    projection_eval = _as_dict(evaluator.get("projection_system_confidence"))
+    negative_eval = _as_dict(evaluator.get("negative_system_confidence"))
+    overall_eval = _as_dict(evaluator.get("overall_confidence"))
+    negative_system = _as_dict(three_systems.get("negative_system"))
+    record_02 = _as_dict(three_systems.get("record_02_projection_system"))
+
+    # Fallbacks from predict_result fields when projection_three_systems is absent.
+    final_bias = str(pr.get("final_bias") or "neutral")
+    final_confidence = str(pr.get("final_confidence") or "")
+    fallback_direction = _cn(_BIAS_CN, final_bias, final_bias)
+
+    projection_level = projection_eval.get("level") or final_confidence or "unknown"
+    projection_score = projection_eval.get("score")
+    final_direction = str(record_02.get("final_direction") or "").strip() or fallback_direction
+    five_state_top1 = str(record_02.get("five_state_top1") or "").strip() or "—"
+    historical_sample_text = str(record_02.get("historical_sample_summary") or "").strip()
+
+    peer = _as_dict(pr.get("peer_adjustment"))
+    confirm_count = peer.get("confirm_count")
+    oppose_count = peer.get("oppose_count")
+    peer_text = (
+        f"确认 {confirm_count if confirm_count is not None else '—'} / "
+        f"反向 {oppose_count if oppose_count is not None else '—'}"
+    )
+
+    negative_level = negative_eval.get("level") or "unknown"
+    negative_score = negative_eval.get("score")
+    excluded_states = list(negative_system.get("excluded_states") or [])
+    triggered_rule = ""
+    final_decision = _as_dict(pr.get("final_projection"))
+    exclusion_block = _as_dict(final_decision.get("exclusion_result"))
+    triggered_rule = str(exclusion_block.get("triggered_rule") or "").strip()
+    if not triggered_rule and excluded_states:
+        if "大涨" in excluded_states:
+            triggered_rule = "exclude_big_up"
+        elif "大跌" in excluded_states:
+            triggered_rule = "exclude_big_down"
+
+    overall_level = overall_eval.get("level") or "unknown"
+    suggestion = _derive_confidence_usage_suggestion(projection_level, negative_level)
+
+    st.markdown("**置信度评估（三栏）**")
+    col_a, col_b, col_c = st.columns(3)
+
+    with col_a:
+        st.markdown("##### A · 推演置信度")
+        st.markdown(f"等级：**{_level_cn(projection_level)}**")
+        st.caption(f"分数：{_format_score(projection_score)}")
+        st.caption(f"final_direction：{final_direction or '—'}")
+        st.caption(f"five_state_top1：{five_state_top1}")
+        if historical_sample_text:
+            st.caption(f"历史样本：{historical_sample_text}")
+        else:
+            st.caption("历史样本：—")
+        st.caption(f"peers：{peer_text}")
+        st.caption("用于判断方向和五状态推演是否可靠。")
+
+    with col_b:
+        st.markdown("##### B · 否定置信度")
+        st.markdown(f"等级：**{_level_cn(negative_level)}**")
+        st.caption(f"分数：{_format_score(negative_score)}")
+        if excluded_states:
+            st.caption(f"已排除状态：{'、'.join(excluded_states)}")
+        else:
+            st.caption("已排除状态：—")
+        st.caption(f"触发规则：{triggered_rule or '—'}")
+        st.caption("用于判断被排除状态是否可靠。")
+        st.caption("详细审计见下方「否定可靠性复盘」与「否定矛盾检测」。")
+
+    with col_c:
+        st.markdown("##### C · 综合使用建议")
+        st.markdown(f"综合等级：**{_level_cn(overall_level)}**")
+        st.caption(suggestion)
+        st.caption("若处于高波动环境，尤其谨慎使用「否定大跌」。")
 
 
 def _render_layer3_evidence(

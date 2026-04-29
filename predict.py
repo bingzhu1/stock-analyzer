@@ -822,7 +822,39 @@ def _missing_scan_result(research_result: dict[str, Any] | None, symbol: str) ->
         "primary_projection": primary_projection,
         "peer_adjustment": peer_adjustment,
         "final_projection": final_projection,
+        "projection_three_systems": _build_projection_three_systems_attachment(
+            symbol=symbol, reason="scan_result missing"
+        ),
     }
+
+
+def _build_projection_three_systems_attachment(
+    *, symbol: str, reason: str | None = None
+) -> dict[str, Any]:
+    """Wire projection_three_systems into predict_result (Task 104).
+
+    Lazy-imports the v2 orchestrator and the three-systems renderer so
+    predict.py stays free of module-load cycles with
+    services.projection_orchestrator (which already imports run_predict).
+
+    On any failure, returns the canonical degraded payload exported by
+    services.projection_entrypoint so the predict_result contract stays
+    stable regardless of v2 availability.
+    """
+    if reason:
+        from services.projection_entrypoint import _degraded_projection_three_systems
+        return _degraded_projection_three_systems(symbol=symbol, error_message=reason)
+    try:
+        from services.projection_orchestrator_v2 import run_projection_v2
+        from services.projection_three_systems_renderer import build_projection_three_systems
+
+        v2_raw = run_projection_v2(symbol=symbol, lookback_days=20)
+        return build_projection_three_systems(projection_v2_raw=v2_raw, symbol=symbol)
+    except Exception as exc:
+        from services.projection_entrypoint import _degraded_projection_three_systems
+
+        message = str(exc).strip() or exc.__class__.__name__
+        return _degraded_projection_three_systems(symbol=symbol, error_message=message)
 
 
 _CONFIDENCE_ORDER = ["low", "medium", "high"]
@@ -925,6 +957,7 @@ def run_predict(
         "final_projection": final_projection,
         "briefing_caution_applied": False,
         "briefing_caution_reason": None,
+        "projection_three_systems": _build_projection_three_systems_attachment(symbol=symbol),
     }
     if pre_briefing and pre_briefing.get("has_data"):
         result = _apply_briefing_caution(result, pre_briefing)
