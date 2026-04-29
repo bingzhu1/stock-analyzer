@@ -472,26 +472,102 @@ def build_record_02_projection_system(v2_raw: dict[str, Any] | None) -> dict[str
 # Confidence evaluator
 # ---------------------------------------------------------------------------
 
-def _negative_confidence_level(
+def _dangerous_down_flags(feature_snapshot: dict[str, Any]) -> list[str]:
+    """Task 106 — regime flags where exclude 大跌 has historically over-fired.
+
+    Returns one human-readable flag string per condition that hits.
+    """
+    flags: list[str] = []
+    vol_ratio20 = _safe_float(feature_snapshot.get("vol_ratio20"))
+    ret5 = _safe_float(feature_snapshot.get("ret5"))
+    pos20 = _safe_float(feature_snapshot.get("pos20"))
+    if vol_ratio20 is not None and vol_ratio20 >= 1.30:
+        flags.append(f"vol_ratio20={vol_ratio20:.2f} >= 1.30（高波动）")
+    if ret5 is not None and ret5 <= -2:
+        flags.append(f"ret5={ret5:.2f} <= -2（急跌）")
+    if pos20 is not None and pos20 <= 30:
+        flags.append(f"pos20={pos20:.1f} <= 30（低位）")
+    return flags
+
+
+def _negative_confidence_level_and_notes(
     *,
     excluded: bool,
+    triggered_rule: str,
     reasons_count: int,
     feature_snapshot: dict[str, Any],
-) -> str:
+) -> tuple[str, list[str], list[str]]:
+    """Recalibrated negative-system confidence per Task 106.
+
+    Returns (level, extra_reasoning, extra_risks).
+    """
+    extra_reasoning: list[str] = []
+    extra_risks: list[str] = []
+
     missing = _missing_feature_count(feature_snapshot)
-    if missing >= 5:
-        return "unknown"
-    if excluded:
-        if reasons_count >= 4:
-            return "high"
+    severe_missing = missing >= 5
+    moderate_missing = missing >= 3
+
+    if severe_missing:
+        return "unknown", extra_reasoning, extra_risks
+
+    if not excluded:
+        if moderate_missing:
+            extra_risks.append("非排除路径下排除层特征缺失较多，否定结论稳定性受限。")
+            return "low", extra_reasoning, extra_risks
+        extra_reasoning.append(
+            "未触发排除规则，否定结论按辅助参考计入，置信度上限为 medium。"
+        )
+        return "medium", extra_reasoning, extra_risks
+
+    if triggered_rule == "exclude_big_up":
+        extra_reasoning.append(
+            "exclude 大涨 历史可靠性优于 exclude 大跌，按证据强度评估。"
+        )
+        if reasons_count >= 4 and not moderate_missing:
+            return "high", extra_reasoning, extra_risks
+        if reasons_count >= 2:
+            return "medium", extra_reasoning, extra_risks
+        return "low", extra_reasoning, extra_risks
+
+    if triggered_rule == "exclude_big_down":
+        flags = _dangerous_down_flags(feature_snapshot)
+        if flags:
+            extra_risks.append(
+                "否定大跌在高波动/急跌/低位环境中历史误否定率高（命中："
+                + "；".join(flags)
+                + "）。"
+            )
+        if len(flags) >= 2:
+            extra_reasoning.append(
+                f"exclude_big_down 命中 {len(flags)} 项危险体制特征，置信度强制降至 low。"
+            )
+            return "low", extra_reasoning, extra_risks
+        if len(flags) == 1:
+            extra_reasoning.append(
+                "exclude_big_down 命中 1 项危险体制特征，置信度上限为 medium。"
+            )
+            return "medium", extra_reasoning, extra_risks
+        pos20 = _safe_float(feature_snapshot.get("pos20"))
+        if pos20 is not None and pos20 >= 80:
+            extra_risks.append(
+                f"pos20={pos20:.1f} >= 80（高位），需注意 exclude_big_down 误用风险。"
+            )
+        extra_reasoning.append(
+            "exclude_big_down 未命中危险体制特征，按证据强度评估。"
+        )
+        if reasons_count >= 4 and not moderate_missing:
+            return "high", extra_reasoning, extra_risks
         if reasons_count >= 3:
-            return "medium"
-        return "low"
-    if missing <= 1:
-        return "high"
-    if missing <= 3:
-        return "medium"
-    return "low"
+            return "medium", extra_reasoning, extra_risks
+        return "low", extra_reasoning, extra_risks
+
+    # Excluded but rule unrecognised — fall back to evidence-only ladder.
+    if reasons_count >= 4:
+        return "high", extra_reasoning, extra_risks
+    if reasons_count >= 3:
+        return "medium", extra_reasoning, extra_risks
+    return "low", extra_reasoning, extra_risks
 
 
 def _negative_confidence_reasoning(
@@ -532,27 +608,32 @@ def build_negative_system_confidence(v2_raw: dict[str, Any] | None) -> dict[str,
     v2 = _as_dict(v2_raw)
     exclusion = _as_dict(v2.get("exclusion_result"))
     excluded = bool(exclusion.get("excluded"))
+    triggered_rule = _clean_str(exclusion.get("triggered_rule"))
     reasons = _unique([_clean_str(item) for item in _as_list(exclusion.get("reasons"))])
     feature_snapshot = _as_dict(exclusion.get("feature_snapshot"))
     peer_alignment = _as_dict(exclusion.get("peer_alignment"))
 
-    level = _negative_confidence_level(
+    level, extra_reasoning, extra_risks = _negative_confidence_level_and_notes(
         excluded=excluded,
+        triggered_rule=triggered_rule,
         reasons_count=len(reasons),
         feature_snapshot=feature_snapshot,
+    )
+
+    base_reasoning = _negative_confidence_reasoning(
+        excluded=excluded,
+        reasons=reasons,
+        feature_snapshot=feature_snapshot,
+    )
+    base_risks = _negative_confidence_risks(
+        feature_snapshot=feature_snapshot,
+        peer_alignment=peer_alignment,
     )
     return {
         "score": _level_to_score(level),
         "level": level,
-        "reasoning": _negative_confidence_reasoning(
-            excluded=excluded,
-            reasons=reasons,
-            feature_snapshot=feature_snapshot,
-        ),
-        "risks": _negative_confidence_risks(
-            feature_snapshot=feature_snapshot,
-            peer_alignment=peer_alignment,
-        ),
+        "reasoning": _unique([*base_reasoning, *extra_reasoning]),
+        "risks": _unique([*base_risks, *extra_risks]),
     }
 
 
@@ -600,33 +681,128 @@ def _projection_confidence_risks(
     return _unique(risks)
 
 
-def build_projection_system_confidence(v2_raw: dict[str, Any] | None) -> dict[str, Any]:
+def _projection_confidence_calibrate(
+    *,
+    final_ready: bool,
+    base: str,
+    top1_state: str,
+    top1_margin: float | None,
+    has_conflicts: bool,
+) -> tuple[str, list[str], list[str]]:
+    """Recalibrate the projection-system confidence per Task 106.
+
+    Returns (level, extra_reasoning, extra_risks).
+    """
+    extra_reasoning: list[str] = []
+    extra_risks: list[str] = []
+
+    if not final_ready or base == "unknown":
+        return "unknown", extra_reasoning, extra_risks
+
+    level = base
+    is_tail = top1_state in {"大涨", "大跌"}
+
+    # Tail cap: 大涨 / 大跌 历史命中率偏低 → 上限 medium。
+    if is_tail and _LEVEL_RANK.get(level, 0) > _LEVEL_RANK["medium"]:
+        level = "medium"
+        extra_reasoning.append(
+            "尾部状态预测历史命中率偏低，置信度上限降至 medium"
+        )
+    if is_tail:
+        extra_risks.append(
+            f"top1 为尾部状态 {top1_state}，历史命中率偏低，需价格确认。"
+        )
+
+    # Overconfidence downgrade: margin >= 0.60 历史校准显示过度自信。
+    if top1_margin is not None and top1_margin >= 0.60:
+        new_rank = max(0, _LEVEL_RANK.get(level, 0) - 1)
+        new_level = _RANK_TO_LEVEL.get(new_rank, level)
+        if new_level != level:
+            extra_reasoning.append(
+                f"历史校准显示极高 margin（{top1_margin:.2f}）存在过度自信风险，置信度下调一级。"
+            )
+            level = new_level
+        else:
+            extra_reasoning.append(
+                f"top1 margin 已极高（{top1_margin:.2f}），保持当前级别。"
+            )
+
+    # Healthy-high guard: high 仅在非尾部 + 0.10 <= margin <= 0.40 + 无冲突时允许。
+    if level == "high":
+        margin_ok = top1_margin is not None and 0.10 <= top1_margin <= 0.40
+        non_tail = not is_tail
+        no_conflict = not has_conflicts
+        if not (non_tail and margin_ok and no_conflict):
+            issues: list[str] = []
+            if not non_tail:
+                issues.append("top1 为尾部状态")
+            if top1_margin is None:
+                issues.append("margin 不可计算")
+            elif top1_margin < 0.10:
+                issues.append(f"margin 偏低 ({top1_margin:.2f})")
+            elif top1_margin > 0.40:
+                issues.append(f"margin 偏高 ({top1_margin:.2f})")
+            if not no_conflict:
+                issues.append("存在跨系统冲突")
+            extra_reasoning.append(
+                "健康 high 条件未满足（" + "；".join(issues) + "），降至 medium。"
+            )
+            level = "medium"
+
+    if level == "low":
+        extra_risks.append("基线置信度已为 low，建议仅作辅助参考。")
+
+    return level, extra_reasoning, extra_risks
+
+
+def build_projection_system_confidence(
+    v2_raw: dict[str, Any] | None,
+    *,
+    conflicts: list[str] | None = None,
+) -> dict[str, Any]:
     v2 = _as_dict(v2_raw)
     final = _as_dict(v2.get("final_decision"))
     primary = _as_dict(v2.get("primary_analysis"))
     peer = _as_dict(v2.get("peer_adjustment"))
     historical = _as_dict(v2.get("historical_probability"))
+    main_projection = _as_dict(v2.get("main_projection"))
     step_status = _as_dict(v2.get("step_status"))
 
-    if not final.get("ready"):
-        level = "unknown"
-    else:
-        level = _normalize_level(final.get("final_confidence") or final.get("confidence"))
+    base = _normalize_level(final.get("final_confidence") or final.get("confidence"))
 
+    distribution = _five_state_projection(main_projection)
+    margin_policy = apply_five_state_margin_policy(
+        distribution,
+        final_direction=_final_direction_value(final),
+    )
+    top1_state = _five_state_top1(main_projection, distribution)
+    top1_margin = _safe_float(margin_policy.get("top1_margin"))
+    has_conflicts = bool(conflicts)
+
+    level, extra_reasoning, extra_risks = _projection_confidence_calibrate(
+        final_ready=bool(final.get("ready")),
+        base=base,
+        top1_state=top1_state,
+        top1_margin=top1_margin,
+        has_conflicts=has_conflicts,
+    )
+
+    base_reasoning = _projection_confidence_reasoning(
+        final=final,
+        step_status=step_status,
+    )
+    base_risks = _projection_confidence_risks(
+        final=final,
+        primary=primary,
+        peer=peer,
+        historical=historical,
+        step_status=step_status,
+    )
     return {
         "score": _level_to_score(level),
         "level": level,
-        "reasoning": _projection_confidence_reasoning(
-            final=final,
-            step_status=step_status,
-        ),
-        "risks": _projection_confidence_risks(
-            final=final,
-            primary=primary,
-            peer=peer,
-            historical=historical,
-            step_status=step_status,
-        ),
+        "reasoning": _unique([*base_reasoning, *extra_reasoning]),
+        "risks": _unique([*base_risks, *extra_risks]),
     }
 
 
@@ -716,9 +892,9 @@ def build_overall_confidence(
 
 def build_confidence_evaluator(v2_raw: dict[str, Any] | None) -> dict[str, Any]:
     v2 = _as_dict(v2_raw)
-    negative = build_negative_system_confidence(v2)
-    projection = build_projection_system_confidence(v2)
     conflicts = _conflicts_from_v2(v2)
+    negative = build_negative_system_confidence(v2)
+    projection = build_projection_system_confidence(v2, conflicts=conflicts)
     overall = build_overall_confidence(
         negative_confidence=negative,
         projection_confidence=projection,

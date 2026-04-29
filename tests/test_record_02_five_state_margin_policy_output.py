@@ -197,7 +197,8 @@ class SiblingSystemsUnchangedTests(unittest.TestCase):
         result = build_confidence_evaluator(_v2_low_margin())
         self.assertEqual(result["projection_system_confidence"]["level"], "medium")
         self.assertEqual(result["projection_system_confidence"]["score"], 0.6)
-        self.assertEqual(result["negative_system_confidence"]["level"], "high")
+        # Task 110 — non-excluded normal case caps at medium (no auto-high).
+        self.assertEqual(result["negative_system_confidence"]["level"], "medium")
         self.assertEqual(result["overall_confidence"]["level"], "medium")
 
     def test_negative_system_unchanged(self) -> None:

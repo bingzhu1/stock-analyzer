@@ -314,10 +314,10 @@ class ConfidenceEvaluatorTests(unittest.TestCase):
         # final_confidence=medium -> projection level medium -> score 0.6
         self.assertEqual(result["projection_system_confidence"]["level"], "medium")
         self.assertEqual(result["projection_system_confidence"]["score"], 0.6)
-        # exclusion not triggered, all features present -> negative high
-        self.assertEqual(result["negative_system_confidence"]["level"], "high")
-        self.assertEqual(result["negative_system_confidence"]["score"], 0.9)
-        # overall = min(high, medium) = medium
+        # Task 110 — non-excluded normal case caps at medium (no auto-high).
+        self.assertEqual(result["negative_system_confidence"]["level"], "medium")
+        self.assertEqual(result["negative_system_confidence"]["score"], 0.6)
+        # overall = min(medium, medium) = medium
         self.assertEqual(result["overall_confidence"]["level"], "medium")
         self.assertEqual(result["overall_confidence"]["score"], 0.6)
         self.assertEqual(result["conflicts"], [])
@@ -398,6 +398,159 @@ class BuildProjectionThreeSystemsTests(unittest.TestCase):
             any("大涨" in conflict for conflict in result["confidence_evaluator"]["conflicts"]),
             msg=result["confidence_evaluator"]["conflicts"],
         )
+
+
+def _v2_excluded_big_down(*, feature_overrides: dict | None = None,
+                          reasons_count: int = 5) -> dict:
+    base = _v2_happy()
+    base["exclusion_result"] = {
+        "excluded": True,
+        "action": "exclude",
+        "triggered_rule": "exclude_big_down",
+        "summary": "排除层判断：明天不太可能大跌。",
+        "reasons": [f"reason {i}" for i in range(1, reasons_count + 1)],
+        "peer_alignment": {
+            "alignment": "neutral",
+            "available_peer_count": 3,
+        },
+        "feature_snapshot": {
+            "pos20": 60.0,
+            "vol_ratio20": 1.00,
+            "upper_shadow_ratio": 0.10,
+            "lower_shadow_ratio": 0.20,
+            "ret1": -0.5,
+            "ret3": -0.8,
+            "ret5": -1.0,
+            **(feature_overrides or {}),
+        },
+    }
+    base["main_projection"] = {
+        "kind": "main_projection_layer",
+        "ready": True,
+        "predicted_top1": {"state": "震荡", "probability": 0.40},
+        "predicted_top2": {"state": "小涨", "probability": 0.25},
+        "state_probabilities": {
+            "大涨": 0.05,
+            "小涨": 0.25,
+            "震荡": 0.40,
+            "小跌": 0.20,
+            "大跌": 0.10,
+        },
+        "warnings": [],
+    }
+    return base
+
+
+def _v2_with_top1(state: str, *, top1: float, top2: float, top2_state: str = "震荡",
+                  base_confidence: str = "high") -> dict:
+    """Build a v2 fixture with explicit top1 state, probability, margin."""
+    base = _v2_happy()
+    base["final_decision"]["final_confidence"] = base_confidence
+    base["main_projection"]["predicted_top1"] = {"state": state, "probability": top1}
+    base["main_projection"]["predicted_top2"] = {
+        "state": top2_state,
+        "probability": top2,
+    }
+    others = {"大涨", "小涨", "震荡", "小跌", "大跌"} - {state, top2_state}
+    leftover = max(0.0, 1.0 - top1 - top2)
+    per = leftover / max(1, len(others))
+    dist = {state: top1, top2_state: top2}
+    for s in others:
+        dist[s] = per
+    base["main_projection"]["state_probabilities"] = dist
+    return base
+
+
+class ProjectionConfidenceRecalibrationTests(unittest.TestCase):
+    """Task 110 — projection confidence recalibration rules."""
+
+    def test_high_with_tail_top1_da_zhang_caps_at_medium(self) -> None:
+        v2 = _v2_with_top1("大涨", top1=0.45, top2=0.20, base_confidence="high")
+        result = build_confidence_evaluator(v2)
+        self.assertIn(result["projection_system_confidence"]["level"], {"low", "medium"})
+        reasoning = " ".join(result["projection_system_confidence"]["reasoning"])
+        self.assertIn("尾部状态", reasoning)
+
+    def test_high_with_tail_top1_da_die_caps_at_medium(self) -> None:
+        v2 = _v2_with_top1("大跌", top1=0.45, top2=0.20, base_confidence="high")
+        result = build_confidence_evaluator(v2)
+        self.assertIn(result["projection_system_confidence"]["level"], {"low", "medium"})
+
+    def test_high_with_non_tail_healthy_margin_no_conflict_keeps_high(self) -> None:
+        v2 = _v2_with_top1("小涨", top1=0.45, top2=0.25, top2_state="震荡",
+                           base_confidence="high")
+        # margin = 0.20, non-tail, no conflicts.
+        result = build_confidence_evaluator(v2)
+        self.assertEqual(result["projection_system_confidence"]["level"], "high")
+        self.assertEqual(result["projection_system_confidence"]["score"], 0.9)
+
+    def test_high_with_extreme_margin_downgraded(self) -> None:
+        v2 = _v2_with_top1("小涨", top1=0.75, top2=0.10, top2_state="震荡",
+                           base_confidence="high")
+        # margin = 0.65 -> overconfidence downgrade fires; still margin > 0.40
+        # so healthy-high also fails. Expect at most medium.
+        result = build_confidence_evaluator(v2)
+        self.assertIn(result["projection_system_confidence"]["level"], {"low", "medium"})
+        reasoning = " ".join(result["projection_system_confidence"]["reasoning"])
+        self.assertIn("过度自信", reasoning)
+
+    def test_high_with_low_margin_demotes_via_healthy_high_guard(self) -> None:
+        v2 = _v2_with_top1("小涨", top1=0.30, top2=0.27, top2_state="震荡",
+                           base_confidence="high")
+        # margin = 0.03 < 0.10 → healthy-high guard demotes to medium.
+        result = build_confidence_evaluator(v2)
+        self.assertEqual(result["projection_system_confidence"]["level"], "medium")
+        reasoning = " ".join(result["projection_system_confidence"]["reasoning"])
+        self.assertIn("健康 high 条件未满足", reasoning)
+
+    def test_high_with_conflict_demotes_via_healthy_high_guard(self) -> None:
+        v2 = _v2_with_top1("小涨", top1=0.45, top2=0.25, top2_state="震荡",
+                           base_confidence="high")
+        v2["consistency"]["consistency_flag"] = "conflict"
+        v2["consistency"]["conflict_reasons"] = ["主推演与历史方向不一致。"]
+        result = build_confidence_evaluator(v2)
+        self.assertEqual(result["projection_system_confidence"]["level"], "medium")
+
+
+class NegativeConfidenceRecalibrationTests(unittest.TestCase):
+    """Task 110 — negative-system confidence recalibration rules."""
+
+    def test_exclude_big_up_with_enough_reasons_high_allowed(self) -> None:
+        result = build_confidence_evaluator(_v2_excluded_big_up())
+        self.assertEqual(result["negative_system_confidence"]["level"], "high")
+        reasoning = " ".join(result["negative_system_confidence"]["reasoning"])
+        self.assertIn("exclude 大涨", reasoning)
+
+    def test_exclude_big_down_benign_regime_allows_high(self) -> None:
+        v2 = _v2_excluded_big_down(reasons_count=5)
+        result = build_confidence_evaluator(v2)
+        self.assertEqual(result["negative_system_confidence"]["level"], "high")
+
+    def test_exclude_big_down_with_high_vol_caps_at_medium(self) -> None:
+        v2 = _v2_excluded_big_down(
+            feature_overrides={"vol_ratio20": 1.40},
+            reasons_count=5,
+        )
+        result = build_confidence_evaluator(v2)
+        self.assertEqual(result["negative_system_confidence"]["level"], "medium")
+        risks = " ".join(result["negative_system_confidence"]["risks"])
+        self.assertIn("误否定率", risks)
+
+    def test_exclude_big_down_with_two_dangerous_flags_forced_low(self) -> None:
+        v2 = _v2_excluded_big_down(
+            feature_overrides={"ret5": -3.0, "pos20": 20.0, "vol_ratio20": 1.05},
+            reasons_count=5,
+        )
+        result = build_confidence_evaluator(v2)
+        self.assertEqual(result["negative_system_confidence"]["level"], "low")
+        risks = " ".join(result["negative_system_confidence"]["risks"])
+        self.assertIn("急跌", risks)
+        self.assertIn("低位", risks)
+
+    def test_non_excluded_normal_case_is_medium_not_high(self) -> None:
+        result = build_confidence_evaluator(_v2_happy())
+        self.assertEqual(result["negative_system_confidence"]["level"], "medium")
+        self.assertEqual(result["negative_system_confidence"]["score"], 0.6)
 
 
 if __name__ == "__main__":
