@@ -211,5 +211,167 @@ class RunPredictV2Tests(unittest.TestCase):
         self.assertEqual(result["final_projection"]["final_bias"], "unavailable")
 
 
+class RunPredictThreeSystemsAttachmentTests(unittest.TestCase):
+    """Task 104 — verify run_predict attaches a fully-populated
+    projection_three_systems block (or its degraded counterpart) so the
+    Task 103 three-column UI can render real
+    confidence_evaluator data."""
+
+    _CONFIDENCE_KEYS = {
+        "negative_system_confidence",
+        "projection_system_confidence",
+        "overall_confidence",
+        "conflicts",
+        "reliability_warnings",
+    }
+
+    def _stub_v2_raw_ready(self) -> dict:
+        """Minimal v2_raw shape that exercises the populated branch
+        without touching disk / network."""
+        return {
+            "symbol": "AVGO",
+            "ready": True,
+            "warnings": [],
+            "step_status": {"primary": "success", "peer": "success",
+                            "historical": "success", "final": "success"},
+            "primary_analysis": {"ready": True, "direction": "偏多",
+                                 "confidence": "medium"},
+            "peer_adjustment": {"ready": True, "summary": "peers ok"},
+            "historical_probability": {"ready": True, "summary": "hist ok"},
+            "exclusion_result": {
+                "excluded": False,
+                "triggered_rule": None,
+                "reasons": [],
+                "feature_snapshot": {"a": 1, "b": 2},
+                "peer_alignment": {"alignment": "neutral",
+                                   "available_peer_count": 3},
+            },
+            "main_projection": {
+                "predicted_top1": {"state": "震荡"},
+                "state_probabilities": {"震荡": 0.4, "小涨": 0.3,
+                                        "小跌": 0.2, "大涨": 0.05,
+                                        "大跌": 0.05},
+            },
+            "final_decision": {
+                "ready": True,
+                "final_direction": "偏多",
+                "final_confidence": "medium",
+                "risk_level": "medium",
+                "summary": "stub final summary",
+                "layer_contributions": {"primary": "p", "peer": "pe",
+                                         "historical": "h",
+                                         "preflight": "pf"},
+                "warnings": [],
+            },
+            "consistency": {"conflict_reasons": []},
+        }
+
+    def test_run_predict_attaches_projection_three_systems(self) -> None:
+        import predict
+
+        original_runner = getattr(predict, "_build_projection_three_systems_attachment")
+
+        captured_symbols: list[str] = []
+
+        def fake_runner(*, symbol: str, reason: str | None = None) -> dict:
+            captured_symbols.append(symbol)
+            from services.projection_three_systems_renderer import (
+                build_projection_three_systems,
+            )
+            return build_projection_three_systems(
+                projection_v2_raw=self._stub_v2_raw_ready(), symbol=symbol
+            )
+
+        predict._build_projection_three_systems_attachment = fake_runner
+        try:
+            result = run_predict(_scan(), research_result=None, symbol="AVGO")
+        finally:
+            predict._build_projection_three_systems_attachment = original_runner
+
+        self.assertIn("projection_three_systems", result)
+        three = result["projection_three_systems"]
+        self.assertEqual(three["kind"], "projection_three_systems")
+        self.assertEqual(three["symbol"], "AVGO")
+        self.assertTrue(three["ready"])
+        self.assertEqual(captured_symbols, ["AVGO"])
+
+        evaluator = three["confidence_evaluator"]
+        self.assertEqual(set(evaluator.keys()), self._CONFIDENCE_KEYS)
+
+        for sub in ("negative_system_confidence",
+                    "projection_system_confidence"):
+            self.assertIn("level", evaluator[sub])
+            self.assertIn("score", evaluator[sub])
+            self.assertIn("reasoning", evaluator[sub])
+            self.assertIn("risks", evaluator[sub])
+
+        self.assertIn("level", evaluator["overall_confidence"])
+        self.assertIn("score", evaluator["overall_confidence"])
+
+        # Legacy fields untouched.
+        self.assertEqual(result["final_bias"],
+                         result["final_projection"]["final_bias"])
+        self.assertEqual(result["primary_projection"]["status"], "computed")
+        self.assertEqual(result["final_projection"]["status"], "computed")
+
+    def test_run_predict_projection_three_systems_degrades_when_v2_raises(self) -> None:
+        """When run_projection_v2 explodes, run_predict must still
+        return its legacy answer and attach a degraded
+        projection_three_systems block whose confidence_evaluator levels
+        are all 'unknown'."""
+        from services import projection_orchestrator_v2
+
+        original_v2 = projection_orchestrator_v2.run_projection_v2
+
+        def fake_v2(*_, **__):
+            raise RuntimeError("simulated v2 outage")
+
+        projection_orchestrator_v2.run_projection_v2 = fake_v2
+        try:
+            result = run_predict(_scan(), research_result=None, symbol="AVGO")
+        finally:
+            projection_orchestrator_v2.run_projection_v2 = original_v2
+
+        # Legacy answer still intact.
+        self.assertEqual(result["final_bias"],
+                         result["final_projection"]["final_bias"])
+        self.assertEqual(result["primary_projection"]["status"], "computed")
+        self.assertEqual(result["final_projection"]["status"], "computed")
+
+        # Degraded three-systems block attached with the canonical shape.
+        self.assertIn("projection_three_systems", result)
+        three = result["projection_three_systems"]
+        self.assertEqual(three["kind"], "projection_three_systems")
+        self.assertEqual(three["symbol"], "AVGO")
+        self.assertFalse(three["ready"])
+
+        evaluator = three["confidence_evaluator"]
+        self.assertEqual(set(evaluator.keys()), self._CONFIDENCE_KEYS)
+        self.assertEqual(evaluator["negative_system_confidence"]["level"],
+                         "unknown")
+        self.assertEqual(evaluator["projection_system_confidence"]["level"],
+                         "unknown")
+        self.assertEqual(evaluator["overall_confidence"]["level"], "unknown")
+        self.assertIsNone(evaluator["negative_system_confidence"]["score"])
+        self.assertIsNone(evaluator["projection_system_confidence"]["score"])
+        self.assertIsNone(evaluator["overall_confidence"]["score"])
+
+    def test_run_predict_missing_scan_attaches_degraded_three_systems(self) -> None:
+        """Missing scan_result short-circuits the legacy path; the
+        degraded three-systems block must still attach so the UI
+        contract stays stable."""
+        result = run_predict(None, research_result=None, symbol="AVGO")
+
+        self.assertEqual(result["final_bias"], "unavailable")
+        self.assertIn("projection_three_systems", result)
+        three = result["projection_three_systems"]
+        self.assertEqual(three["kind"], "projection_three_systems")
+        self.assertEqual(three["symbol"], "AVGO")
+        self.assertFalse(three["ready"])
+        evaluator = three["confidence_evaluator"]
+        self.assertEqual(set(evaluator.keys()), self._CONFIDENCE_KEYS)
+        self.assertEqual(evaluator["overall_confidence"]["level"], "unknown")
+
+
 if __name__ == "__main__":
     unittest.main()
