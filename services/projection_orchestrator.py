@@ -47,7 +47,7 @@ def _build_summary_df(exact_df: pd.DataFrame, near_df: pd.DataFrame) -> pd.DataF
     return pd.DataFrame(rows)[SUMMARY_COLUMNS]
 
 
-def _build_momentum_frame(symbol: str) -> pd.DataFrame:
+def _build_momentum_frame(symbol: str, *, target_date: str | None = None) -> pd.DataFrame:
     mom_df = load_symbol_data(
         symbol,
         window=0,
@@ -55,27 +55,46 @@ def _build_momentum_frame(symbol: str) -> pd.DataFrame:
     )
     mom_df = mom_df.copy()
     mom_df["Date"] = pd.to_datetime(mom_df["Date"])
+    if target_date:
+        mom_df = mom_df[mom_df["Date"] <= pd.to_datetime(target_date)].reset_index(drop=True)
     return mom_df
 
 
-def _build_predict_result(symbol: str) -> tuple[dict[str, Any], dict[str, Any], str]:
+def _build_predict_result(
+    symbol: str,
+    *,
+    target_date: str | None = None,
+) -> tuple[dict[str, Any], dict[str, Any], str]:
     """
-    Run the existing daily Scan + Predict path for the latest available date.
+    Run the existing daily Scan + Predict path.
 
-    This adapter does not change scanner or predict rules. It only prepares the
-    same pipeline inputs the app normally computes before calling run_scan().
+    When ``target_date`` is provided the coded dataframe is filtered to rows
+    with ``Date <= target_date`` so the entire pipeline sees only data
+    available as of that date. When ``target_date`` is ``None`` the live
+    behaviour (latest row) is preserved.
     """
     symbol = _normalize_final_symbol(symbol)
     coded_df = load_coded_avgo()
-    target_date = _latest_target_date(coded_df)
+    if target_date:
+        coded_df = coded_df[
+            pd.to_datetime(coded_df["Date"]) <= pd.to_datetime(target_date)
+        ].reset_index(drop=True)
+        if coded_df.empty:
+            raise ValueError(
+                f"AVGO coded data is empty on or before {target_date}; "
+                "cannot build projection report."
+            )
+        resolved_target_date = pd.to_datetime(target_date).strftime("%Y-%m-%d")
+    else:
+        resolved_target_date = _latest_target_date(coded_df)
 
-    exact_df = build_next_day_match_table(coded_df, target_date)
-    near_df = build_near_match_table(coded_df, target_date)
+    exact_df = build_next_day_match_table(coded_df, resolved_target_date)
+    near_df = build_near_match_table(coded_df, resolved_target_date)
     summary_df = _build_summary_df(exact_df, near_df)
-    mom_df = _build_momentum_frame(symbol)
+    mom_df = _build_momentum_frame(symbol, target_date=target_date)
 
     scan_result = run_scan(
-        target_date,
+        resolved_target_date,
         coded_df,
         exact_df,
         near_df,
@@ -86,7 +105,7 @@ def _build_predict_result(symbol: str) -> tuple[dict[str, Any], dict[str, Any], 
         scan_phase="daily",
     )
     predict_result = run_predict(scan_result, research_result=None, symbol=symbol)
-    return dict(predict_result), dict(scan_result), target_date
+    return dict(predict_result), dict(scan_result), resolved_target_date
 
 
 def format_projection_report(
@@ -132,6 +151,7 @@ def build_projection_orchestrator_result(
     error_category: str | None = None,
     limit: int = 5,
     lookback_days: int | None = None,
+    target_date: str | None = None,
 ) -> dict[str, Any]:
     """Return a final projection report plus advisory context."""
     advisory = build_projection_orchestrator_preflight(
@@ -145,13 +165,16 @@ def build_projection_orchestrator_result(
         "error_category": error_category,
         "limit": limit,
         "lookback_days": lookback_days,
+        "target_date": target_date,
     }
-    predict_result, scan_result, target_date = _build_predict_result(normalized_symbol)
+    predict_result, scan_result, resolved_target_date = _build_predict_result(
+        normalized_symbol, target_date=target_date
+    )
     report = format_projection_report(
         predict_result,
         advisory=advisory,
         scan_result=scan_result,
-        target_date=target_date,
+        target_date=resolved_target_date,
         lookback_days=lookback_days,
     )
 

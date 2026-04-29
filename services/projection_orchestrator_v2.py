@@ -437,6 +437,7 @@ def run_projection_v2(
         legacy_result = _projection_runner(
             symbol=normalized_symbol,
             lookback_days=lookback_days,
+            target_date=target_date,
         )
     except Exception as exc:
         message = f"primary_analysis 失败：{exc}"
