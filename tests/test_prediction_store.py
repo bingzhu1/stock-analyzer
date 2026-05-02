@@ -358,5 +358,186 @@ class PredictionStoreTests(unittest.TestCase):
         self.assertIn("历史记录数据库损坏", str(ctx.exception))
 
 
+class ContractPayloadStoreTests(unittest.TestCase):
+    """Step 1E: prediction_log carries an optional contract_payload_json column."""
+
+    def setUp(self) -> None:
+        self._tmpdir = tempfile.TemporaryDirectory()
+        ps.DB_PATH = Path(self._tmpdir.name) / "test.db"
+        ps.init_db()
+
+    def tearDown(self) -> None:
+        self._tmpdir.cleanup()
+
+    # ── 1. backward compat: legacy callers don't pass contract_payload ────────
+
+    def test_legacy_save_without_contract_payload_still_works(self) -> None:
+        pid = ps.save_prediction(
+            "AVGO", "2026-04-11", None, None, _make_predict_result()
+        )
+        row = ps.get_prediction(pid)
+        assert row is not None
+        # Column exists on the row, but value is NULL when not provided.
+        self.assertIn("contract_payload_json", row)
+        self.assertIsNone(row["contract_payload_json"])
+
+    # ── 2. valid payload round-trips ──────────────────────────────────────────
+
+    def test_valid_contract_payload_round_trips(self) -> None:
+        contract_payload = {
+            "current_structure": {
+                "symbol": "AVGO",
+                "analysis_date": "2026-04-09",
+            },
+            "review_payload": {"prediction_id": "pid-placeholder"},
+        }
+        pid = ps.save_prediction(
+            "AVGO",
+            "2026-04-11",
+            None,
+            None,
+            _make_predict_result(),
+            contract_payload=contract_payload,
+        )
+        row = ps.get_prediction(pid)
+        assert row is not None
+        self.assertIsNotNone(row["contract_payload_json"])
+        decoded = json.loads(row["contract_payload_json"])
+        self.assertEqual(decoded, contract_payload)
+
+    def test_save_prediction_record_passes_through_contract_payload(self) -> None:
+        record = {
+            "symbol": "AVGO",
+            "prediction_for_date": "2026-04-11",
+            "predict_result": _make_predict_result(),
+            "contract_payload": {"current_structure": {"symbol": "AVGO"}},
+        }
+        pid = ps.save_prediction_record(record)
+        row = ps.get_prediction(pid)
+        assert row is not None
+        decoded = json.loads(row["contract_payload_json"])
+        self.assertEqual(decoded, record["contract_payload"])
+
+    # ── 3. invalid payload does not break the save ────────────────────────────
+
+    def test_invalid_contract_payload_does_not_break_save(self) -> None:
+        # The store does not validate; it just persists. Even contract-illegal
+        # payloads must not crash save_prediction or corrupt the legacy row.
+        bogus = {"only_one_section": "this is not contract-shaped"}
+        pid = ps.save_prediction(
+            "AVGO",
+            "2026-04-11",
+            None,
+            None,
+            _make_predict_result(),
+            contract_payload=bogus,
+        )
+        row = ps.get_prediction(pid)
+        assert row is not None
+        self.assertEqual(row["final_bias"], "bullish")  # legacy fields intact
+        self.assertEqual(json.loads(row["contract_payload_json"]), bogus)
+
+    def test_explicit_none_contract_payload_stores_null(self) -> None:
+        pid = ps.save_prediction(
+            "AVGO",
+            "2026-04-11",
+            None,
+            None,
+            _make_predict_result(),
+            contract_payload=None,
+        )
+        row = ps.get_prediction(pid)
+        assert row is not None
+        self.assertIsNone(row["contract_payload_json"])
+
+    # ── 4. legacy DBs (pre-Step-1E schema) get migrated on init_db() ──────────
+
+    def test_old_db_without_contract_payload_column_is_migrated(self) -> None:
+        # Simulate an old DB by dropping the column-aware schema and creating
+        # a minimal legacy table that lacks contract_payload_json.
+        with ps._get_conn() as conn:
+            conn.execute("DROP TABLE prediction_log")
+            conn.execute(
+                """
+                CREATE TABLE prediction_log (
+                    id                   TEXT PRIMARY KEY,
+                    symbol               TEXT NOT NULL,
+                    analysis_date        TEXT NOT NULL,
+                    prediction_for_date  TEXT NOT NULL,
+                    created_at           TEXT NOT NULL,
+                    final_bias           TEXT NOT NULL,
+                    final_confidence     TEXT NOT NULL,
+                    status               TEXT NOT NULL DEFAULT 'saved',
+                    scan_result_json     TEXT,
+                    research_result_json TEXT,
+                    predict_result_json  TEXT NOT NULL,
+                    snapshot_id          TEXT
+                )
+                """
+            )
+            # Sanity: column genuinely absent before migration.
+            cols_before = {r["name"] for r in conn.execute("PRAGMA table_info(prediction_log)")}
+            self.assertNotIn("contract_payload_json", cols_before)
+
+        # init_db must add the column without dropping data.
+        ps.init_db()
+
+        with ps._get_conn() as conn:
+            cols_after = {r["name"] for r in conn.execute("PRAGMA table_info(prediction_log)")}
+        self.assertIn("contract_payload_json", cols_after)
+
+        # And it must be idempotent — second call is a no-op.
+        ps.init_db()
+
+        # New saves with contract_payload work end-to-end on the migrated table.
+        pid = ps.save_prediction(
+            "AVGO",
+            "2026-04-11",
+            None,
+            None,
+            _make_predict_result(),
+            contract_payload={"current_structure": {"symbol": "AVGO"}},
+        )
+        row = ps.get_prediction(pid)
+        assert row is not None
+        self.assertEqual(
+            json.loads(row["contract_payload_json"]),
+            {"current_structure": {"symbol": "AVGO"}},
+        )
+
+    def test_legacy_row_with_null_contract_payload_reads_back_cleanly(self) -> None:
+        # Insert a row directly via SQL, leaving contract_payload_json NULL,
+        # to mimic a row written before Step 1E.
+        legacy_pid = "legacy-id-0000"
+        with ps._get_conn() as conn:
+            conn.execute(
+                """INSERT INTO prediction_log
+                   (id, symbol, analysis_date, prediction_for_date, created_at,
+                    final_bias, final_confidence, status,
+                    scan_result_json, research_result_json, predict_result_json,
+                    snapshot_id)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    legacy_pid, "AVGO", "2026-04-09", "2026-04-11",
+                    "2026-04-09T00:00:00",
+                    "bullish", "medium", "saved",
+                    None, None, json.dumps(_make_predict_result()),
+                    "—",
+                ),
+            )
+
+        row = ps.get_prediction(legacy_pid)
+        assert row is not None
+        self.assertEqual(row["id"], legacy_pid)
+        self.assertIsNone(row["contract_payload_json"])
+        # list_predictions and get_prediction_by_date also must not crash.
+        rows = ps.list_predictions(limit=10)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(
+            ps.get_prediction_by_date("AVGO", "2026-04-11")["id"],  # type: ignore[index]
+            legacy_pid,
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

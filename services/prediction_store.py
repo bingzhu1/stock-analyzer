@@ -40,18 +40,19 @@ _STATUS_ORDER: dict[str, int] = {
 
 _CREATE_SQL = """
 CREATE TABLE IF NOT EXISTS prediction_log (
-    id                   TEXT PRIMARY KEY,
-    symbol               TEXT NOT NULL,
-    analysis_date        TEXT NOT NULL,
-    prediction_for_date  TEXT NOT NULL,
-    created_at           TEXT NOT NULL,
-    final_bias           TEXT NOT NULL,
-    final_confidence     TEXT NOT NULL,
-    status               TEXT NOT NULL DEFAULT 'saved',
-    scan_result_json     TEXT,
-    research_result_json TEXT,
-    predict_result_json  TEXT NOT NULL,
-    snapshot_id          TEXT
+    id                    TEXT PRIMARY KEY,
+    symbol                TEXT NOT NULL,
+    analysis_date         TEXT NOT NULL,
+    prediction_for_date   TEXT NOT NULL,
+    created_at            TEXT NOT NULL,
+    final_bias            TEXT NOT NULL,
+    final_confidence      TEXT NOT NULL,
+    status                TEXT NOT NULL DEFAULT 'saved',
+    scan_result_json      TEXT,
+    research_result_json  TEXT,
+    predict_result_json   TEXT NOT NULL,
+    snapshot_id           TEXT,
+    contract_payload_json TEXT
 );
 
 CREATE TABLE IF NOT EXISTS outcome_log (
@@ -156,10 +157,25 @@ def _advance_prediction_status(
         )
 
 
+def _migrate_prediction_log(conn: sqlite3.Connection) -> None:
+    """Idempotent: add ``contract_payload_json`` to legacy prediction_log tables.
+
+    Older DBs created before Step 1E lack this column. ``ALTER TABLE ... ADD
+    COLUMN`` is the cheapest way to extend; ``duplicate column`` is swallowed
+    so the migration stays a no-op on already-migrated DBs.
+    """
+    try:
+        conn.execute("ALTER TABLE prediction_log ADD COLUMN contract_payload_json TEXT")
+    except sqlite3.OperationalError as exc:
+        if "duplicate column" not in str(exc).lower():
+            raise
+
+
 def init_db() -> None:
     """Create tables and indexes if they don't exist. Safe to call multiple times."""
     with _get_conn() as conn:
         conn.executescript(_CREATE_SQL)
+        _migrate_prediction_log(conn)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -173,6 +189,8 @@ def save_prediction(
     research_result: dict[str, Any] | None,
     predict_result: dict[str, Any],
     snapshot_id: str = "—",
+    *,
+    contract_payload: dict[str, Any] | None = None,
 ) -> str:
     """
     Persist a prediction. Returns the new prediction_id (UUID4).
@@ -180,6 +198,12 @@ def save_prediction(
     Multiple saves for the same (symbol, prediction_for_date) are allowed —
     each creates a new row with its own id. Use get_prediction_by_date() to
     retrieve the latest, or track the id in session_state.
+
+    ``contract_payload`` is the optional Step 1A Projection Output Contract
+    dict (see services/projection_output_contract.py). When omitted or
+    ``None``, the column is stored as NULL — fully backward compatible with
+    callers predating Step 1E. The store never validates ``contract_payload``;
+    that is the caller's responsibility.
     """
     init_db()
     prediction_id = str(uuid.uuid4())
@@ -189,8 +213,9 @@ def save_prediction(
             """INSERT INTO prediction_log
                (id, symbol, analysis_date, prediction_for_date, created_at,
                 final_bias, final_confidence, status,
-                scan_result_json, research_result_json, predict_result_json, snapshot_id)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                scan_result_json, research_result_json, predict_result_json,
+                snapshot_id, contract_payload_json)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 prediction_id,
                 symbol,
@@ -204,6 +229,7 @@ def save_prediction(
                 json.dumps(research_result) if research_result is not None else None,
                 json.dumps(predict_result),
                 snapshot_id,
+                json.dumps(contract_payload) if contract_payload is not None else None,
             ),
         )
     return prediction_id
@@ -423,7 +449,7 @@ def save_prediction_record(record: dict) -> str:
     Save a prediction from a flat dict. Dispatches to save_prediction().
 
     Required keys: symbol, prediction_for_date, predict_result
-    Optional keys: scan_result, research_result, snapshot_id
+    Optional keys: scan_result, research_result, snapshot_id, contract_payload
     """
     return save_prediction(
         symbol=str(record["symbol"]),
@@ -432,6 +458,7 @@ def save_prediction_record(record: dict) -> str:
         research_result=record.get("research_result"),
         predict_result=record["predict_result"],
         snapshot_id=str(record.get("snapshot_id", "—")),
+        contract_payload=record.get("contract_payload"),
     )
 
 
