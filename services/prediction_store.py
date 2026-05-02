@@ -179,6 +179,51 @@ def init_db() -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Step 1F: contract_payload side-path
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Sentinel distinguishes "caller did not pass contract_payload" (auto-generate)
+# from "caller explicitly passed None" (store NULL, no auto-generation).
+_AUTO_GENERATE_CONTRACT: Any = object()
+
+
+def _try_build_contract_payload(
+    scan_result: dict[str, Any] | None,
+    research_result: dict[str, Any] | None,
+    predict_result: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """Best-effort Projection Output Contract generation for the save side-path.
+
+    Returns ``None`` on any failure (adapter import missing, adapter raises,
+    validator raises, or validator returns errors). Never raises — by design,
+    the legacy save flow must never break because of contract-side issues.
+    """
+    try:
+        from services.projection_output_adapter import adapt_projection_output
+        from services.projection_output_contract import validate_projection_output
+    except ImportError:
+        return None
+
+    try:
+        payload = adapt_projection_output(
+            scan_result=scan_result,
+            research_result=research_result,
+            predict_result=predict_result,
+        )
+    except Exception:
+        return None
+
+    try:
+        errors = validate_projection_output(payload)
+    except Exception:
+        return None
+
+    if errors:
+        return None
+    return payload
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # prediction_log
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -190,7 +235,7 @@ def save_prediction(
     predict_result: dict[str, Any],
     snapshot_id: str = "—",
     *,
-    contract_payload: dict[str, Any] | None = None,
+    contract_payload: Any = _AUTO_GENERATE_CONTRACT,
 ) -> str:
     """
     Persist a prediction. Returns the new prediction_id (UUID4).
@@ -199,12 +244,18 @@ def save_prediction(
     each creates a new row with its own id. Use get_prediction_by_date() to
     retrieve the latest, or track the id in session_state.
 
-    ``contract_payload`` is the optional Step 1A Projection Output Contract
-    dict (see services/projection_output_contract.py). When omitted or
-    ``None``, the column is stored as NULL — fully backward compatible with
-    callers predating Step 1E. The store never validates ``contract_payload``;
-    that is the caller's responsibility.
+    ``contract_payload`` (Step 1A Projection Output Contract dict):
+      - **omitted** → side-path: build via the adapter + validator and store
+        the result. Failures (adapter raise / validation errors) silently
+        fall back to NULL; the legacy save flow always succeeds.
+      - **None** → store NULL explicitly; no side-path runs.
+      - **dict** → store as-is, no validation, no rebuild.
     """
+    if contract_payload is _AUTO_GENERATE_CONTRACT:
+        contract_payload = _try_build_contract_payload(
+            scan_result, research_result, predict_result
+        )
+
     init_db()
     prediction_id = str(uuid.uuid4())
     analysis_date = datetime.now().date().isoformat()
@@ -450,7 +501,16 @@ def save_prediction_record(record: dict) -> str:
 
     Required keys: symbol, prediction_for_date, predict_result
     Optional keys: scan_result, research_result, snapshot_id, contract_payload
+
+    If ``contract_payload`` is absent from ``record``, the save side-path
+    auto-generates it via the adapter (Step 1F). If it is present (including
+    explicit ``None``), the value is passed through verbatim.
     """
+    contract_payload: Any = (
+        record["contract_payload"]
+        if "contract_payload" in record
+        else _AUTO_GENERATE_CONTRACT
+    )
     return save_prediction(
         symbol=str(record["symbol"]),
         prediction_for_date=str(record["prediction_for_date"]),
@@ -458,7 +518,7 @@ def save_prediction_record(record: dict) -> str:
         research_result=record.get("research_result"),
         predict_result=record["predict_result"],
         snapshot_id=str(record.get("snapshot_id", "—")),
-        contract_payload=record.get("contract_payload"),
+        contract_payload=contract_payload,
     )
 
 

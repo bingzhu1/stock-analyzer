@@ -371,15 +371,26 @@ class ContractPayloadStoreTests(unittest.TestCase):
 
     # ── 1. backward compat: legacy callers don't pass contract_payload ────────
 
-    def test_legacy_save_without_contract_payload_still_works(self) -> None:
+    def test_legacy_save_without_contract_payload_auto_generates(self) -> None:
+        """Step 1F: legacy callers (no ``contract_payload`` kwarg) get a
+        contract_payload_json auto-populated by the side-path. The save
+        succeeds, legacy fields are intact, and the JSON parses back to a
+        full 8-section contract dict."""
+        from services.projection_output_contract import CONTRACT_SECTIONS
+
         pid = ps.save_prediction(
             "AVGO", "2026-04-11", None, None, _make_predict_result()
         )
         row = ps.get_prediction(pid)
         assert row is not None
-        # Column exists on the row, but value is NULL when not provided.
-        self.assertIn("contract_payload_json", row)
-        self.assertIsNone(row["contract_payload_json"])
+        # Side-path wrote the column.
+        self.assertIsNotNone(row["contract_payload_json"])
+        payload = json.loads(row["contract_payload_json"])
+        self.assertEqual(set(payload.keys()), set(CONTRACT_SECTIONS))
+        # Legacy fields untouched.
+        self.assertEqual(row["final_bias"], "bullish")
+        self.assertEqual(row["status"], "saved")
+        self.assertEqual(row["symbol"], "AVGO")
 
     # ── 2. valid payload round-trips ──────────────────────────────────────────
 
@@ -537,6 +548,160 @@ class ContractPayloadStoreTests(unittest.TestCase):
             ps.get_prediction_by_date("AVGO", "2026-04-11")["id"],  # type: ignore[index]
             legacy_pid,
         )
+
+
+class ContractSavePathSideEffectTests(unittest.TestCase):
+    """Step 1F: prediction_store.save_prediction wraps a side-path that
+    auto-builds and validates a Projection Output Contract payload."""
+
+    def setUp(self) -> None:
+        self._tmpdir = tempfile.TemporaryDirectory()
+        ps.DB_PATH = Path(self._tmpdir.name) / "test.db"
+        ps.init_db()
+
+    def tearDown(self) -> None:
+        self._tmpdir.cleanup()
+
+    # ── 1. happy path: side-path writes a valid contract payload ──────────────
+
+    def test_side_path_writes_contract_payload_that_passes_validator(self) -> None:
+        from services.projection_output_contract import (
+            CONTRACT_SECTIONS,
+            validate_projection_output,
+        )
+
+        pid = ps.save_prediction(
+            "AVGO", "2026-04-11", None, None, _make_predict_result()
+        )
+        row = ps.get_prediction(pid)
+        assert row is not None
+        self.assertIsNotNone(row["contract_payload_json"])
+        payload = json.loads(row["contract_payload_json"])
+        # Round-trips cleanly through json AND passes the contract validator.
+        self.assertEqual(set(payload.keys()), set(CONTRACT_SECTIONS))
+        self.assertEqual(validate_projection_output(payload), [])
+
+    def test_save_prediction_record_auto_generates_when_contract_omitted(self) -> None:
+        from services.projection_output_contract import CONTRACT_SECTIONS
+
+        record = {
+            "symbol": "AVGO",
+            "prediction_for_date": "2026-04-11",
+            "predict_result": _make_predict_result(),
+            # NOTE: no "contract_payload" key — auto-gen path triggers.
+        }
+        pid = ps.save_prediction_record(record)
+        row = ps.get_prediction(pid)
+        assert row is not None
+        payload = json.loads(row["contract_payload_json"])
+        self.assertEqual(set(payload.keys()), set(CONTRACT_SECTIONS))
+
+    # ── 2. opt-out: explicit None still stores NULL (no auto-gen) ─────────────
+
+    def test_explicit_none_disables_auto_gen(self) -> None:
+        # Disambiguates "caller did not pass" (auto-gen) from "caller
+        # explicitly passed None" (store NULL, no side-path).
+        pid = ps.save_prediction(
+            "AVGO", "2026-04-11", None, None, _make_predict_result(),
+            contract_payload=None,
+        )
+        row = ps.get_prediction(pid)
+        assert row is not None
+        self.assertIsNone(row["contract_payload_json"])
+
+    def test_save_prediction_record_explicit_none_disables_auto_gen(self) -> None:
+        record = {
+            "symbol": "AVGO",
+            "prediction_for_date": "2026-04-11",
+            "predict_result": _make_predict_result(),
+            "contract_payload": None,  # explicit opt-out
+        }
+        pid = ps.save_prediction_record(record)
+        row = ps.get_prediction(pid)
+        assert row is not None
+        self.assertIsNone(row["contract_payload_json"])
+
+    # ── 3. failure isolation: adapter / validator faults don't break save ─────
+
+    def test_adapter_failure_falls_back_to_null_without_breaking_save(self) -> None:
+        with patch.object(
+            ps,
+            "_try_build_contract_payload",
+            side_effect=RuntimeError("adapter exploded"),
+        ):
+            # Even if helper itself raises (it shouldn't, but defense in depth):
+            # the save flow must propagate the exception only from helper, not
+            # from the legacy save. Here we test the contract that _try_build
+            # is responsible for swallowing — so simulate via direct failure
+            # of adapter inside its own try/except block.
+            with self.assertRaises(RuntimeError):
+                ps.save_prediction(
+                    "AVGO", "2026-04-11", None, None, _make_predict_result()
+                )
+        # Confirm the contract: when _try_build is well-behaved (returns None on
+        # any inner failure), save must succeed and store NULL.
+        with patch.object(ps, "_try_build_contract_payload", return_value=None):
+            pid = ps.save_prediction(
+                "AVGO", "2026-04-11", None, None, _make_predict_result()
+            )
+        row = ps.get_prediction(pid)
+        assert row is not None
+        self.assertIsNone(row["contract_payload_json"])
+        self.assertEqual(row["final_bias"], "bullish")  # legacy save still wrote
+
+    def test_inner_adapter_exception_is_swallowed_by_helper(self) -> None:
+        # Simulate the realistic failure path: adapter raises inside the
+        # helper. The helper must catch it and return None; save proceeds.
+        with patch(
+            "services.projection_output_adapter.adapt_projection_output",
+            side_effect=RuntimeError("boom"),
+        ):
+            pid = ps.save_prediction(
+                "AVGO", "2026-04-11", None, None, _make_predict_result()
+            )
+        row = ps.get_prediction(pid)
+        assert row is not None
+        self.assertIsNone(row["contract_payload_json"])
+        self.assertEqual(row["final_bias"], "bullish")
+
+    def test_validation_failure_falls_back_to_null(self) -> None:
+        # Adapter returns OK, but validator returns a non-empty error list.
+        # Helper drops the payload (returns None); save proceeds with NULL.
+        with patch(
+            "services.projection_output_contract.validate_projection_output",
+            return_value=["invalid value: exclusion_system.exclusion_level"],
+        ):
+            pid = ps.save_prediction(
+                "AVGO", "2026-04-11", None, None, _make_predict_result()
+            )
+        row = ps.get_prediction(pid)
+        assert row is not None
+        self.assertIsNone(row["contract_payload_json"])
+        self.assertEqual(row["final_bias"], "bullish")
+
+    # ── 4. legacy callers / fields are not affected ───────────────────────────
+
+    def test_predict_result_json_is_unchanged_by_side_path(self) -> None:
+        pr = _make_predict_result()
+        original = json.loads(json.dumps(pr))  # snapshot
+        pid = ps.save_prediction("AVGO", "2026-04-11", None, None, pr)
+        row = ps.get_prediction(pid)
+        assert row is not None
+        stored = json.loads(row["predict_result_json"])
+        self.assertEqual(stored, original)
+        # And the in-memory dict must not have been mutated either.
+        self.assertEqual(pr, original)
+
+    def test_explicit_dict_contract_payload_skips_auto_gen(self) -> None:
+        # Explicit dict is stored verbatim — side-path is bypassed entirely.
+        custom = {"my_custom": "payload", "not_contract_shaped": True}
+        pid = ps.save_prediction(
+            "AVGO", "2026-04-11", None, None, _make_predict_result(),
+            contract_payload=custom,
+        )
+        row = ps.get_prediction(pid)
+        assert row is not None
+        self.assertEqual(json.loads(row["contract_payload_json"]), custom)
 
 
 if __name__ == "__main__":
