@@ -33,6 +33,8 @@ class AppAnalysisContextTest(unittest.TestCase):
         self.assertEqual(at.session_state["target_date_str"], "2026-04-09")
         self.assertEqual(at.session_state["target_code"], "15142")
         self.assertEqual(at.session_state["scan_result"]["scan_timestamp"], "2026-04-09")
+
+        at = at.radio[0].set_value("扫描").run(timeout=60)
         self.assertTrue(any(s.value == "Scan Result — 2026-04-09" for s in at.subheader))
 
         at.date_input[0].set_value(date(2026, 4, 13))
@@ -44,7 +46,7 @@ class AppAnalysisContextTest(unittest.TestCase):
         self.assertIn("5-Digit Code", at.session_state["analysis_error"])
         self.assertNotIn("scan_result", at.session_state)
         self.assertNotIn("target_ctx", at.session_state)
-        self.assertTrue(any(s.value == "Scan Result — 2026-04-13" for s in at.subheader))
+        self.assertTrue(any(s.value == "扫描" for s in at.subheader))
         self.assertTrue(any("5-Digit Code" in w.value for w in at.warning))
 
     def test_home_quick_nav_button_switches_to_predict_page(self) -> None:

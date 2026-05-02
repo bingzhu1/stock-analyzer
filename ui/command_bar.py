@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import nullcontext
 import re
 from typing import Any
 
@@ -780,15 +781,17 @@ def _render_lines(lines: list[str], *, warning: bool = False) -> None:
     clean = [str(line) for line in (lines or []) if str(line).strip()]
     if not clean:
         clean = ["暂无内容。"]
+    render_line = getattr(st, "write", None) or getattr(st, "caption", None) or getattr(st, "info", None)
     for line in clean:
         if warning and line != "暂无额外提示。":
             st.warning(line)
-        else:
-            st.write(line)
+        elif render_line is not None:
+            render_line(line)
 
 
 def _render_raw_result(card: dict[str, Any]) -> None:
-    with st.expander("展开原始结果", expanded=False):
+    expander = st.expander("展开原始结果", expanded=False) if hasattr(st, "expander") else nullcontext()
+    with expander:
         raw = card.get("raw_result")
         if raw is not None:
             try:
@@ -801,8 +804,11 @@ def _render_table_outputs(card: dict[str, Any]) -> None:
     tables = card.get("raw_tables") or []
     if not tables:
         return
-    with st.container():
-        st.markdown("**表格输出**")
+    container = st.container() if hasattr(st, "container") else nullcontext()
+    render_heading = getattr(st, "markdown", None) or getattr(st, "write", None) or getattr(st, "caption", None)
+    with container:
+        if render_heading is not None:
+            render_heading("**表格输出**")
         for label, table in card.get("raw_tables") or []:
             if table is None or getattr(table, "empty", False):
                 st.caption(f"{label}为空。")
@@ -814,9 +820,12 @@ def _render_table_outputs(card: dict[str, Any]) -> None:
 def _render_response_card(card: dict[str, Any]) -> None:
     if st is None:
         raise RuntimeError("streamlit is required to render the command bar")
-    with st.container():
+    container = st.container() if hasattr(st, "container") else nullcontext()
+    render_heading = getattr(st, "markdown", None) or getattr(st, "write", None) or getattr(st, "caption", None)
+    with container:
         for heading in _RESPONSE_CARD_SECTION_HEADINGS:
-            st.markdown(f"**{heading}**")
+            if render_heading is not None:
+                render_heading(f"**{heading}**")
             if heading == "任务理解":
                 _render_lines(card.get("understanding", []))
             elif heading == "执行步骤":

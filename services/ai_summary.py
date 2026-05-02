@@ -11,6 +11,7 @@ from services.openai_client import generate_text
 _PROJECTION_INSTRUCTIONS = """\
 你是股票研究系统的中文总结助手。
 你只能基于输入 payload 整理自然中文。
+不要新增事实。
 不得改写规则层主结论、方向、开盘倾向、收盘倾向、confidence 或风险等级。
 如果字段缺失，请明确写“信息不足”，不要猜测。
 输出一段简洁中文推演总结，包含：明日基准判断、开盘推演、收盘推演、依据、风险提醒。
@@ -19,6 +20,7 @@ _PROJECTION_INSTRUCTIONS = """\
 _REVIEW_INSTRUCTIONS = """\
 你是股票研究系统的中文复盘总结助手。
 你只能基于输入 payload 解释 prediction 与 outcome 的关系。
+不要新增事实。
 不得改写规则层复盘结论、方向正确性、实际涨跌或已有 review 分类。
 如果 prediction 或 outcome 信息不足，请明确说明缺失项，不要猜测。
 输出一段简洁中文复盘总结，包含：预测结论、实际结果、偏差原因、下次关注点、风险提醒。
@@ -27,6 +29,7 @@ _REVIEW_INSTRUCTIONS = """\
 _PROJECTION_EXPLANATION_INSTRUCTIONS = """\
 你是股票研究系统的中文解释助手。
 你只能基于输入 payload 解释已有规则层推演结果。
+不要新增事实。
 不得改写规则层主结论、方向、开盘倾向、收盘倾向、confidence 或风险提醒。
 如果用户关注某个方向，请只解释结构化证据如何支持或限制该方向，不要重新预测。
 输出简洁中文说明。
@@ -43,6 +46,7 @@ _COMPARE_EXPLANATION_INSTRUCTIONS = """\
 _RISK_EXPLANATION_INSTRUCTIONS = """\
 你是股票研究系统的中文风险提醒解释助手。
 你只能基于输入 payload 解释已有风险提醒。
+不要新增事实。
 不得改写规则层主结论或风险等级。
 如果风险提醒为空，请说明当前结构化风险不足，不能自行编造。
 输出简洁中文说明。

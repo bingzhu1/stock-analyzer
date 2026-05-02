@@ -432,17 +432,20 @@ def _render_history_store_unavailable(error: PredictionStoreCorruptionError) -> 
 # ─────────────────────────────────────────────────────────────────────────────
 
 def render_history_tab() -> None:
-    st.markdown(_CSS, unsafe_allow_html=True)
+    render_markdown = getattr(st, "markdown", None)
+    if render_markdown is not None:
+        render_markdown(_CSS, unsafe_allow_html=True)
 
-    st.markdown("""
-    <div style="padding:16px 20px;border:1px solid rgba(148,163,184,0.25);border-radius:14px;
-                background:linear-gradient(135deg,rgba(13,27,42,0.97),rgba(18,52,86,0.93));
-                color:#f8fafc;margin-bottom:16px;">
-        <div style="font-size:0.78rem;opacity:0.7;">AVGO · 推演历史</div>
-        <div style="font-size:1.7rem;font-weight:800;margin-top:4px;">历史推演汇总</div>
-        <div style="margin-top:6px;font-size:0.88rem;opacity:0.85;">查看所有已保存推演的状态、分布与趋势。</div>
-    </div>
-    """, unsafe_allow_html=True)
+    if render_markdown is not None:
+        render_markdown("""
+        <div style="padding:16px 20px;border:1px solid rgba(148,163,184,0.25);border-radius:14px;
+                    background:linear-gradient(135deg,rgba(13,27,42,0.97),rgba(18,52,86,0.93));
+                    color:#f8fafc;margin-bottom:16px;">
+            <div style="font-size:0.78rem;opacity:0.7;">AVGO · 推演历史</div>
+            <div style="font-size:1.7rem;font-weight:800;margin-top:4px;">历史推演汇总</div>
+            <div style="margin-top:6px;font-size:0.88rem;opacity:0.85;">查看所有已保存推演的状态、分布与趋势。</div>
+        </div>
+        """, unsafe_allow_html=True)
 
     try:
         predictions = list_predictions(limit=100)

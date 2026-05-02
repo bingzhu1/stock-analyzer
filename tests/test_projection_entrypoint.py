@@ -12,10 +12,15 @@ if str(ROOT) not in sys.path:
 
 import services.memory_store as ms
 from services.projection_entrypoint import run_projection_entrypoint
+from tests.fixtures.coded_data_fixture import (
+    install_synthetic_coded_data,
+    restore_synthetic_coded_data,
+)
 
 
 class ProjectionEntrypointTests(unittest.TestCase):
     def setUp(self) -> None:
+        self._coded_state = install_synthetic_coded_data()
         self._tmpdir = tempfile.TemporaryDirectory()
         self._old_db_path = ms.DB_PATH
         ms.DB_PATH = Path(self._tmpdir.name) / "memory.db"
@@ -23,6 +28,7 @@ class ProjectionEntrypointTests(unittest.TestCase):
     def tearDown(self) -> None:
         ms.DB_PATH = self._old_db_path
         self._tmpdir.cleanup()
+        restore_synthetic_coded_data(self._coded_state)
 
     def test_empty_state_calls_orchestrator_chain(self) -> None:
         result = run_projection_entrypoint(symbol="avgo")

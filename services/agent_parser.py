@@ -104,7 +104,11 @@ class DeterministicCommandParser:
             return AgentCommand(action="help", raw_text=raw_text)
 
         if _mentions_any(lowered, _UNSUPPORTED_PHRASES):
-            return _unsupported(raw_text, "That request is outside the read-only Control Chat command set.")
+            return _unsupported(
+                raw_text,
+                "That request is outside the read-only Control Chat command set. "
+                "I could not map that request to a supported read-only command.",
+            )
 
         dataset = _parse_dataset(lowered)
         limit = _parse_limit(lowered)

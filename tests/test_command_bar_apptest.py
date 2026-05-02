@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import shutil
 import sys
+import tempfile
 import textwrap
 import unittest
 from pathlib import Path
@@ -15,10 +17,28 @@ from ui.command_bar import (
 )
 
 try:
-    import pandas  # noqa: F401
+    import pandas as pd  # noqa: F401
     from streamlit.testing.v1 import AppTest
 except ModuleNotFoundError:
     AppTest = None
+    pd = None  # type: ignore[assignment]
+
+
+def _write_synthetic_coded_csv(path: Path, n: int = 60) -> None:
+    """Write a minimal coded-CSV with enough rows for 20-day rolling windows."""
+    dates = pd.date_range("2024-01-01", periods=n, freq="B")
+    base = 100.0
+    df = pd.DataFrame({
+        "Date":      [d.strftime("%Y-%m-%d") for d in dates],
+        "Open":      [base + i * 0.5             for i in range(n)],
+        "High":      [base + i * 0.5 + 2.0       for i in range(n)],
+        "Low":       [base + i * 0.5 - 1.5       for i in range(n)],
+        "Close":     [base + i * 0.5 + 0.3       for i in range(n)],
+        "Adj Close": [base + i * 0.5 + 0.3       for i in range(n)],
+        "Volume":    [1_000_000 + i * 5_000      for i in range(n)],
+        "Code":      ["32233"] * n,
+    })
+    df.to_csv(path, index=False)
 
 
 def _script() -> str:
@@ -67,6 +87,21 @@ def _all_texts(at) -> str:
 
 @unittest.skipIf(AppTest is None, "streamlit AppTest or pandas is not installed")
 class CommandBarAppTests(unittest.TestCase):
+
+    def setUp(self) -> None:
+        from services import data_query
+
+        self._tmp_coded_dir = Path(tempfile.mkdtemp(prefix="coded_data_"))
+        for symbol in ("AVGO", "NVDA", "SOXX", "QQQ"):
+            _write_synthetic_coded_csv(self._tmp_coded_dir / f"{symbol}_coded.csv")
+        self._original_coded_dir = data_query._CODED_DIR
+        data_query._CODED_DIR = self._tmp_coded_dir
+
+    def tearDown(self) -> None:
+        from services import data_query
+
+        data_query._CODED_DIR = self._original_coded_dir
+        shutil.rmtree(self._tmp_coded_dir, ignore_errors=True)
 
     def test_command_bar_renders_without_error(self) -> None:
         at = AppTest.from_string(_script()).run()

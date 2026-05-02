@@ -286,7 +286,7 @@ class AISummaryUITests(unittest.TestCase):
             "build_projection_ai_summary",
             side_effect=OpenAIConfigurationError("OPENAI_API_KEY 未配置，暂时无法生成 AI 总结。"),
         ):
-            predict_tab._render_projection_ai_summary_entry(
+            predict_tab._render_projection_ai_summary_entry_compact(
                 {"symbol": "AVGO", "final_bias": "bullish"},
                 {"scan_bias": "bullish"},
                 None,

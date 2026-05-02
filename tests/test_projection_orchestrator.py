@@ -14,10 +14,15 @@ from services.projection_orchestrator import (
     build_projection_orchestrator_result,
     format_projection_report,
 )
+from tests.fixtures.coded_data_fixture import (
+    install_synthetic_coded_data,
+    restore_synthetic_coded_data,
+)
 
 
 class ProjectionOrchestratorTests(unittest.TestCase):
     def setUp(self) -> None:
+        self._coded_state = install_synthetic_coded_data()
         self._tmpdir = tempfile.TemporaryDirectory()
         self._old_db_path = ms.DB_PATH
         ms.DB_PATH = Path(self._tmpdir.name) / "memory.db"
@@ -25,6 +30,7 @@ class ProjectionOrchestratorTests(unittest.TestCase):
     def tearDown(self) -> None:
         ms.DB_PATH = self._old_db_path
         self._tmpdir.cleanup()
+        restore_synthetic_coded_data(self._coded_state)
 
     def test_empty_state_returns_stable_ready_result(self) -> None:
         result = build_projection_orchestrator_result(symbol="avgo")
@@ -32,7 +38,13 @@ class ProjectionOrchestratorTests(unittest.TestCase):
         self.assertEqual(result["symbol"], "AVGO")
         self.assertEqual(
             result["request"],
-            {"symbol": "AVGO", "error_category": None, "limit": 5, "lookback_days": None},
+            {
+                "symbol": "AVGO",
+                "error_category": None,
+                "limit": 5,
+                "lookback_days": None,
+                "target_date": None,
+            },
         )
         self.assertTrue(result["ready"])
         self.assertFalse(result["advisory_only"])
@@ -122,7 +134,13 @@ class ProjectionOrchestratorTests(unittest.TestCase):
 
         self.assertEqual(
             result["request"],
-            {"symbol": "AVGO", "error_category": "wrong-direction", "limit": 3, "lookback_days": 20},
+            {
+                "symbol": "AVGO",
+                "error_category": "wrong-direction",
+                "limit": 3,
+                "lookback_days": 20,
+                "target_date": None,
+            },
         )
         self.assertEqual(result["advisory"]["matched_count"], 3)
         self.assertEqual(result["advisory"]["caution_level"], "medium")

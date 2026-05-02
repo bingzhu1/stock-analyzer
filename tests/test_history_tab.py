@@ -59,16 +59,16 @@ class HistoryTabHelperTests(unittest.TestCase):
         self.assertEqual(rows[0]["final_bias"], "bullish")
         self.assertEqual(rows[0]["final_confidence"], "medium")
         self.assertEqual(rows[0]["status"], "review_generated")
-        self.assertEqual(rows[0]["direction_correct"], "CORRECT")
+        self.assertEqual(rows[0]["direction_correct"], "正确")
         self.assertEqual(rows[0]["close_change"], "+1.23%")
 
     def test_direction_label_handles_all_known_states(self) -> None:
-        self.assertEqual(_direction_label(1), "CORRECT")
-        self.assertEqual(_direction_label(0), "WRONG")
-        self.assertEqual(_direction_label(None), "PENDING")
-        self.assertEqual(_direction_label(None, "outcome_captured"), "NEUTRAL")
-        self.assertEqual(_direction_label(None, "review_generated"), "NEUTRAL")
-        self.assertEqual(_direction_label("other"), "NEUTRAL")
+        self.assertEqual(_direction_label(1), "正确")
+        self.assertEqual(_direction_label(0), "错误")
+        self.assertEqual(_direction_label(None), "待定")
+        self.assertEqual(_direction_label(None, "outcome_captured"), "中性")
+        self.assertEqual(_direction_label(None, "review_generated"), "中性")
+        self.assertEqual(_direction_label("other"), "中性")
 
     def test_format_pct_handles_empty_and_numeric_values(self) -> None:
         self.assertEqual(_format_pct(None), "")

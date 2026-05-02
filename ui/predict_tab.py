@@ -324,18 +324,23 @@ def render_evidence_trace(trace: dict) -> None:
     if not isinstance(trace, dict):
         return
     st.markdown("**证据追踪**")
+    st.caption("tool_trace")
     for item in trace.get("tool_trace", []) or []:
         st.caption(f"- {item}")
+    st.caption("key_observations")
     for line in trace.get("key_observations", []) or []:
         st.caption(f"- {line}")
+    st.caption("decision_steps")
     for line in trace.get("decision_steps", []) or []:
         st.caption(f"- {line}")
+    st.caption("final_conclusion")
     final = trace.get("final_conclusion", {}) or {}
     cols = st.columns(4)
     cols[0].metric("明日方向", final.get("direction", "中性"))
     cols[1].metric("开盘倾向", final.get("open_tendency", "平开"))
     cols[2].metric("收盘倾向", final.get("close_tendency", "震荡"))
     cols[3].metric("置信度", _cn(_CONFIDENCE_CN, final.get("confidence"), "低"))
+    st.caption("verification_points")
     for line in trace.get("verification_points", []) or []:
         st.caption(f"- {line}")
 

@@ -102,7 +102,7 @@ def fake_scan(target_date_str: str, *args, **kwargs) -> dict:
     }
 
 
-def fake_predict(scan_result: dict, research_result: dict | None, symbol: str = "AVGO") -> dict:
+def fake_predict(scan_result: dict, research_result: dict | None, symbol: str = "AVGO", **_kwargs) -> dict:
     return {
         "symbol": symbol,
         "final_bias": "bullish",

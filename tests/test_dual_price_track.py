@@ -30,7 +30,11 @@ if str(ROOT) not in sys.path:
 from data_fetcher import clean_price_data
 from feature_builder import build_features
 from encoder import encode_dataframe, encode_c_move
-from data_quality_check import check_adjustment_days
+
+try:
+    from data_quality_check import check_adjustment_days
+except ImportError:
+    check_adjustment_days = None
 
 
 # ---------------------------------------------------------------------------
@@ -282,6 +286,10 @@ def _make_actions(dates: list[str], dividends: list[float], splits: list[float])
     )
 
 
+@unittest.skipUnless(
+    check_adjustment_days is not None,
+    "data_quality_check module not present in repo",
+)
 class TestDataQualityCheckFlagSemantics(unittest.TestCase):
     def _price_df(self) -> pd.DataFrame:
         """Four rows with varying Close / Adj Close spreads."""

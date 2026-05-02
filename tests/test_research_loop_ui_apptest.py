@@ -29,7 +29,7 @@ def _script() -> str:
         st.session_state.setdefault("fake_outcomes", {{}})
         st.session_state.setdefault("fake_reviews", {{}})
 
-        def fake_run_predict(scan_result, research_result):
+        def fake_run_predict(scan_result, research_result, **_kwargs):
             return {{
                 "symbol": "AVGO",
                 "predict_timestamp": "2026-04-10T09:00:00",
@@ -124,29 +124,31 @@ class ResearchLoopAppTests(unittest.TestCase):
     def test_button_preconditions_and_three_step_flow(self) -> None:
         at = AppTest.from_string(_script()).run()
 
+        button_keys = [b.key for b in at.button]
         self.assertFalse(_button_by_key(at, "btn_save_prediction").disabled)
-        self.assertTrue(_button_by_key(at, "btn_capture_outcome_locked").disabled)
-        self.assertTrue(_button_by_key(at, "btn_generate_review_locked1").disabled)
-        self.assertIn("Complete Step 1 first.", _caption_text(at))
+        self.assertNotIn("btn_capture_outcome", button_keys)
+        self.assertNotIn("btn_generate_review", button_keys)
+        self.assertIn("请先完成步骤一", _caption_text(at))
 
         at = _button_by_key(at, "btn_save_prediction").click().run()
+        button_keys = [b.key for b in at.button]
         self.assertEqual(at.session_state["saved_prediction_id"], "pid-1")
         self.assertEqual(at.session_state["saved_prediction_date"], "2026-04-11")
         self.assertIn("pid-1", at.session_state["fake_saved_payloads"])
         self.assertFalse(_button_by_key(at, "btn_save_new_version").disabled)
         self.assertFalse(_button_by_key(at, "btn_capture_outcome").disabled)
-        self.assertTrue(_button_by_key(at, "btn_generate_review_locked2").disabled)
-        self.assertIn("Complete Step 2 first.", _caption_text(at))
+        self.assertNotIn("btn_generate_review", button_keys)
+        self.assertIn("请先完成步骤二", _caption_text(at))
 
         at = _button_by_key(at, "btn_capture_outcome").click().run()
         self.assertIn("pid-1", at.session_state["fake_outcomes"])
-        self.assertIn("CORRECT", "\n".join(item.value for item in at.success))
+        self.assertIn("方向正确", "\n".join(item.value for item in at.success))
         self.assertFalse(_button_by_key(at, "btn_generate_review").disabled)
 
         at = _button_by_key(at, "btn_generate_review").click().run()
         self.assertIn("pid-1", at.session_state["fake_reviews"])
-        self.assertIn("CORRECT", _markdown_text(at))
-        self.assertIn("Root cause:", _markdown_text(at))
+        self.assertIn("判断正确", _markdown_text(at))
+        self.assertIn("根本原因：", _markdown_text(at))
 
     def test_save_new_version_resets_session_prediction_id(self) -> None:
         at = AppTest.from_string(_script()).run()
@@ -155,12 +157,13 @@ class ResearchLoopAppTests(unittest.TestCase):
         self.assertEqual(at.session_state["saved_prediction_id"], "pid-1")
 
         at = _button_by_key(at, "btn_save_new_version").click().run()
+        button_keys = [b.key for b in at.button]
         self.assertEqual(at.session_state["saved_prediction_id"], "pid-2")
         self.assertEqual(at.session_state["saved_prediction_date"], "2026-04-11")
         self.assertIn("pid-1", at.session_state["fake_saved_payloads"])
         self.assertIn("pid-2", at.session_state["fake_saved_payloads"])
         self.assertFalse(_button_by_key(at, "btn_capture_outcome").disabled)
-        self.assertTrue(_button_by_key(at, "btn_generate_review_locked2").disabled)
+        self.assertNotIn("btn_generate_review", button_keys)
 
 
 if __name__ == "__main__":
