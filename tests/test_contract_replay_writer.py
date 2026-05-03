@@ -203,7 +203,7 @@ class WriterPlannerPassthroughTests(_IsolatedDB):
         self.assertEqual(result["status"], "error")
 
 
-# ── 4. limit handling (writer hard cap is 30) ─────────────────────────────
+# ── 4. limit handling (writer hard cap is 130, default still 30) ─────────
 
 class WriterLimitTests(_IsolatedDB):
     def _seed_many(self, n: int) -> None:
@@ -211,20 +211,47 @@ class WriterLimitTests(_IsolatedDB):
         _write_minimal_csv(self._tmp_path, "AVGO", dates)
 
     def test_default_limit_is_30(self) -> None:
+        # Default behavior unchanged by the 4d-2-prereq-2 cap bump.
         self._seed_many(60)
         result = run_contract_replay(coded_data_dir=self._tmp_path)
         self.assertEqual(result["requested_limit"], 30)
         self.assertEqual(result["candidate_pair_count"], 30)
 
-    def test_limit_clamped_at_hard_cap_30(self) -> None:
-        self._seed_many(100)
+    def test_limit_90_passes_through_after_cap_bump(self) -> None:
+        # Step 2F-4d-2-prereq-2: limit=90 (> old cap 30) is now legal.
+        self._seed_many(120)
         result = run_contract_replay(
-            coded_data_dir=self._tmp_path, limit=200,
+            coded_data_dir=self._tmp_path, limit=90,
         )
-        self.assertEqual(result["requested_limit"], 30)
-        self.assertEqual(result["candidate_pair_count"], 30)
+        self.assertEqual(result["requested_limit"], 90)
+        self.assertEqual(result["candidate_pair_count"], 90)
 
-    def test_limit_at_cap_passes_through(self) -> None:
+    def test_limit_at_new_cap_130_passes_through(self) -> None:
+        self._seed_many(160)
+        result = run_contract_replay(
+            coded_data_dir=self._tmp_path, limit=130,
+        )
+        self.assertEqual(result["requested_limit"], 130)
+        self.assertEqual(result["candidate_pair_count"], 130)
+
+    def test_limit_clamped_at_new_cap_130(self) -> None:
+        self._seed_many(180)
+        result = run_contract_replay(
+            coded_data_dir=self._tmp_path, limit=999,
+        )
+        self.assertEqual(result["requested_limit"], 130)
+        self.assertEqual(result["candidate_pair_count"], 130)
+
+    def test_limit_just_above_cap_clamped(self) -> None:
+        # Boundary just above the new cap: 131 → clamped to 130.
+        self._seed_many(160)
+        result = run_contract_replay(
+            coded_data_dir=self._tmp_path, limit=131,
+        )
+        self.assertEqual(result["requested_limit"], 130)
+
+    def test_legacy_limit_30_still_works(self) -> None:
+        # Pre-bump callers (limit=30) should continue to behave identically.
         self._seed_many(60)
         result = run_contract_replay(
             coded_data_dir=self._tmp_path, limit=30,
@@ -1080,12 +1107,42 @@ class WriterMissingPeerCsvDegradesTests(_IsolatedDB):
         self.assertEqual(peer["qqq_signal"], "weaken")
 
 
-# ── 15. Step 2F-4c-3: hard cap and pandas hygiene unchanged ───────────────
+# ── 15. Step 2F-4d-2-prereq-2: hard cap raised to 130; pandas hygiene ─────
 
 
 class WriterHardCapAndPandasHygieneTests(unittest.TestCase):
-    def test_limit_hard_cap_constant_remains_30(self) -> None:
-        self.assertEqual(crw._LIMIT_HARD_CAP, 30)
+    def test_limit_hard_cap_constant_is_130(self) -> None:
+        # Step 2F-4d-2-prereq-2 raised the cap from 30 → 130 to enable
+        # single-batch 120/130-pair writes paired with the duplicate guard
+        # from 4d-2-prereq-1.
+        self.assertEqual(crw._LIMIT_HARD_CAP, 130)
+
+    def test_default_limit_constant_unchanged_at_30(self) -> None:
+        # Default stays 30 — only callers passing an explicit larger
+        # --limit see the new ceiling.
+        self.assertEqual(crw._DEFAULT_LIMIT, 30)
+
+    def test_dry_run_notes_report_current_hard_cap(self) -> None:
+        # The dry-run note interpolates the constant; bumping the cap
+        # must show up in the user-visible output.
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            old_db = ps.DB_PATH
+            ps.DB_PATH = tmp_path / "test.db"
+            try:
+                ps.init_db()
+                _write_minimal_csv(
+                    tmp_path, "AVGO", ["2024-01-02", "2024-01-03"],
+                )
+                result = run_contract_replay(coded_data_dir=tmp_path)
+            finally:
+                ps.DB_PATH = old_db
+        cap_notes = [
+            n for n in result.get("notes") or []
+            if "writer hard cap on limit" in n
+        ]
+        self.assertEqual(len(cap_notes), 1)
+        self.assertIn("130", cap_notes[0])
 
     def test_writer_module_does_not_import_pandas(self) -> None:
         source = Path(crw.__file__).read_text(encoding="utf-8")

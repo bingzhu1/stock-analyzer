@@ -1025,6 +1025,89 @@ for pair in candidate_pairs:
 | 子步 | 主题 | 状态 |
 |---|---|---|
 | 4d-1 | 90-pair dry-run planning（只读，无代码） | ✅ |
-| **4d-2-prereq-1（本节）** | **writer duplicate guard** | **本轮** |
-| 4d-2-prereq-2 | `_LIMIT_HARD_CAP` 30 → 130 + 边界测试 | 待开 |
+| 4d-2-prereq-1 | writer duplicate guard | ✅ commit `19800ac` |
+| **4d-2-prereq-2（§23）** | **`_LIMIT_HARD_CAP` 30 → 130** | **本轮** |
 | 4d-2 | 备份 → 130 dry-run → `--write 130` → 跑 calibration_inputs 验证 paired ≥ 90 | 4d-2-prereq-2 之后 |
+
+## 23. Replay writer hard cap 30 → 130（Step 2F-4d-2-prereq-2）
+
+> 4d 系列的第二个 prereq：把 [`services/contract_replay_writer.py`](../services/contract_replay_writer.py) 的 `_LIMIT_HARD_CAP` 从 **30** 提高到 **130**，让单次 `--write` 能够覆盖到 ≈ 123 prediction（按当前 73% 非-flat 比例反推 90 paired），从而让 4d-2 一次性完成 ≥ 90 paired_outcomes 的扩量。**只改一个常量 + tests + docs；不改 schema，不改 default limit（仍 30），不动 duplicate guard 语义，不写主项目 DB。**
+
+### 23.1 动机
+
+- 4d-1 实跑显示 `plan_contract_replay` 没有 cap，能干净枚举到 90 / 120 / 150 候选对；
+- 但 writer 把 `--limit 90` 静默 clamp 到 30（4c-1 引入的 `_LIMIT_HARD_CAP=30` 在 4c-2 / 4c-3 / 4d-2-prereq-1 保留了原值）；
+- 30 条 → 22 paired（73% 非-flat），按此比例反推 90 paired ≈ 123 prediction → 单次写入需要 ≥ 123 的 cap 余量；
+- 130 留出小幅 headroom（不到 +6%），即使下个时间窗口 flat 比例略高也能稳住 ≥ 90 paired。
+
+### 23.2 改动
+
+| 位置 | 改动 |
+|---|---|
+| [`services/contract_replay_writer.py`](../services/contract_replay_writer.py) docstring §"First-version safety" | 描述从"hard cap 30 / Step 2F-4d 才放宽"改为"hard cap 130（4d-2-prereq-2 引入）；与 duplicate guard 配套" |
+| [`services/contract_replay_writer.py`](../services/contract_replay_writer.py) 常量注释 | 解释 30 → 130 的动机（≈ 123 → 90 paired）和 duplicate guard 的协同作用 |
+| `_LIMIT_HARD_CAP = 30` | **`_LIMIT_HARD_CAP = 130`** |
+| dry-run notes 字符串 | 已经是 `f"writer hard cap on limit is {_LIMIT_HARD_CAP}"` 模板，自动随常量更新 |
+
+### 23.3 不变量
+
+- **`_DEFAULT_LIMIT = 30` 保持**：调用方不传 `limit` 时仍只规划 30 对，老调用 site 行为零变化；
+- **`_normalize_limit` 逻辑不变**：bool / 非 int / ≤ 0 → 回落 default（30）；> cap → clamp（现在是 130）；其他 → 原值；
+- **duplicate guard 语义不变**（4d-2-prereq-1）：每个候选 pair 仍 SELECT 查 `snapshot_id` 后再 `_write_one_pair`，命中即 `skipped: snapshot_id_already_exists`；
+- **`dry_run=True` 仍不写不读 DB**；
+- **DB schema 不变**（仍无 UNIQUE index），`prediction_store` / `predict.py` / `scanner.py` / adapter / validator 全部零改动。
+
+### 23.4 测试增量
+
+`WriterLimitTests` 旧的"clamp 到 30 / 通过 30"两条测试被新的 cap 边界测试替换（不是新增并存；防止给后人留两套互相矛盾的 cap=30 / cap=130 断言）：
+
+| 测试 | 行为锁定 |
+|---|---|
+| `test_default_limit_is_30` | 不传 limit → `requested_limit=30`（cap bump 不影响 default） |
+| `test_legacy_limit_30_still_works` | 显式 `limit=30` → 通过；保持 4c 系列写入站点向后兼容 |
+| `test_limit_90_passes_through_after_cap_bump` | `limit=90` → `requested_limit=90, candidate_pair_count=90`（旧 cap 下会被 clamp 到 30，本轮锁住新行为） |
+| `test_limit_at_new_cap_130_passes_through` | `limit=130` → `requested_limit=130, candidate_pair_count=130` |
+| `test_limit_just_above_cap_clamped` | `limit=131` → clamp 到 130（边界） |
+| `test_limit_clamped_at_new_cap_130` | `limit=999` → clamp 到 130（远超） |
+| `test_zero_limit_falls_back_to_default` | 0 → 30（行为不变） |
+| `test_non_int_limit_falls_back_to_default` | `"abc"` → 30（行为不变） |
+| `test_bool_limit_falls_back_to_default` | `True` → 30（行为不变；`True` 是 `bool` 不是 `int` 路径） |
+
+`WriterHardCapAndPandasHygieneTests` 升级：
+
+| 测试 | 行为锁定 |
+|---|---|
+| `test_limit_hard_cap_constant_is_130`（更名自 `..._remains_30`） | `crw._LIMIT_HARD_CAP == 130` |
+| `test_default_limit_constant_unchanged_at_30`（新） | `crw._DEFAULT_LIMIT == 30`（防止有人误把 default 也改成 130） |
+| `test_dry_run_notes_report_current_hard_cap`（新） | dry-run 输出 `notes` 里 cap 字符串包含 `130`，跟随常量更新 |
+| `test_writer_module_does_not_import_pandas` | 不变 |
+
+测试基线：**2227 → 2232**（+5 净增：删除 `test_limit_clamped_at_hard_cap_30` / `test_limit_at_cap_passes_through` / 重命名 `test_limit_hard_cap_constant_remains_30` 共 -3，新增 `test_limit_90_passes_through_after_cap_bump` / `test_limit_at_new_cap_130_passes_through` / `test_limit_just_above_cap_clamped` / `test_limit_clamped_at_new_cap_130` / `test_default_limit_constant_unchanged_at_30` / `test_dry_run_notes_report_current_hard_cap` / `test_legacy_limit_30_still_works` / `test_limit_hard_cap_constant_is_130` 共 +8）。0 failed；10 skipped 不变。
+
+### 23.5 边界事实
+
+- ❌ 未改 default `--limit`（`scripts/run_contract_replay.py` 默认仍是 30，新 cap 只对显式传更大 limit 的调用方生效）；
+- ❌ 未改 duplicate guard / `_snapshot_id_exists`；
+- ❌ 未改 `_write_one_pair` / planner / `prediction_store` / DB schema；
+- ❌ 未跑主项目 `--write` / 未跑 90 / 120 / 130 真写入；
+- ❌ 未走网络 / yfinance / trading API；
+- ❌ 未触碰 stash / .claude/worktrees/ / logs/prediction_log.jsonl；
+- ⚠️ **CLI `--help` 文案 stale**：[`scripts/run_contract_replay.py`](../scripts/run_contract_replay.py) 第 58 行仍写 `"hard cap 50"`，是 4c-1 把 cap 50 → 30 时漏改的旧 typo，不属于本步骤范围；本轮亦未修。建议在 4d-2-prereq-3（如果设）或下一次 CLI 整理时一并改成 `"hard cap 130"`。
+
+### 23.6 4d-2 实跑前置清单（落地前必须满足）
+
+| 前置 | 状态 |
+|---|---|
+| duplicate guard 已落地 | ✅ commit `19800ac` |
+| hard cap 已 ≥ 130 | ✅（本节） |
+| DB 备份命名约定（`avgo_agent.db.backup_pre_replay_<N>_<ts>`） | ✅（4c-2 / 4c-3-rewrite 已示范） |
+| 30 条 baseline peer-aware replay 在 main DB | ✅（4c-3-rewrite 已写入） |
+| dry-run plan 130 通过（`status=ok` / `returned_pair_count=130` / `anti_lookahead=true`） | ✅（4d-1 已验过 120 / 150；130 走同条码） |
+| `summarize_confidence_calibration_inputs` baseline `paired=22` | ✅（4d-1 已记） |
+
+4d-2 实跑步骤（**下轮**执行；本轮不跑）：
+1. 备份：`cp avgo_agent.db avgo_agent.db.backup_pre_replay_130_<ts>`
+2. dry-run：`python3 scripts/run_contract_replay.py --symbol AVGO --start 2024-01-29 --limit 130`，确认 `would_write_count=130 / status=ok`
+3. 真写：上一条命令加 `--write`；duplicate guard 会自动跳过已存在的 30 条，新写 100 条
+4. 校验：`prediction_log` 总数从 33 → 133；`replay_AVGO_%` 从 30 → 130
+5. 跑 `summarize_confidence_calibration_inputs --limit 200 --symbol AVGO`，确认 `paired ≥ 90` + `calibration_ready=true`（或仅缺 Step 2G 评估）

@@ -45,8 +45,11 @@ Half-pair safety: outcome data is read **before** ``run_predict`` /
 ``save_prediction``. If the outcome row is missing or unparseable, the
 pair is skipped entirely — no prediction row is written.
 
-First-version safety: hard cap on ``limit`` is **30**. Anything larger
-is clamped. Bigger batches require Step 2F-4d.
+First-version safety: hard cap on ``limit`` is **130** (Step
+2F-4d-2-prereq-2; was 30 from 4c-1 through 4d-2-prereq-1). Anything
+larger is clamped. The bump was paired with the duplicate guard
+(4d-2-prereq-1) to make 120/130-pair single-batch writes feasible
+without risking duplicate pollution on rerun.
 
 Public API:
     run_contract_replay(
@@ -84,11 +87,15 @@ from services.prediction_store import save_outcome, save_prediction
 
 
 _DEFAULT_LIMIT = 30
-# Hard cap for the writer (covers both dry-run and real-write paths). Lower
-# than the planner's natural defaults: real writes to prediction_log /
-# outcome_log are higher-risk than planning. Bigger batches require Step
-# 2F-4d (90-pair replay) to land first.
-_LIMIT_HARD_CAP = 30
+# Hard cap for the writer (covers both dry-run and real-write paths).
+# Step 2F-4d-2-prereq-2 raised this from 30 → 130 so a single --write
+# call can reach paired_outcomes ≥ 90 (≈73% non-flat → ~123 predictions
+# for 90 paired). The companion safeguard is the duplicate guard from
+# 4d-2-prereq-1 (snapshot_id existence check before save_prediction);
+# together they make 120/130-pair batches feasible without duplicate
+# pollution on rerun. Default limit stays 30 — the cap only governs
+# what an explicit larger --limit gets clamped to.
+_LIMIT_HARD_CAP = 130
 _MIN_HISTORY_ROWS = 20  # primary projection's recent_20 window
 
 # Peer cutoff (Step 2F-4c-3). Peer set + classifier margin mirror scanner.py
