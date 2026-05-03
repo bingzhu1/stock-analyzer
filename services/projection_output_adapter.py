@@ -360,8 +360,79 @@ def _build_exclusion_system(predict: dict[str, Any]) -> dict[str, Any]:
 
 
 def _build_confidence_system(predict: dict[str, Any]) -> dict[str, Any]:
+    """Build contract section 05.
+
+    Step 2C-3b: the 4 score fields (``historical_score`` / ``structure_score``
+    / ``peer_score`` / ``exclusion_penalty``) and ``event_score`` stay at
+    their 0.0 / None stubs — there is no calibrated confidence engine wired
+    in. ``confidence_level`` / ``total_confidence`` / ``confidence_reason``
+    remain real (mapped from ``predict.final_confidence`` /
+    ``predict.prediction_summary``). What this step adds is an ``extras``
+    sub-dict that surfaces the raw score-like signals already available on
+    ``predict_result`` (``primary_projection.score``, peer counts, etc.) so
+    downstream consumers can see *why* the level is what it is, without
+    pretending those raw values are calibrated scores. ``extras`` is purely
+    informational and never feeds back into the required fields.
+    """
     confidence_level = _normalize_confidence(predict.get("final_confidence"))
     total_confidence = _CONFIDENCE_TO_TOTAL.get(confidence_level, 0.0)
+
+    primary = _safe_dict(predict.get("primary_projection"))
+    peer = _safe_dict(predict.get("peer_adjustment"))
+    final_block = _safe_dict(predict.get("final_projection"))
+    conflicting = _safe_list(predict.get("conflicting_factors"))
+
+    primary_score_raw = _as_float(primary.get("score"))
+
+    primary_confidence_raw_value = (
+        primary.get("primary_confidence_raw")
+        or primary.get("final_confidence")
+    )
+    primary_confidence_raw = (
+        primary_confidence_raw_value
+        if primary_confidence_raw_value in _VALID_CONFIDENCE
+        else "unknown"
+    )
+
+    peer_confirm_count = _as_int(peer.get("confirm_count")) or 0
+    peer_oppose_count = _as_int(peer.get("oppose_count")) or 0
+
+    peer_adjusted_confidence_value = peer.get("adjusted_confidence")
+    peer_adjusted_confidence = (
+        peer_adjusted_confidence_value
+        if peer_adjusted_confidence_value in _VALID_CONFIDENCE
+        else "unknown"
+    )
+
+    final_confidence_value = predict.get("final_confidence")
+    final_confidence_extra = (
+        final_confidence_value
+        if final_confidence_value in _VALID_CONFIDENCE
+        else "unknown"
+    )
+
+    bucket_value = final_block.get("probability_bucket")
+    probability_bucket = (
+        bucket_value
+        if bucket_value in {"≥70%", "55–70%", "45–55%", "30–45%", "≤30%"}
+        else "unknown"
+    )
+
+    path_risk_raw = predict.get("path_risk")
+    path_risk_level = (
+        path_risk_raw if path_risk_raw in {"low", "medium", "high"} else "unknown"
+    )
+
+    if any(
+        isinstance(factor, str) and factor == "peer_confirmation=weaken"
+        for factor in conflicting
+    ):
+        soft_signal = "peer_weaken"
+    elif path_risk_level == "high":
+        soft_signal = "high_path_risk"
+    else:
+        soft_signal = "none"
+
     return {
         "historical_score": 0.0,
         "structure_score": 0.0,
@@ -371,6 +442,18 @@ def _build_confidence_system(predict: dict[str, Any]) -> dict[str, Any]:
         "total_confidence": total_confidence,
         "confidence_level": confidence_level,
         "confidence_reason": str(predict.get("prediction_summary") or ""),
+        "extras": {
+            "primary_score_raw": primary_score_raw,
+            "primary_confidence_raw": primary_confidence_raw,
+            "peer_confirm_count": peer_confirm_count,
+            "peer_oppose_count": peer_oppose_count,
+            "peer_adjusted_confidence": peer_adjusted_confidence,
+            "final_confidence": final_confidence_extra,
+            "probability_bucket": probability_bucket,
+            "conflicting_factors_count": len(conflicting),
+            "path_risk_level": path_risk_level,
+            "soft_signal": soft_signal,
+        },
     }
 
 

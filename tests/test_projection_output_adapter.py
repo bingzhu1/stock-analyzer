@@ -437,6 +437,61 @@ class ExclusionAndConfidenceMappingTests(unittest.TestCase):
         self.assertEqual(cs["confidence_level"], "high")
         self.assertEqual(cs["total_confidence"], 0.75)
 
+    def test_confidence_system_extras_surfaces_predict_score_signals(self) -> None:
+        """Step 2C-3b: 4 score fields stay 0.0 and event_score stays None,
+        but extras reflects primary_projection.score / peer counts /
+        final_projection.probability_bucket / conflicting_factors /
+        path_risk one-for-one."""
+        predict = {
+            "final_confidence": "medium",
+            "prediction_summary": "step 2c-3b live reason",
+            "primary_projection": {
+                "score": 2.25,
+                "primary_confidence_raw": "high",
+            },
+            "peer_adjustment": {
+                "confirm_count": 2,
+                "oppose_count": 1,
+                "adjusted_confidence": "medium",
+            },
+            "final_projection": {"probability_bucket": "55–70%"},
+            "conflicting_factors": [
+                "peer_confirmation=weaken",
+                "peer_path_risk=high",
+            ],
+            "path_risk": "high",
+        }
+        payload = adapt_projection_output(
+            scan_result=None, research_result=None, predict_result=predict
+        )
+        cs = payload["confidence_system"]
+
+        # Score fields untouched.
+        self.assertEqual(cs["historical_score"], 0.0)
+        self.assertEqual(cs["structure_score"], 0.0)
+        self.assertEqual(cs["peer_score"], 0.0)
+        self.assertEqual(cs["exclusion_penalty"], 0.0)
+        self.assertIsNone(cs["event_score"])
+        # Real fields preserved.
+        self.assertEqual(cs["confidence_level"], "medium")
+        self.assertEqual(cs["total_confidence"], 0.50)
+        self.assertEqual(cs["confidence_reason"], "step 2c-3b live reason")
+
+        # extras populated.
+        extras = cs["extras"]
+        self.assertEqual(extras["primary_score_raw"], 2.25)
+        self.assertEqual(extras["primary_confidence_raw"], "high")
+        self.assertEqual(extras["peer_confirm_count"], 2)
+        self.assertEqual(extras["peer_oppose_count"], 1)
+        self.assertEqual(extras["peer_adjusted_confidence"], "medium")
+        self.assertEqual(extras["final_confidence"], "medium")
+        self.assertEqual(extras["probability_bucket"], "55–70%")
+        self.assertEqual(extras["conflicting_factors_count"], 2)
+        self.assertEqual(extras["path_risk_level"], "high")
+        self.assertEqual(extras["soft_signal"], "peer_weaken")
+        # Validator must still pass.
+        self.assertEqual(validate_projection_output(payload), [])
+
 
 class SimulatedTradeDefaultTests(unittest.TestCase):
     def test_simulated_trade_defaults_to_no_trade(self) -> None:

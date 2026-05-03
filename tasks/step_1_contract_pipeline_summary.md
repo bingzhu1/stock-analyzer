@@ -193,14 +193,14 @@ prediction_log.contract_payload_json  (TEXT NULL)
 | 02 `avgo_primary_projection` | **字段化** | `build_primary_projection` self-publish（Step 2B-2） |
 | 03 `peer_confirmation_adjustment` | **字段化** | `apply_peer_adjustment` self-publish（Step 2B-3） |
 | 04 `exclusion_system` | ⚠️ required 仍占位 + `extras` 暴露真实风险信号（Step 2C-2） | adapter 5 必填字段 stub + `extras` 读取 `predict_result.conflicting_factors / path_risk / peer_path_risk_adjustment` |
-| 05 `confidence_system` | ❌ 占位 | adapter 硬编码 0.0 系列；待 PR-D / 置信度系统稳定化 |
+| 05 `confidence_system` | ⚠️ 4 个 score 仍占位 + `extras` 暴露 raw score-like 信号（Step 2C-3b） | adapter `historical_score / structure_score / peer_score / exclusion_penalty = 0.0`、`event_score = None` 不变；`confidence_level / total_confidence / confidence_reason` 真值；`extras` 读取 `primary_projection.score / 三层 confidence / peer 计数 / probability_bucket / conflicting_factors / path_risk` |
 | 06 `final_projection` | **字段化** | `build_final_projection` self-publish（Step 2B-4） |
 | 07 `simulated_trade` | ❌ 占位 | adapter 硬编码 `"no_trade"`；待模拟交易决策层 |
 | 08 `review_payload` | 字段化（依赖 06） | adapter 从 final 字段派生 |
 
-**已完成：** 02 / 03 / 06 三段由 builder 自发布，adapter 退化为"先信 self-published、再回退老推导、非法值不污染输出"。`run_predict` 主决策路径（投票 / 升降 / 收口）一行未改。Step 2C-2 让 04 段在保持 required 字段 stub 不变的前提下，把已有风险信号暴露到 `extras`。
+**已完成：** 02 / 03 / 06 三段由 builder 自发布，adapter 退化为"先信 self-published、再回退老推导、非法值不污染输出"。`run_predict` 主决策路径（投票 / 升降 / 收口）一行未改。Step 2C-2 / 2C-3b 让 04 / 05 段在保持 required 字段 stub 不变的前提下，把已有风险信号 / score-like 信号暴露到各自的 `extras`。
 
-**仍未做：** 05 / 07 段仍由 adapter 输出占位值；04 段的 required 字段（`exclusion_level / forced_exclusion / anti_false_exclusion_triggered` 等）也尚未真正字段化，等 Step 2C-3+ 真正的否定模块落地。
+**仍未做：** 07 段仍由 adapter 输出占位值；04 段的 required 字段（`exclusion_level / forced_exclusion / anti_false_exclusion_triggered`）和 05 段的 4 个 score 字段（`historical_score / structure_score / peer_score / exclusion_penalty`）+ `event_score` 也尚未真正字段化，等 Step 2C-3+ / 2D 真正的否定模块 / calibration 引擎落地。
 
 ## 12. exclusion_system extras（Step 2C-2，仅暴露不决策）
 
@@ -235,3 +235,44 @@ prediction_log.contract_payload_json  (TEXT NULL)
 **真正的 04 字段化**（让 `exclusion_level` 在合适时升 `"soft"`/`"hard"`、让 `forced_exclusion=True` 有真实触发条件、`exclusion_sources` / `exclusion_reasons` 有结构化来源）留给 Step 2C-3+，需先有真实否定模块。
 
 `tests/test_exclusion_system_contract_fields.py`（18 case + 3 subtests）+ `tests/test_projection_output_adapter.py`（新增 1 case）锁住"required 不动、extras 反映 predict_result"。
+
+## 13. confidence_system extras（Step 2C-3b，仅暴露不评分）
+
+`services/projection_output_adapter.py::_build_confidence_system(predict)` 现在做三件事：
+
+1. **4 个 score 字段保持 0.0、`event_score` 保持 `None`**：
+   `historical_score == 0.0` / `structure_score == 0.0` / `peer_score == 0.0` / `exclusion_penalty == 0.0` / `event_score is None`。
+   语义零变化——任何下游消费者按"分数未启用"理解都仍然正确。
+2. **3 个真值字段保持原有语义**：
+   `confidence_level` 来自 `predict["final_confidence"]`（经 `_normalize_confidence`）；`total_confidence` 来自三档映射（high→0.75，medium→0.50，low→0.25）；`confidence_reason` 来自 `predict["prediction_summary"]`。
+3. **新增 `extras` 子 dict**，把 `predict_result` 已经产出的 score-like 信号原样暴露：
+
+| extras 键 | 类型 | 来源（仅读 predict_result） |
+|---|---|---|
+| `primary_score_raw` | float \| None | `predict["primary_projection"]["score"]`（不可转 float → `None`）；**未归一化**，下游不能当 `structure_score` 用 |
+| `primary_confidence_raw` | str enum \| `"unknown"` | `primary_projection.primary_confidence_raw` 优先，回退 `primary_projection.final_confidence`；非合法枚举 → `"unknown"` |
+| `peer_confirm_count` | int | `peer_adjustment.confirm_count`（缺失或不可转 → 0） |
+| `peer_oppose_count` | int | `peer_adjustment.oppose_count`（同上） |
+| `peer_adjusted_confidence` | str enum \| `"unknown"` | `peer_adjustment.adjusted_confidence`；非合法 → `"unknown"` |
+| `final_confidence` | str enum \| `"unknown"` | `predict["final_confidence"]`；非合法 → `"unknown"`（**与 required `confidence_level` 不同**：required 把非法值 coerce 成 `"low"`，extras 更诚实地保留 `"unknown"` 让原始问题可见） |
+| `probability_bucket` | str enum \| `"unknown"` | `predict["final_projection"]["probability_bucket"]`；非合法 → `"unknown"` |
+| `conflicting_factors_count` | int | `len(predict["conflicting_factors"])`（非 list → 0） |
+| `path_risk_level` | str enum \| `"unknown"` | `predict["path_risk"]`；非 low/medium/high → `"unknown"` |
+| `soft_signal` | str | 启发式（`"peer_weaken"` / `"high_path_risk"` / `"none"`），与 §12 决策树**完全一致**且**独立重派生**，不读 sibling section's extras |
+
+**严守边界（Step 2C-3b 没做的事）：**
+- ❌ 没接 `confidence_engine.py` v1 stub（31 行单纯函数，整仓库零 import；入参 `top1_margin / is_tail` 在 `predict_result` 里完全没有，本轮接 = 给 stub 喂 stub）
+- ❌ 没接 `risk_model.py` / `contradiction_engine.py`
+- ❌ 没改 `predict.py` / `run_predict` / 4 个 builder / UI / `prediction_store` / contract validator
+- ❌ **没把 `primary_projection.score` 归一化进 `structure_score`**——这是 calibration 决策（需要 backtest 定标 / tanh 等），不是字段填充任务，留给 Step 2D
+- ❌ 没让 `peer_score` 从 `confirm_count`/`oppose_count` 静默派生（语义不清：0 票是"无数据"还是"完美中性"？）
+- ❌ 没让 `event_score` 从 `research_result.catalyst_detected` 这种 bool 派生
+- ❌ `extras` 完全只读派生，不参与任何决策；下游不应据 `primary_score_raw` 做"是否预测"判断
+
+**真正的 05 字段化**（让 4 个 score 从 0.0 升为真值、让 `event_score` 有真实来源）留给 Step 2D 及之后——需要：
+1. 一个**校准**层把 `primary_projection.score` 归一为 `structure_score`（tanh / clip / backtest 定标皆可）
+2. 一个**历史相似度**层把 `historical_score` 从 0.0 升为真值（当前 `historical_sample_count` 永远为 0，是 Step 2B-2 故意排除）
+3. 一个**事件**层（财报 / 新闻 / 催化剂）把 `event_score` 从 `None` 升为真值
+4. 一个**peer 校准**层定义 `peer_score` 的语义（含数据缺失的 None 表达）
+
+`tests/test_confidence_system_contract_fields.py`（33 case + 14 subtests）+ `tests/test_projection_output_adapter.py`（新增 1 case）锁住"required 不动、extras 反映 predict_result"。
