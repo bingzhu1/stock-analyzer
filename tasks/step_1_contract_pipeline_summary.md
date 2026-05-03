@@ -408,3 +408,107 @@ python3 scripts/dashboard_contract_extras.py --db /path/to/avgo_agent.db
 - ❌ 不接 `big_up_contradiction_card` / `exclusion_reliability_review` / `big_down_tail_warning` / `anti_false_exclusion_audit`
 - ❌ 不接 longbridge / broker / paper_trade / 真实交易 / 模拟盘 API
 - ❌ 不动 `predict.py` / `run_predict` / 4 个 builder / adapter / contract validator / UI / `prediction_store` / DB schema
+
+## 17. Confidence Calibration Inputs（Step 2F-2，read-only 诊断工具）
+
+> Step 2F-1 诊断结论：当前 0 个 (contract × outcome) pair，calibration 不可启动。本工具的目标是**让数据缺口可见**，不是落地 calibration——4 个 score 字段仍是 0.0、`event_score` 仍是 None。
+
+### 17.1 新增文件
+
+| 文件 | 角色 |
+|---|---|
+| [services/contract_calibration_inputs.py](../services/contract_calibration_inputs.py) | service：`summarize_confidence_calibration_inputs(db_path, limit, symbol) -> dict` + `_MIN_RECOMMENDED_PAIRS = 90` 阈值常量 |
+| [scripts/summarize_confidence_calibration_inputs.py](../scripts/summarize_confidence_calibration_inputs.py) | CLI wrapper，argparse 支持 `--db / --limit / --symbol`，stdout JSON |
+| [tests/test_contract_calibration_inputs.py](../tests/test_contract_calibration_inputs.py) | 31 case，12 测试组：no_records / all_invalid / 含/不含 confidence extras 两路径 / outcome 三态标签 / `confidence_level_summary` accuracy / `primary_score_raw_summary` min-max-mean / `data_gap_report` 4 类缺口 / limit 5 防御 / symbol 3 路径 / 不修改 DB / DB error / CLI 3 case |
+
+### 17.2 工具语义
+
+- **完全只读：** 仅 `SELECT`（含 `outcome_log` 子查询），不调用 `init_db`，不 `INSERT` / `UPDATE`
+- **三级回退状态：** `ok` / `no_records` / `no_valid_payloads` / `error`
+- **复用既有模式：** `_resolve_db_path / _resolve_limit / _resolve_symbol` 与 dashboard / correlate 完全同口径；outcome 关联用 `contract_outcome_correlation` 同款的 LEFT JOIN-via-correlated-subquery（按 `captured_at DESC, rowid DESC` 取最新 outcome）
+- **不替代 5 个现有 read-only 工具：** inspector / trend / diff / correlation / dashboard 一行未改；本工具专门聚焦"calibration 输入 + 数据缺口"维度
+
+### 17.3 输出结构
+
+```python
+{
+    "status": "ok" | "no_records" | "no_valid_payloads" | "error",
+    "symbol_filter": str,                # "AVGO" / "ALL" / 实际 ticker
+    "requested_limit": int,
+    "records_scanned": int,
+    "valid_payloads": int,               # 通过 contract validator
+    "invalid_payloads": int,             # missing_contract_payload / invalid_json / validation_failed
+    "records_with_confidence_extras": int,   # valid 中含 05 段 extras 的子集
+    "paired_outcomes": int,              # direction_correct ∈ {correct, wrong}
+    "pending_outcomes": int,             # direction_correct == "pending"
+    "skipped_records": [{prediction_id, reason}, ...],
+    "records": [
+        {
+            "prediction_id": str, "prediction_for_date": str, "symbol": str,
+            "has_confidence_extras": bool,
+            "primary_score_raw": float | None,
+            "primary_confidence_raw": str | None,
+            "peer_confirm_count": int | None,
+            "peer_oppose_count": int | None,
+            "peer_adjusted_confidence": str | None,
+            "final_confidence": str | None,
+            "probability_bucket": str | None,
+            "conflicting_factors_count": int | None,
+            "path_risk_level": str | None,
+            "soft_signal": str | None,
+            "direction_correct": "correct" | "wrong" | "pending",
+        }, ...
+    ],
+    "confidence_level_summary": {
+        "high"|"medium"|"low": {samples, correct, wrong, pending, accuracy}
+    },
+    "primary_score_raw_summary": {count, min, max, mean},  # 仅含 real number
+    "data_gap_report": {
+        "calibration_ready": bool,
+        "contract_outcome_pairs": int,
+        "minimum_recommended_pairs": 90,
+        "missing_dimensions": [str, ...],
+    },
+}
+```
+
+### 17.4 关键防御性细节
+
+- **`has_confidence_extras=False`** 时（老 payload，Step 2C-3b 之前）记录仍保留在 `records` 中，`primary_score_raw` 等字段为 `None`，**不进 `skipped_records`**
+- **`primary_score_raw` 只统计 real number**（`int` / `float`，但**排除 bool**——`isinstance(True, int)` 在 Python 是 True，要先过滤 bool）
+- **`confidence_level_summary` 优先用 `extras.final_confidence`，缺失时回退 required `confidence_system.confidence_level`**——确保即使老 payload 也能进桶（前提：`confidence_level` 字段是必填，contract validator 已锁住）
+- **`accuracy = correct / (correct + wrong)`，分母 0 时 `null`**（pending 不算入分母）
+- **`data_gap_report.calibration_ready`** 只是诊断标签，**永不影响**主链路；任何字段 / 流程都不读它
+- **`_MIN_RECOMMENDED_PAIRS = 90`** 是经验阈值（3 档 confidence × 30 样本/档），**不是统计学保证**
+
+### 17.5 严守边界（与 Step 2 全程一致）
+
+- ❌ **不实现 calibration 函数**——工具只读 / 只统计 / 不归一化 / 不预测
+- ❌ **不让 `historical_score / structure_score / peer_score / exclusion_penalty` 从 0.0 升真值**
+- ❌ **不让 `event_score` 从 None 升真值**
+- ❌ **`primary_score_raw` 仍未归一化**——工具只 dump min/max/mean，不做任何 transform
+- ❌ 不接 `confidence_engine.py`（入参 `top1_margin / is_tail` 在 `predict_result` 里完全没有；接 = 给 stub 喂 stub）
+- ❌ 不接 `risk_model.py` / `contradiction_engine.py`
+- ❌ 不接 `big_up_contradiction_card` / `exclusion_reliability_review` / `big_down_tail_warning` / `anti_false_exclusion_audit`
+- ❌ 不接 longbridge / broker / paper_trade / 真实交易 / 模拟盘 API
+- ❌ 不动 `predict.py` / `run_predict` / 4 个 builder / adapter / contract validator / UI / `prediction_store` / DB schema
+- ❌ 不动现有 5 个 read-only 工具的字段集（`DIFF_PATHS` / `GROUP_PATHS` / `DISTRIBUTION_PATHS` 全不动）
+
+### 17.6 CLI 用法
+
+```bash
+python3 scripts/summarize_confidence_calibration_inputs.py
+python3 scripts/summarize_confidence_calibration_inputs.py --limit 100
+python3 scripts/summarize_confidence_calibration_inputs.py --symbol ALL
+python3 scripts/summarize_confidence_calibration_inputs.py --symbol NVDA --limit 50
+python3 scripts/summarize_confidence_calibration_inputs.py --db /path/to/avgo_agent.db
+```
+
+### 17.7 用法定位（与 dashboard 工具的关系）
+
+| 工具 | 焦点 | 出口 | 数据来源 |
+|---|---|---|---|
+| `dashboard_contract_extras` (Step 2E-2) | 04 / 05 / 07 三段 extras 的**枚举/计数字段分布** | `extras_distributions` 14 字段桶图 | `prediction_log.contract_payload_json` |
+| `summarize_confidence_calibration_inputs` (本节，Step 2F-2) | 05 段 extras + outcome 关联 + **calibration 数据缺口** | `records` / `confidence_level_summary` / `primary_score_raw_summary` / `data_gap_report` | `prediction_log` LEFT JOIN `outcome_log` |
+
+两工具互补、不重叠：dashboard 看"什么 extras 字段值在出现"；calibration_inputs 看"哪些 extras 字段 + outcome 配对足够做归一化决定"。
