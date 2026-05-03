@@ -41,7 +41,7 @@
 | `symbol` | str | 标的代码，目前固定 `"AVGO"` |
 | `analysis_date` | str (YYYY-MM-DD) | 本次推演运行所基于的数据截止日 |
 | `prediction_for_date` | str (YYYY-MM-DD) | 本次推演要预测的目标日（通常 `analysis_date + 1 个交易日`） |
-| `data_window_days` | int | 用于结构识别的回看窗口（默认 15） |
+| `data_window_days` | int | 用于结构识别的回看窗口（**当前实现见下文 §"已知不一致：data_window_days"**） |
 | `current_price` | float | 截止日收盘价 |
 | `previous_close` | float | 截止日前一交易日收盘价 |
 | `volume` | int | 截止日成交量 |
@@ -293,3 +293,27 @@
 | 1D | 让 `prediction_store.save_prediction(...)` 写入 contract 化的 dict | 1A + 1C |
 | 1E | history / review UI 只读 contract 字段 | 1A + 1D |
 | 1F | 模拟交易决策最小骨架（只生成 `simulated_trade` 段，不下单） | 1A + 1E |
+
+## 8. 已知不一致：`data_window_days`
+
+> 本节由 Step 2B-1 加入。**只暴露问题，不修复。**
+
+当前实现里"主推演回看窗口"在三处分别写死，三处不联动：
+
+| 位置 | 值 | 引用 |
+|---|---|---|
+| `predict.py` 内部常量 | **20** | `_PRIMARY_LOOKBACK_DAYS = 20`（[predict.py:54](../predict.py)） |
+| `predict_result["primary_projection"]["lookback_days"]` | **20** | `build_primary_projection()` 透传上面的常量 |
+| `contract_payload["current_structure"]["data_window_days"]`（adapter 输出） | **15** | `services/projection_output_adapter.py:154` 硬编码字面量 `15`，与 `predict.py` 无任何联动 |
+
+历史原因：1A 文档最初写"默认 15"；1C adapter 直接照抄；后来 `predict.py` 用了 20 但没人回头改 adapter。
+
+**Step 2B-1 范围**：
+- ✅ 加 `tests/test_run_predict_contract_alignment.py` 同时锁住 `lookback_days == 20` 与 `data_window_days == 15`，外加一条 `assertNotEqual` 显式记录两边不一致。
+- ✅ 本文件标注。
+- ❌ 不改 `predict.py`、不改 adapter、不改 contract validator。
+
+**后续 Step 2B-2 / Step 2C 的处理路径**（**本轮不做**）：
+- Option 1（推荐）：让 adapter 从 `predict_result["primary_projection"]["lookback_days"]` 读取实际值，常量字面量退场，contract 字段真正记录"实际使用的窗口"。
+- Option 2：把 `predict.py` 的 lookback 改回 15，与 contract 1A 的"默认 15"语义对齐。需要重测主推演（这是策略改动，不是文档改动）。
+- 任一 Option 完成后，删 `tests/test_run_predict_contract_alignment.py::test_lookback_and_data_window_days_currently_disagree` 并把另两条断言对齐到统一值。

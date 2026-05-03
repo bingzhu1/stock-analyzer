@@ -101,17 +101,19 @@ prediction_log.contract_payload_json  (TEXT NULL)
 - ❌ 没有真正稳定否定系统（`exclusion_system` 段仍然是 stub / 由 adapter 拼装，未真正接 risk_model）
 - ❌ 没有真正稳定置信度系统（`confidence_system` 段同上，未真正接 confidence_engine）
 - ❌ PR-B（risk model）/ PR-C（contradiction）/ PR-D（confidence）的 v1 stub 仍**未接入主链**，contract 段值靠 adapter 兜底
-- ❌ contract 与旧 `predict_result` 的**字段一致性回归**没有跑过
+- ❌ contract 与旧 `predict_result` 的**字段一致性回归**已部分覆盖（见 §8 Step 2B-1），但 `avgo_primary_projection` / `peer_confirmation_adjustment` / `final_projection` 内部字段语义对齐尚未做
 
 ## 7. 下一步 Step 2 建议路线（推演系统稳定化）
 
-| Step | 主题 | 范围（最小改动原则） |
-|---|---|---|
-| 2A | 冻结 / 核验现有 `run_predict` 两步结构 | 写一份只读快照文档 + 测试，描述当前 `run_predict` 的入参 / 出参 / 子步骤；不改业务代码 |
-| 2B | 明确 AVGO 近 15 日主推演字段 | 把 `avgo_primary_projection` 8 个字段的真实来源、计算口径、`null` 触发条件写死，对齐 contract 1A |
-| 2C | 同行确认修正层稳定化 | `peer_confirmation_adjustment` 段：peer signal / alignment / adjustment 的判定规则、退化条件（数据缺失 → `unknown` / `insufficient`），独立子模块化 |
-| 2D | `final_projection` 输出对齐 contract | 收口层只输出 contract 字段；adapter 退化为直通 + validate；保留 invalid 不阻断的语义 |
-| 2E | 只读对比旧输出与 contract 输出 | 跑双输出 diff（旧 `predict_result` vs contract），用 Step 1 的 inspect / diff / trend 工具，不破坏主链路；发现差异写到 review_payload，不直接改 run_predict |
+| Step | 主题 | 范围（最小改动原则） | 状态 |
+|---|---|---|---|
+| 2A | 核验现有 `run_predict` 两步结构 | 只读诊断；判定为"部分两步化"——骨架在，但 contract 5 段（02/03/04/05/07）多数靠 adapter 兜底 | ✅ 已完成（无代码改动，仅诊断报告） |
+| 2B-1 | contract alignment 安全网 + 文档对齐 | 加 `tests/test_run_predict_contract_alignment.py` 锁住 run_predict → adapter → validator 链；标注 `data_window_days` 已知不一致；不改任何业务代码 | ✅ 本轮 |
+| 2B-2 | 在 builder 内补 02 段 contract 字段 | 让 `build_primary_projection` 直接产出 02 contract 字段；adapter 退化为直通；包括统一 `data_window_days` ↔ `lookback_days`（消除 §8 不一致） | 待办 |
+| 2B-3 | 在 builder 内补 03 段 contract 字段 | 让 `apply_peer_adjustment` 直接产出 03 contract 字段（三个 peer signal / alignment / adjustment 等） | 待办 |
+| 2C | 同行确认修正层稳定化 | peer signal / alignment / adjustment 的判定规则、退化条件，独立子模块化 | 待办 |
+| 2D | `final_projection` 输出对齐 contract | 收口层只输出 contract 字段；adapter 退化为直通 + validate | 待办 |
+| 2E | 只读对比旧输出与 contract 输出 | 跑双输出 diff，用 Step 1 inspect/diff/trend 工具，不破坏主链路 | 待办 |
 
 每一个子步骤都遵循 Step 1 已经验证过的工作模式：
 
@@ -119,3 +121,20 @@ prediction_log.contract_payload_json  (TEXT NULL)
 2. 加只读工具验证
 3. 旁路写库，不阻断主流程
 4. 严格不改 `run_predict` / UI / risk_model.py / contradiction_engine.py / confidence_engine.py，除非该子步骤明确包含
+
+## 8. 已知不一致：`data_window_days`（Step 2B-1 暴露）
+
+> 本节由 Step 2B-1 加入。**只暴露问题，不修复。详见 [tasks/step_1a_projection_output_contract.md](step_1a_projection_output_contract.md) §8。**
+
+| 位置 | 值 |
+|---|---|
+| `predict.py` `_PRIMARY_LOOKBACK_DAYS` | **20** |
+| `predict_result["primary_projection"]["lookback_days"]` | **20** |
+| `contract_payload["current_structure"]["data_window_days"]`（adapter 输出） | **15**（硬编码） |
+
+`tests/test_run_predict_contract_alignment.py` 同时锁住三个事实：
+1. `lookback_days == 20`
+2. `data_window_days == 15`
+3. `lookback_days != data_window_days`（显式 `assertNotEqual`，提醒后续修复时一并删除该 case）
+
+修复责任在 Step 2B-2 / Step 2C，不在本轮。
