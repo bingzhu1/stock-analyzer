@@ -1,17 +1,18 @@
-"""Step 2B-1 contract-alignment safety net.
+"""Contract-alignment safety net (Step 2B-1 baseline + Step 2B-2 update).
 
 End-to-end regression: run_predict(...) → adapt_projection_output(...) →
 validate_projection_output(...) must produce a contract-valid 8-section
 payload, today, without touching any business code.
 
-The test deliberately encodes the **known data_window_days inconsistency**:
-    - predict.py        : _PRIMARY_LOOKBACK_DAYS = 20
-    - primary_projection: lookback_days = 20
-    - adapter           : current_structure.data_window_days hard-coded 15
-
-Step 2B-1 only locks the *current* state into a regression test. The
-mismatch is not fixed here; it is left as a follow-up for Step 2B-2 / 2C
-(see tasks/step_1a_projection_output_contract.md §"已知不一致").
+History:
+    Step 2B-1: pinned the *known* data_window_days inconsistency
+               (primary_projection.lookback_days = 20, adapter hard-coded 15)
+               so future drift would be caught.
+    Step 2B-2: adapter now reads predict_result["primary_projection"]
+               ["lookback_days"]. The two values are wired and equal.
+               The earlier ``assertNotEqual`` case has been removed;
+               the assertions below pin both values to 20 and require
+               equality.
 """
 from __future__ import annotations
 
@@ -141,16 +142,16 @@ class RunPredictContractAlignmentTests(unittest.TestCase):
             self.payload["simulated_trade"]["trade_direction"], "none"
         )
 
-    # ── KNOWN INCONSISTENCY (Step 2B-1 exposes; does NOT fix) ──────────────
+    # ── data_window_days wiring (Step 2B-2) ────────────────────────────────
     #
-    # predict.py        : _PRIMARY_LOOKBACK_DAYS = 20
-    # primary_projection: lookback_days = 20  (live computation)
-    # adapter           : current_structure.data_window_days = 15
-    #                     (hard-coded constant, services/projection_output_adapter.py:154)
+    # predict.py            : _PRIMARY_LOOKBACK_DAYS = 20
+    # primary_projection    : lookback_days = 20  (live computation)
+    # adapter / contract 01 : current_structure.data_window_days reads from
+    #                         predict_result["primary_projection"]
+    #                         ["lookback_days"]
     #
-    # Both numbers below are pinned on purpose so that any future change to
-    # either side surfaces here. Resolution belongs to Step 2B-2 / Step 2C
-    # (see tasks/step_1a_projection_output_contract.md §"已知不一致").
+    # Both numbers must match. Any future change to _PRIMARY_LOOKBACK_DAYS
+    # propagates through the adapter automatically.
 
     def test_primary_projection_lookback_days_is_20(self) -> None:
         self.assertEqual(
@@ -158,27 +159,11 @@ class RunPredictContractAlignmentTests(unittest.TestCase):
             "predict.py _PRIMARY_LOOKBACK_DAYS regression",
         )
 
-    def test_adapter_current_structure_data_window_days_is_15(self) -> None:
-        self.assertEqual(
-            self.payload["current_structure"]["data_window_days"], 15,
-            "adapter hard-coded data_window_days regression "
-            "(known inconsistency vs predict.py = 20; see Step 2B-1 doc)",
-        )
-
-    def test_lookback_and_data_window_days_currently_disagree(self) -> None:
-        """Lock in that the two numbers do NOT match today.
-
-        Once Step 2B-2 / 2C unifies them, this test should fail and be
-        deleted in the same change-set that fixes the inconsistency.
-        """
+    def test_contract_data_window_days_matches_primary_lookback(self) -> None:
         primary_lookback = self.predict_result["primary_projection"]["lookback_days"]
         contract_window = self.payload["current_structure"]["data_window_days"]
-        self.assertNotEqual(
-            primary_lookback, contract_window,
-            "If these now match, the Step 2B-1 known-inconsistency note in "
-            "tasks/step_1a_projection_output_contract.md is stale — delete "
-            "this test as part of the fix.",
-        )
+        self.assertEqual(primary_lookback, contract_window)
+        self.assertEqual(contract_window, 20)
 
 
 if __name__ == "__main__":

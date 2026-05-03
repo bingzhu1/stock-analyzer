@@ -80,6 +80,60 @@ _PATH_LABEL_MAP = {
     ("平开", "平收"): "平开震荡",
 }
 
+# ── Step 1A contract 02 enums (avgo_primary_projection) ─────────────────────
+# Mirrors services/projection_output_contract.py — kept local so that
+# build_primary_projection can self-publish contract-aligned fields without
+# depending on the adapter layer.
+_BIAS_TO_DIRECTION_CN = {
+    "bullish": "偏多",
+    "bearish": "偏空",
+    "neutral": "中性",
+    "unavailable": "中性",
+}
+_PRED_CLOSE_TO_CONTRACT = {
+    "收涨": "收涨",
+    "收跌": "收跌",
+    "平收": "收平",  # legacy label "平收" → contract enum "收平"
+}
+_VALID_CONFIDENCE_RAW = frozenset({"high", "medium", "low"})
+
+
+def _direction_cn_from_bias(bias: Any) -> str:
+    return _BIAS_TO_DIRECTION_CN.get(str(bias), "中性")
+
+
+def _open_projection_from_pred_open(pred_open: Any) -> str:
+    if pred_open in {"高开", "平开", "低开"}:
+        return pred_open
+    return "平开"
+
+
+def _intraday_path_from_pred_path(pred_path: Any) -> str:
+    if not isinstance(pred_path, str) or not pred_path:
+        return "震荡"
+    if "高走" in pred_path or "走高" in pred_path:
+        return "高走"
+    if "低走" in pred_path or "走低" in pred_path:
+        return "低走"
+    return "震荡"
+
+
+def _close_projection_from_pred_close(pred_close: Any) -> str:
+    return _PRED_CLOSE_TO_CONTRACT.get(str(pred_close), "收平") if pred_close else "收平"
+
+
+def _five_state_from(direction_cn: str, close_proj: str) -> str:
+    """Conservative: never claim 大涨/大跌 from primary_projection alone."""
+    if direction_cn == "偏多" and close_proj == "收涨":
+        return "小涨"
+    if direction_cn == "偏空" and close_proj == "收跌":
+        return "小跌"
+    return "震荡"
+
+
+def _confidence_raw(confidence: Any) -> str:
+    return confidence if confidence in _VALID_CONFIDENCE_RAW else "low"
+
 
 def _raise_confidence(confidence: str) -> str:
     if confidence == "low":
@@ -373,6 +427,15 @@ def build_primary_projection(
             "score": 0.0,
             "signals": [],
             "direct_features": {},
+            # Step 1A contract 02 fields (defaults for the unavailable branch).
+            "primary_direction": "中性",
+            "open_projection": "平开",
+            "intraday_path_projection": "震荡",
+            "close_projection": "收平",
+            "five_state_projection": "震荡",
+            "historical_sample_count": 0,
+            "key_evidence": [],
+            "primary_confidence_raw": "low",
             "input_boundary": _primary_input_boundary(fallback_scan_states_used=False),
             "notes": "Scan result is missing; primary projection cannot be computed.",
         }
@@ -461,6 +524,17 @@ def build_primary_projection(
     }.get(intraday_state, "unclear")
     labels = _pred_labels(open_tendency, close_tendency)
 
+    # Step 1A contract 02 fields, derived from the same primary signals so
+    # downstream consumers (adapter / contract validator) can read them
+    # directly without re-translation. Logic is unchanged; this is additive.
+    primary_direction = _direction_cn_from_bias(final_bias)
+    open_projection = _open_projection_from_pred_open(labels.get("pred_open"))
+    intraday_path_projection = _intraday_path_from_pred_path(labels.get("pred_path"))
+    close_projection = _close_projection_from_pred_close(labels.get("pred_close"))
+    five_state_projection = _five_state_from(primary_direction, close_projection)
+    primary_confidence_raw = _confidence_raw(final_confidence)
+    key_evidence = list(signals[:5])
+
     return {
         "status": "computed",
         "source": "avgo_recent_20_scan_context",
@@ -480,6 +554,14 @@ def build_primary_projection(
             "volume_state": volume_state,
             "recent_20_trend_state": trend_state,
         },
+        "primary_direction": primary_direction,
+        "open_projection": open_projection,
+        "intraday_path_projection": intraday_path_projection,
+        "close_projection": close_projection,
+        "five_state_projection": five_state_projection,
+        "historical_sample_count": 0,
+        "key_evidence": key_evidence,
+        "primary_confidence_raw": primary_confidence_raw,
         "recent_20_summary": recent_summary,
         "input_boundary": _primary_input_boundary(fallback_scan_states_used),
         "notes": (

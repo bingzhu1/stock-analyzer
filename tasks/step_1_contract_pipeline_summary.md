@@ -122,19 +122,23 @@ prediction_log.contract_payload_json  (TEXT NULL)
 3. 旁路写库，不阻断主流程
 4. 严格不改 `run_predict` / UI / risk_model.py / contradiction_engine.py / confidence_engine.py，除非该子步骤明确包含
 
-## 8. 已知不一致：`data_window_days`（Step 2B-1 暴露）
+## 8. `data_window_days` 联动（Step 2B-1 暴露 → Step 2B-2 修复）
 
-> 本节由 Step 2B-1 加入。**只暴露问题，不修复。详见 [tasks/step_1a_projection_output_contract.md](step_1a_projection_output_contract.md) §8。**
+> 详见 [tasks/step_1a_projection_output_contract.md](step_1a_projection_output_contract.md) §8。
+
+**当前状态（已联动）：**
 
 | 位置 | 值 |
 |---|---|
-| `predict.py` `_PRIMARY_LOOKBACK_DAYS` | **20** |
-| `predict_result["primary_projection"]["lookback_days"]` | **20** |
-| `contract_payload["current_structure"]["data_window_days"]`（adapter 输出） | **15**（硬编码） |
+| `predict.py` `_PRIMARY_LOOKBACK_DAYS` | `20` |
+| `predict_result["primary_projection"]["lookback_days"]` | `20` |
+| `contract_payload["current_structure"]["data_window_days"]` | `20`（adapter 从 primary_projection 读取） |
 
-`tests/test_run_predict_contract_alignment.py` 同时锁住三个事实：
-1. `lookback_days == 20`
-2. `data_window_days == 15`
-3. `lookback_days != data_window_days`（显式 `assertNotEqual`，提醒后续修复时一并删除该 case）
+`tests/test_run_predict_contract_alignment.py::test_contract_data_window_days_matches_primary_lookback` 锁住两值相等且 = 20。Step 2B-1 时期的"显式不等"临时 case 已删除。
 
-修复责任在 Step 2B-2 / Step 2C，不在本轮。
+**Step 2B-2 一并落地的字段化（02 段）：**
+
+`build_primary_projection()` 的输出 dict 现在直接含 contract 02 段所需 8 个字段：
+`primary_direction` / `open_projection` / `intraday_path_projection` / `close_projection` / `five_state_projection` / `historical_sample_count` / `key_evidence` / `primary_confidence_raw`。
+
+`tests/test_primary_projection_contract_fields.py` 锁住字段存在性、contract 枚举合规、bullish/bearish/unavailable 三种分支取值。**未改任何推演判定逻辑**（`final_bias` / `final_confidence` / `score` 计算路径不变）。

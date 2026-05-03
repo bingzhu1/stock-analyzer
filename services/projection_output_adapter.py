@@ -130,6 +130,22 @@ def _five_state(direction_cn: str, close_proj: str) -> str:
 
 # ── per-section builders ──────────────────────────────────────────────────────
 
+_DATA_WINDOW_DAYS_FALLBACK = 15
+
+
+def _data_window_days_from_predict(predict: dict[str, Any]) -> int:
+    """Source of truth: build_primary_projection's lookback_days.
+
+    Falls back to ``_DATA_WINDOW_DAYS_FALLBACK`` when the primary block is
+    missing (e.g. adapter called with ``predict_result=None``).
+    """
+    primary = _safe_dict(predict.get("primary_projection"))
+    lookback = _as_int(primary.get("lookback_days"))
+    if lookback is not None and lookback > 0:
+        return lookback
+    return _DATA_WINDOW_DAYS_FALLBACK
+
+
 def _build_current_structure(scan: dict[str, Any], predict: dict[str, Any]) -> dict[str, Any]:
     symbol = str(scan.get("symbol") or predict.get("symbol") or "AVGO")
 
@@ -151,7 +167,7 @@ def _build_current_structure(scan: dict[str, Any], predict: dict[str, Any]) -> d
         "symbol": symbol,
         "analysis_date": analysis_date,
         "prediction_for_date": "unknown",
-        "data_window_days": 15,
+        "data_window_days": _data_window_days_from_predict(predict),
         "current_price": current_price,
         "previous_close": previous_close,
         "volume": volume,
