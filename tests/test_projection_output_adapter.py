@@ -164,6 +164,93 @@ class FinalProjectionMappingTests(unittest.TestCase):
         self.assertEqual(payload["final_projection"]["final_direction"], "中性")
         self.assertEqual(payload["final_projection"]["final_five_state"], "震荡")
 
+    def test_self_published_final_projection_takes_priority(self) -> None:
+        """Step 2B-4: when predict_result["final_projection"] self-publishes
+        contract 06 fields, the adapter must use those values verbatim and
+        ignore the top-level legacy fields."""
+        # Top-level fields disagree with self-published on every value.
+        # Self-published must win.
+        predict = {
+            "final_bias": "bullish",
+            "final_confidence": "high",
+            "pred_open": "高开",
+            "pred_path": "高开高走",
+            "pred_close": "收涨",
+            "prediction_summary": "<top-level summary, should be ignored>",
+            "final_projection": {
+                "final_direction": "偏空",
+                "final_open_projection": "低开",
+                "final_intraday_path": "低走",
+                "final_close_projection": "收跌",
+                "final_five_state": "小跌",
+                "probability_bucket": "30–45%",
+                "key_price_levels": {"support": 100.0, "resistance": 110.0},
+                "final_one_sentence": "self-published one-line summary",
+            },
+        }
+        fp = adapt_projection_output(
+            scan_result=None, research_result=None, predict_result=predict
+        )["final_projection"]
+        self.assertEqual(fp["final_direction"], "偏空")
+        self.assertEqual(fp["final_open_projection"], "低开")
+        self.assertEqual(fp["final_intraday_path"], "低走")
+        self.assertEqual(fp["final_close_projection"], "收跌")
+        self.assertEqual(fp["final_five_state"], "小跌")
+        self.assertEqual(fp["probability_bucket"], "30–45%")
+        self.assertEqual(fp["key_price_levels"], {"support": 100.0, "resistance": 110.0})
+        self.assertEqual(fp["final_one_sentence"], "self-published one-line summary")
+
+    def test_legacy_predict_without_final_projection_still_uses_fallback(self) -> None:
+        """Backwards compat: predict_result missing the final_projection
+        sub-dict must still produce a contract-valid section."""
+        legacy = _minimal_predict_result()
+        # Sanity: the legacy fixture deliberately lacks final_projection.
+        self.assertNotIn("final_projection", legacy)
+
+        fp = adapt_projection_output(
+            scan_result=None, research_result=None, predict_result=legacy
+        )["final_projection"]
+        # Must match the legacy expectations from
+        # ``test_minimal_predict_result_maps_into_final_projection``.
+        self.assertEqual(fp["final_direction"], "偏多")
+        self.assertEqual(fp["final_open_projection"], "高开")
+        self.assertEqual(fp["final_intraday_path"], "高走")
+        self.assertEqual(fp["final_close_projection"], "收涨")
+        self.assertEqual(fp["final_five_state"], "小涨")
+        self.assertEqual(fp["probability_bucket"], "≥70%")
+        self.assertEqual(fp["key_price_levels"], {})
+
+    def test_self_published_invalid_enum_value_falls_back_for_final(self) -> None:
+        """Defensive: bogus self-published enum values must not corrupt the
+        contract output; adapter falls back to legacy translation."""
+        predict = {
+            "final_bias": "bullish",
+            "final_confidence": "medium",
+            "pred_open": "高开",
+            "pred_path": "高开高走",
+            "pred_close": "收涨",
+            "prediction_summary": "fallback sentence",
+            "final_projection": {
+                "final_direction": "totally-bogus",
+                "final_five_state": "不存在的五态",
+                "probability_bucket": "200%",
+                "key_price_levels": "not-a-dict",  # also wrong type
+                "final_one_sentence": 42,  # wrong type
+            },
+        }
+        fp = adapt_projection_output(
+            scan_result=None, research_result=None, predict_result=predict
+        )["final_projection"]
+        self.assertIn(fp["final_direction"], {"偏多", "偏空", "中性"})
+        self.assertNotEqual(fp["final_direction"], "totally-bogus")
+        self.assertIn(fp["final_five_state"], {"大涨", "小涨", "震荡", "小跌", "大跌"})
+        self.assertIn(
+            fp["probability_bucket"],
+            {"≥70%", "55–70%", "45–55%", "30–45%", "≤30%"},
+        )
+        self.assertEqual(fp["key_price_levels"], {})
+        self.assertEqual(fp["final_one_sentence"], "fallback sentence")
+
 
 class PeerConfirmationMappingTests(unittest.TestCase):
     def test_relative_strength_maps_to_peer_signals(self) -> None:

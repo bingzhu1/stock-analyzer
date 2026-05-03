@@ -72,6 +72,14 @@ _PEER_ALIGNMENT_VALUES = frozenset({"all_reinforce", "mixed", "all_weaken", "ins
 _PEER_ADJUSTMENT_VALUES = frozenset({"upgrade", "hold", "downgrade", "flip_to_neutral"})
 _DIRECTION_CN_VALUES = frozenset({"偏多", "偏空", "中性"})
 
+# Contract enums for the final_projection section. Used by Step 2B-4 to pick
+# between final_projection's self-published fields and the legacy fallback.
+_OPEN_PROJ_VALUES = frozenset({"高开", "平开", "低开"})
+_INTRADAY_PATH_VALUES = frozenset({"高走", "震荡", "低走", "V 型反转", "倒 V"})
+_CLOSE_PROJ_VALUES = frozenset({"收涨", "收平", "收跌"})
+_FIVE_STATE_VALUES = frozenset({"大涨", "小涨", "震荡", "小跌", "大跌"})
+_PROBABILITY_BUCKET_VALUES = frozenset({"≥70%", "55–70%", "45–55%", "30–45%", "≤30%"})
+
 # confidence_level → (probability_bucket, total_confidence midpoint) for placeholder math
 _CONFIDENCE_TO_BUCKET: dict[str, str] = {
     "high": "≥70%",
@@ -333,24 +341,70 @@ def _build_confidence_system(predict: dict[str, Any]) -> dict[str, Any]:
 
 
 def _build_final_projection(predict: dict[str, Any]) -> dict[str, Any]:
-    final_bias_en = predict.get("final_bias")
-    final_direction = _bias_to_cn(final_bias_en)
-    open_proj = _open_proj(predict.get("pred_open"))
-    intraday_path = _pred_path_to_intraday(predict.get("pred_path"))
-    close_proj = _close_proj(predict.get("pred_close"))
-    five_state = _five_state(final_direction, close_proj)
-    confidence_level = _normalize_confidence(predict.get("final_confidence"))
-    bucket = _CONFIDENCE_TO_BUCKET.get(confidence_level, "45–55%")
+    """Build contract section 06.
+
+    Step 2B-4 pivot: prefer fields that ``build_final_projection`` self-publishes
+    on ``predict_result["final_projection"]``. Fall back to the legacy
+    derivation (top-level ``final_bias`` / ``pred_open`` / ``pred_path`` /
+    ``pred_close`` / ``final_confidence`` / ``prediction_summary``) so older
+    predict payloads keep validating.
+    """
+    final_block = _safe_dict(predict.get("final_projection"))
+
+    # — fallback derivations (legacy Step 1C path) —
+    legacy_direction = _bias_to_cn(predict.get("final_bias"))
+    legacy_open = _open_proj(predict.get("pred_open"))
+    legacy_path = _pred_path_to_intraday(predict.get("pred_path"))
+    legacy_close = _close_proj(predict.get("pred_close"))
+    legacy_five_state = _five_state(legacy_direction, legacy_close)
+    legacy_confidence_level = _normalize_confidence(predict.get("final_confidence"))
+    legacy_bucket = _CONFIDENCE_TO_BUCKET.get(legacy_confidence_level, "45–55%")
+    legacy_sentence = str(predict.get("prediction_summary") or "")
+
+    # — self-published preference (Step 2B-4) —
+    final_direction = (
+        _take_enum(final_block, "final_direction", _DIRECTION_CN_VALUES)
+        or legacy_direction
+    )
+    final_open_projection = (
+        _take_enum(final_block, "final_open_projection", _OPEN_PROJ_VALUES)
+        or legacy_open
+    )
+    final_intraday_path = (
+        _take_enum(final_block, "final_intraday_path", _INTRADAY_PATH_VALUES)
+        or legacy_path
+    )
+    final_close_projection = (
+        _take_enum(final_block, "final_close_projection", _CLOSE_PROJ_VALUES)
+        or legacy_close
+    )
+    final_five_state = (
+        _take_enum(final_block, "final_five_state", _FIVE_STATE_VALUES)
+        or legacy_five_state
+    )
+    probability_bucket = (
+        _take_enum(final_block, "probability_bucket", _PROBABILITY_BUCKET_VALUES)
+        or legacy_bucket
+    )
+
+    self_klp = final_block.get("key_price_levels")
+    key_price_levels = self_klp if isinstance(self_klp, dict) else {}
+
+    self_sentence = final_block.get("final_one_sentence")
+    final_one_sentence = (
+        self_sentence if isinstance(self_sentence, str) and self_sentence
+        else legacy_sentence
+    )
 
     return {
         "final_direction": final_direction,
-        "final_open_projection": open_proj,
-        "final_intraday_path": intraday_path,
-        "final_close_projection": close_proj,
-        "final_five_state": five_state,
-        "probability_bucket": bucket,
-        "key_price_levels": {},
-        "final_one_sentence": str(predict.get("prediction_summary") or ""),
+        "final_open_projection": final_open_projection,
+        "final_intraday_path": final_intraday_path,
+        "final_close_projection": final_close_projection,
+        "final_five_state": final_five_state,
+        "probability_bucket": probability_bucket,
+        "key_price_levels": key_price_levels,
+        "final_one_sentence": final_one_sentence,
     }
 
 

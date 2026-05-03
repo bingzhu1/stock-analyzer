@@ -170,6 +170,18 @@ def _peer_adjustment_label_from_direction(direction: Any) -> str:
     return _ADJUSTMENT_DIRECTION_TO_PEER_LABEL.get(str(direction), "hold")
 
 
+# ── Step 1A contract 06 enums (final_projection) ────────────────────────────
+_CONFIDENCE_TO_PROBABILITY_BUCKET = {
+    "high": "≥70%",
+    "medium": "55–70%",
+    "low": "45–55%",
+}
+
+
+def _probability_bucket_from_confidence(confidence: Any) -> str:
+    return _CONFIDENCE_TO_PROBABILITY_BUCKET.get(str(confidence), "45–55%")
+
+
 def _raise_confidence(confidence: str) -> str:
     if confidence == "low":
         return "medium"
@@ -833,6 +845,7 @@ def build_final_projection(
     scan_confidence = _normalize_confidence(str(scan.get("scan_confidence", primary_projection.get("final_confidence", "low"))))
 
     if primary_projection.get("final_bias") == "unavailable":
+        unavailable_summary = _summarize("unavailable", "low", adjustment)
         return {
             "status": "unavailable",
             "source": "primary_projection_plus_peer_adjustment",
@@ -856,9 +869,18 @@ def build_final_projection(
                 "reasons": ["primary_projection_unavailable"],
                 "path_label_changed": False,
             },
-            "prediction_summary": _summarize("unavailable", "low", adjustment),
+            "prediction_summary": unavailable_summary,
             "supporting_factors": [],
             "conflicting_factors": ["primary_projection_unavailable"],
+            # Step 1A contract 06 fields (defaults for the unavailable branch).
+            "final_direction": "中性",
+            "final_open_projection": "平开",
+            "final_intraday_path": "震荡",
+            "final_close_projection": "收平",
+            "final_five_state": "震荡",
+            "probability_bucket": "45–55%",
+            "key_price_levels": {},
+            "final_one_sentence": unavailable_summary,
             "notes": "Primary projection is unavailable, so final projection is unavailable.",
         }
 
@@ -921,6 +943,16 @@ def build_final_projection(
     open_tendency = str(primary_projection.get("open_tendency", "unclear"))
     close_tendency = str(primary_projection.get("close_tendency", "unclear"))
     labels = _pred_labels(open_tendency, close_tendency)
+    prediction_summary = _summarize(final_bias, final_confidence, adjustment)
+
+    # Step 1A contract 06 fields, derived from the same final signals.
+    # Logic above is unchanged; this section is purely additive translation.
+    final_direction = _direction_cn_from_bias(final_bias)
+    final_open_projection = _open_projection_from_pred_open(labels.get("pred_open"))
+    final_intraday_path = _intraday_path_from_pred_path(labels.get("pred_path"))
+    final_close_projection = _close_projection_from_pred_close(labels.get("pred_close"))
+    final_five_state = _five_state_from(final_direction, final_close_projection)
+    probability_bucket = _probability_bucket_from_confidence(final_confidence)
 
     return {
         "status": "computed",
@@ -936,9 +968,17 @@ def build_final_projection(
         "scan_confidence": scan_confidence,
         "path_risk": path_risk,
         "peer_path_risk_adjustment": path_risk_adjustment,
-        "prediction_summary": _summarize(final_bias, final_confidence, adjustment),
+        "prediction_summary": prediction_summary,
         "supporting_factors": supporting_factors,
         "conflicting_factors": conflicting_factors,
+        "final_direction": final_direction,
+        "final_open_projection": final_open_projection,
+        "final_intraday_path": final_intraday_path,
+        "final_close_projection": final_close_projection,
+        "final_five_state": final_five_state,
+        "probability_bucket": probability_bucket,
+        "key_price_levels": {},
+        "final_one_sentence": prediction_summary,
         "notes": " ".join(note_parts),
     }
 

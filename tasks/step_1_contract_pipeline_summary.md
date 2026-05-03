@@ -160,3 +160,44 @@ prediction_log.contract_payload_json  (TEXT NULL)
 **未改：** peer 投票规则、`adjusted_bias` / `adjusted_confidence` 升降条件、`adjustment_direction` 推导逻辑、`final_bias` 生成策略。
 
 `tests/test_peer_adjustment_contract_fields.py` + `tests/test_projection_output_adapter.py`（新增 3 case：self-published 优先 / legacy fallback / 非法枚举回退）共同锁住该层。
+
+## 10. final_projection 自发布 contract 06 段（Step 2B-4）
+
+`build_final_projection()` 的输出 dict 现在直接含 contract 06 段所需 8 个字段：
+`final_direction` / `final_open_projection` / `final_intraday_path` / `final_close_projection` / `final_five_state` / `probability_bucket` / `key_price_levels` / `final_one_sentence`。
+
+字段来源完全从已有 final 决策派生，没有引入任何外部信息源：
+- `final_direction` ← `final_bias`（中文翻译）
+- `final_open_projection` / `final_intraday_path` / `final_close_projection` ← `_pred_labels(open_tendency, close_tendency)` 输出（`pred_open` / `pred_path` / `pred_close`）经 contract 翻译（含"平收 → 收平"修正）
+- `final_five_state` ← 保守规则（偏多+收涨→小涨；偏空+收跌→小跌；其余震荡）
+- `probability_bucket` ← `final_confidence` 映射（high → ≥70%；medium → 55–70%；low → 45–55%）
+- `key_price_levels` ← `{}`（暂无稳定来源，**不编造支撑阻力**）
+- `final_one_sentence` ← 现有 `prediction_summary`，与同一 dict 里的 `prediction_summary` 完全一致
+
+**adapter 优先级（[services/projection_output_adapter.py](../services/projection_output_adapter.py) `_build_final_projection`）：**
+1. 如果 `predict_result["final_projection"]` 自带 contract 06 字段且取值在 contract 枚举内（含 `key_price_levels` 是 `dict`、`final_one_sentence` 是非空 `str`），**直接使用**。
+2. 否则回退到 Step 1C 旧推导（从 top-level `final_bias` / `pred_open` / `pred_path` / `pred_close` / `final_confidence` / `prediction_summary` 推），保证旧 payload 仍合规。
+3. 取值非法（如 `final_direction = "totally-bogus"` / `key_price_levels = "not-a-dict"`）也走 fallback，不污染 contract 输出。
+
+**legacy 字段全部保留**（`final_bias` / `final_confidence` / `pred_open` / `pred_path` / `pred_close` / `prediction_summary` / `supporting_factors` / `conflicting_factors` / `notes` / `path_risk` / `peer_path_risk_adjustment` 等），仅做加法。
+
+**未改：** `final_bias` 计算（peer.adjusted_bias 退化路径）、`final_confidence` 计算（peer.adjusted_confidence 退化路径）、`_apply_research_adjustment` 路径、`path_risk` 推导、`prediction_summary` 内容、unavailable 分支触发条件。
+
+`tests/test_final_projection_contract_fields.py` + `tests/test_projection_output_adapter.py`（新增 3 case：self-published 优先 / legacy fallback / 非法值回退）共同锁住该层。
+
+## 11. 当前 contract 段进度总览
+
+| Section | 状态 | 由谁产出 |
+|---|---|---|
+| 01 `current_structure` | 字段化 | adapter 从 scan + `primary_projection.lookback_days` 构造（Step 2B-2） |
+| 02 `avgo_primary_projection` | **字段化** | `build_primary_projection` self-publish（Step 2B-2） |
+| 03 `peer_confirmation_adjustment` | **字段化** | `apply_peer_adjustment` self-publish（Step 2B-3） |
+| 04 `exclusion_system` | ❌ 占位 | adapter 硬编码 `"none"` 系列；待 PR-C / 否定系统稳定化 |
+| 05 `confidence_system` | ❌ 占位 | adapter 硬编码 0.0 系列；待 PR-D / 置信度系统稳定化 |
+| 06 `final_projection` | **字段化** | `build_final_projection` self-publish（Step 2B-4） |
+| 07 `simulated_trade` | ❌ 占位 | adapter 硬编码 `"no_trade"`；待模拟交易决策层 |
+| 08 `review_payload` | 字段化（依赖 06） | adapter 从 final 字段派生 |
+
+**已完成：** 02 / 03 / 06 三段由 builder 自发布，adapter 退化为"先信 self-published、再回退老推导、非法值不污染输出"。`run_predict` 主决策路径（投票 / 升降 / 收口）一行未改。
+
+**仍未做：** 04 / 05 / 07 三段仍由 adapter 输出占位值；解锁条件 = 各自的子系统稳定化（risk_model / confidence_engine / 模拟交易决策层）。
