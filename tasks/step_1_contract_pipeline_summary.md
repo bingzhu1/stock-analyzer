@@ -192,12 +192,46 @@ prediction_log.contract_payload_json  (TEXT NULL)
 | 01 `current_structure` | 字段化 | adapter 从 scan + `primary_projection.lookback_days` 构造（Step 2B-2） |
 | 02 `avgo_primary_projection` | **字段化** | `build_primary_projection` self-publish（Step 2B-2） |
 | 03 `peer_confirmation_adjustment` | **字段化** | `apply_peer_adjustment` self-publish（Step 2B-3） |
-| 04 `exclusion_system` | ❌ 占位 | adapter 硬编码 `"none"` 系列；待 PR-C / 否定系统稳定化 |
+| 04 `exclusion_system` | ⚠️ required 仍占位 + `extras` 暴露真实风险信号（Step 2C-2） | adapter 5 必填字段 stub + `extras` 读取 `predict_result.conflicting_factors / path_risk / peer_path_risk_adjustment` |
 | 05 `confidence_system` | ❌ 占位 | adapter 硬编码 0.0 系列；待 PR-D / 置信度系统稳定化 |
 | 06 `final_projection` | **字段化** | `build_final_projection` self-publish（Step 2B-4） |
 | 07 `simulated_trade` | ❌ 占位 | adapter 硬编码 `"no_trade"`；待模拟交易决策层 |
 | 08 `review_payload` | 字段化（依赖 06） | adapter 从 final 字段派生 |
 
-**已完成：** 02 / 03 / 06 三段由 builder 自发布，adapter 退化为"先信 self-published、再回退老推导、非法值不污染输出"。`run_predict` 主决策路径（投票 / 升降 / 收口）一行未改。
+**已完成：** 02 / 03 / 06 三段由 builder 自发布，adapter 退化为"先信 self-published、再回退老推导、非法值不污染输出"。`run_predict` 主决策路径（投票 / 升降 / 收口）一行未改。Step 2C-2 让 04 段在保持 required 字段 stub 不变的前提下，把已有风险信号暴露到 `extras`。
 
-**仍未做：** 04 / 05 / 07 三段仍由 adapter 输出占位值；解锁条件 = 各自的子系统稳定化（risk_model / confidence_engine / 模拟交易决策层）。
+**仍未做：** 05 / 07 段仍由 adapter 输出占位值；04 段的 required 字段（`exclusion_level / forced_exclusion / anti_false_exclusion_triggered` 等）也尚未真正字段化，等 Step 2C-3+ 真正的否定模块落地。
+
+## 12. exclusion_system extras（Step 2C-2，仅暴露不决策）
+
+`services/projection_output_adapter.py::_build_exclusion_system(predict)` 现在做两件事：
+
+1. **5 个 contract 必填字段保持 "no exclusion observed" stub**：
+   `exclusion_level == "none"` / `exclusion_sources == []` / `exclusion_reasons == []` / `forced_exclusion is False` / `anti_false_exclusion_triggered is False`。
+   语义零变化——任何下游消费者按"没有否定"理解都仍然正确。
+2. **新增 `extras` 子 dict**，把 `predict_result` 已经产出的风险信号原样暴露出来：
+
+| extras 键 | 类型 | 来源（仅读 predict_result） |
+|---|---|---|
+| `conflicting_factors_count` | int | `len(predict["conflicting_factors"])`（非 list 时回退 0） |
+| `conflicting_factors` | list[str] | `predict["conflicting_factors"]` 副本（非 list 时回退 `[]`） |
+| `path_risk_level` | str | `predict["path_risk"]`（缺失 → `"unknown"`） |
+| `peer_path_risk_direction` | str | `predict["peer_path_risk_adjustment"]["risk_direction"]`（缺失或非 dict → `"unknown"`） |
+| `peer_path_risk_reasons` | list[str] | `predict["peer_path_risk_adjustment"]["reasons"]` 副本（缺失或非 list → `[]`） |
+| `soft_signal` | str | 启发式标签（`"peer_weaken"` / `"high_path_risk"` / `"none"`），**不**反向影响 required 字段 |
+
+**`soft_signal` 决策树**（仅观察、不否定）：
+- 若 `"peer_confirmation=weaken" in conflicting_factors` → `"peer_weaken"`
+- 否则若 `path_risk_level == "high"` → `"high_path_risk"`
+- 否则 → `"none"`
+
+**严守边界（Step 2C-2 没做的事）：**
+- ❌ 没接 `risk_model.py` / `contradiction_engine.py` / `confidence_engine.py` 三个 v1 stub
+- ❌ 没接 `big_up_contradiction_card` / `exclusion_reliability_review` / `big_down_tail_warning` / `anti_false_exclusion_audit` 到主链
+- ❌ 没改 `predict.py` / `run_predict` / UI / `prediction_store` / contract validator
+- ❌ `exclusion_level` 仍是 `"none"`；`forced_exclusion` / `anti_false_exclusion_triggered` 仍是 `False`
+- ❌ `extras` 完全只读派生，不参与任何决策；下游不应据 `soft_signal` 做"是否预测"的判断
+
+**真正的 04 字段化**（让 `exclusion_level` 在合适时升 `"soft"`/`"hard"`、让 `forced_exclusion=True` 有真实触发条件、`exclusion_sources` / `exclusion_reasons` 有结构化来源）留给 Step 2C-3+，需先有真实否定模块。
+
+`tests/test_exclusion_system_contract_fields.py`（18 case + 3 subtests）+ `tests/test_projection_output_adapter.py`（新增 1 case）锁住"required 不动、extras 反映 predict_result"。

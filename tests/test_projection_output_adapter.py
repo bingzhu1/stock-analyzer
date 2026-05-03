@@ -383,6 +383,49 @@ class ExclusionAndConfidenceMappingTests(unittest.TestCase):
         self.assertFalse(ex["forced_exclusion"])
         self.assertFalse(ex["anti_false_exclusion_triggered"])
 
+    def test_exclusion_system_extras_surfaces_predict_risk_signals(self) -> None:
+        """Step 2C-2: required fields must stay the stub, but extras must
+        reflect predict_result's conflicting_factors / path_risk /
+        peer_path_risk_adjustment one-for-one."""
+        predict = {
+            "conflicting_factors": [
+                "peer_confirmation=weaken",
+                "peer_path_risk=high",
+            ],
+            "path_risk": "high",
+            "peer_path_risk_adjustment": {
+                "risk_direction": "higher",
+                "reasons": ["peer_layer_weaken"],
+            },
+        }
+        ex = adapt_projection_output(
+            scan_result=None, research_result=None, predict_result=predict
+        )["exclusion_system"]
+
+        # Required fields untouched.
+        self.assertEqual(ex["exclusion_level"], "none")
+        self.assertEqual(ex["exclusion_sources"], [])
+        self.assertEqual(ex["exclusion_reasons"], [])
+        self.assertFalse(ex["forced_exclusion"])
+        self.assertFalse(ex["anti_false_exclusion_triggered"])
+
+        # extras populated.
+        extras = ex["extras"]
+        self.assertEqual(extras["conflicting_factors_count"], 2)
+        self.assertEqual(
+            extras["conflicting_factors"],
+            ["peer_confirmation=weaken", "peer_path_risk=high"],
+        )
+        self.assertEqual(extras["path_risk_level"], "high")
+        self.assertEqual(extras["peer_path_risk_direction"], "higher")
+        self.assertEqual(extras["peer_path_risk_reasons"], ["peer_layer_weaken"])
+        self.assertEqual(extras["soft_signal"], "peer_weaken")
+        # Validator must still pass.
+        payload = adapt_projection_output(
+            scan_result=None, research_result=None, predict_result=predict
+        )
+        self.assertEqual(validate_projection_output(payload), [])
+
     def test_confidence_system_event_score_is_null_and_total_matches_level(self) -> None:
         payload = adapt_projection_output(
             scan_result=None,

@@ -313,15 +313,49 @@ def _build_peer_confirmation_adjustment(
 
 
 def _build_exclusion_system(predict: dict[str, Any]) -> dict[str, Any]:
-    # The contract's 04 section will eventually be populated by an independent
-    # exclusion / contradiction module (PR-C scope). For now the adapter emits
-    # a contract-valid 'no exclusion observed' payload.
+    """Build contract section 04.
+
+    Step 2C-2: the 5 contract-required fields stay at their "no exclusion
+    observed" stub (none / [] / [] / False / False) — there is still no
+    real-time exclusion module wired into ``run_predict``. What this step
+    adds is an ``extras`` sub-dict that surfaces the raw risk signals
+    already produced by the main pipeline (``conflicting_factors`` /
+    ``path_risk`` / ``peer_path_risk_adjustment``) so downstream consumers
+    can distinguish "no risk observed" from "risk present but no exclusion
+    decision yet". ``extras`` is purely informational and never feeds back
+    into the contract-required fields.
+    """
+    conflicting = _safe_list(predict.get("conflicting_factors"))
+    path_risk_raw = predict.get("path_risk")
+    path_risk_level = str(path_risk_raw) if path_risk_raw else "unknown"
+    peer_path = _safe_dict(predict.get("peer_path_risk_adjustment"))
+    peer_path_risk_direction = str(peer_path.get("risk_direction") or "unknown")
+    peer_path_risk_reasons = _safe_list(peer_path.get("reasons"))
+
+    if any(
+        isinstance(factor, str) and factor == "peer_confirmation=weaken"
+        for factor in conflicting
+    ):
+        soft_signal = "peer_weaken"
+    elif path_risk_level == "high":
+        soft_signal = "high_path_risk"
+    else:
+        soft_signal = "none"
+
     return {
         "exclusion_level": "none",
         "exclusion_sources": [],
         "exclusion_reasons": [],
         "forced_exclusion": False,
         "anti_false_exclusion_triggered": False,
+        "extras": {
+            "conflicting_factors_count": len(conflicting),
+            "conflicting_factors": list(conflicting),
+            "path_risk_level": path_risk_level,
+            "peer_path_risk_direction": peer_path_risk_direction,
+            "peer_path_risk_reasons": list(peer_path_risk_reasons),
+            "soft_signal": soft_signal,
+        },
     }
 
 
