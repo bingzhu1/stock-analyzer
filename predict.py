@@ -135,6 +135,41 @@ def _confidence_raw(confidence: Any) -> str:
     return confidence if confidence in _VALID_CONFIDENCE_RAW else "low"
 
 
+# ── Step 1A contract 03 enums (peer_confirmation_adjustment) ────────────────
+# bias-aware translation: a peer vote is taken in the context of primary bias,
+# so "confirm" means the peer's relative strength supports primary direction.
+_VOTE_TO_PEER_SIGNAL = {
+    "confirm": "reinforce",
+    "oppose": "weaken",
+    "mixed": "neutral",
+    "unavailable": "unknown",
+}
+_ADJUSTMENT_DIRECTION_TO_PEER_LABEL = {
+    "reinforce": "upgrade",
+    "weaken": "downgrade",
+    "neutral_primary": "flip_to_neutral",
+    "neutral": "hold",
+}
+
+
+def _peer_signal_from_vote(vote: Any) -> str:
+    return _VOTE_TO_PEER_SIGNAL.get(str(vote), "unknown")
+
+
+def _peer_alignment_from_counts(confirm_count: int, oppose_count: int) -> str:
+    if confirm_count >= 3 and oppose_count == 0:
+        return "all_reinforce"
+    if oppose_count >= 3 and confirm_count == 0:
+        return "all_weaken"
+    if confirm_count == 0 and oppose_count == 0:
+        return "insufficient"
+    return "mixed"
+
+
+def _peer_adjustment_label_from_direction(direction: Any) -> str:
+    return _ADJUSTMENT_DIRECTION_TO_PEER_LABEL.get(str(direction), "hold")
+
+
 def _raise_confidence(confidence: str) -> str:
     if confidence == "low":
         return "medium"
@@ -661,6 +696,19 @@ def apply_peer_adjustment(
         oppose_count,
     )
 
+    # Step 1A contract 03 fields, derived from the same vote / count signals.
+    # Logic above is unchanged; this section is purely additive translation.
+    votes_by_peer = {entry["peer"]: entry["vote"] for entry in adjustments}
+    nvda_signal = _peer_signal_from_vote(votes_by_peer.get("NVDA"))
+    soxx_signal = _peer_signal_from_vote(votes_by_peer.get("SOXX"))
+    qqq_signal = _peer_signal_from_vote(votes_by_peer.get("QQQ"))
+    peer_alignment = _peer_alignment_from_counts(confirm_count, oppose_count)
+    peer_adjustment_label = _peer_adjustment_label_from_direction(adjustment_direction)
+    adjusted_direction = _direction_cn_from_bias(adjusted_bias)
+    adjustment_reason = (
+        "Peer adjustment uses NVDA / SOXX / QQQ relative-strength confirmation."
+    )
+
     return {
         "status": "computed",
         "source": "peer_relative_strength",
@@ -688,6 +736,13 @@ def apply_peer_adjustment(
         "primary_confidence": primary_confidence,
         "adjusted_bias": adjusted_bias,
         "adjusted_confidence": adjusted_confidence,
+        "nvda_signal": nvda_signal,
+        "soxx_signal": soxx_signal,
+        "qqq_signal": qqq_signal,
+        "peer_alignment": peer_alignment,
+        "peer_adjustment": peer_adjustment_label,
+        "adjusted_direction": adjusted_direction,
+        "adjustment_reason": adjustment_reason,
         "path_risk_adjustment": {
             "status": "computed",
             "before": primary_path_risk,

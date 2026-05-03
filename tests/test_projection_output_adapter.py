@@ -192,6 +192,97 @@ class PeerConfirmationMappingTests(unittest.TestCase):
         self.assertEqual(peer["peer_alignment"], "insufficient")
         self.assertEqual(peer["peer_adjustment"], "hold")
 
+    def test_self_published_peer_fields_take_priority_over_scan(self) -> None:
+        """Step 2B-3: when peer_adjustment self-publishes contract 03 fields,
+        the adapter must use those values verbatim, ignoring scan-derived
+        translation."""
+        # scan says all peers are stronger → legacy fallback would emit
+        # nvda_signal=reinforce / soxx_signal=reinforce / qqq_signal=reinforce
+        # peer_alignment=all_reinforce (with confirm_count=3, oppose_count=0).
+        # The self-published fields below disagree on every value; the adapter
+        # must trust the peer_adjustment dict.
+        scan = {
+            "symbol": "AVGO",
+            "scan_timestamp": "2026-04-09T00:00:00",
+            "relative_strength_summary": {
+                "NVDA": {"relative_strength": "stronger"},
+                "SOXX": {"relative_strength": "stronger"},
+                "QQQ": {"relative_strength": "stronger"},
+            },
+        }
+        predict = {
+            "final_bias": "bullish",
+            "final_confidence": "high",
+            "peer_adjustment": {
+                "confirm_count": 3,
+                "oppose_count": 0,
+                "adjustment_direction": "reinforce",
+                "adjusted_bias": "bullish",
+                "notes": "<legacy notes ignored>",
+                # self-published contract 03 fields:
+                "peer_symbols": ["NVDA", "SOXX", "QQQ"],
+                "nvda_signal": "weaken",
+                "soxx_signal": "neutral",
+                "qqq_signal": "unknown",
+                "peer_alignment": "mixed",
+                "peer_adjustment": "downgrade",
+                "adjusted_direction": "偏空",
+                "adjustment_reason": "self-published reason",
+            },
+        }
+        peer = adapt_projection_output(
+            scan_result=scan, research_result=None, predict_result=predict
+        )["peer_confirmation_adjustment"]
+        self.assertEqual(peer["nvda_signal"], "weaken")
+        self.assertEqual(peer["soxx_signal"], "neutral")
+        self.assertEqual(peer["qqq_signal"], "unknown")
+        self.assertEqual(peer["peer_alignment"], "mixed")
+        self.assertEqual(peer["peer_adjustment"], "downgrade")
+        self.assertEqual(peer["adjusted_direction"], "偏空")
+        self.assertEqual(peer["adjustment_reason"], "self-published reason")
+
+    def test_legacy_peer_payload_without_contract_fields_still_uses_fallback(self) -> None:
+        """Backwards compat: a peer_adjustment dict missing the new contract
+        03 fields must still produce a contract-valid section by falling
+        back to scan-derived translation (Step 1C behavior)."""
+        scan = _minimal_scan_result()
+        legacy_predict = _minimal_predict_result()
+        # Sanity: the legacy fixture deliberately lacks the new fields.
+        for field in ("nvda_signal", "peer_alignment", "adjusted_direction"):
+            self.assertNotIn(field, legacy_predict["peer_adjustment"])
+
+        peer = adapt_projection_output(
+            scan_result=scan, research_result=None, predict_result=legacy_predict
+        )["peer_confirmation_adjustment"]
+        # Must match the legacy expectations from
+        # ``test_relative_strength_maps_to_peer_signals``.
+        self.assertEqual(peer["nvda_signal"], "reinforce")
+        self.assertEqual(peer["soxx_signal"], "neutral")
+        self.assertEqual(peer["qqq_signal"], "reinforce")
+        self.assertEqual(peer["peer_adjustment"], "upgrade")
+        self.assertEqual(peer["adjusted_direction"], "偏多")
+
+    def test_self_published_invalid_enum_value_falls_back_to_legacy(self) -> None:
+        """Defensive: if peer_adjustment publishes a non-enum value, the
+        adapter must ignore it and fall back rather than corrupt the
+        contract output."""
+        scan = _minimal_scan_result()
+        predict = _minimal_predict_result()
+        predict["peer_adjustment"]["nvda_signal"] = "totally-bogus"
+        predict["peer_adjustment"]["peer_alignment"] = "not-an-alignment"
+
+        peer = adapt_projection_output(
+            scan_result=scan, research_result=None, predict_result=predict
+        )["peer_confirmation_adjustment"]
+        # Bogus values must be replaced by legacy fallback (validator-clean).
+        self.assertIn(peer["nvda_signal"], {"reinforce", "weaken", "neutral", "unknown"})
+        self.assertIn(
+            peer["peer_alignment"],
+            {"all_reinforce", "mixed", "all_weaken", "insufficient"},
+        )
+        self.assertNotEqual(peer["nvda_signal"], "totally-bogus")
+        self.assertNotEqual(peer["peer_alignment"], "not-an-alignment")
+
 
 class ExclusionAndConfidenceMappingTests(unittest.TestCase):
     def test_exclusion_system_defaults_to_none_with_empty_lists(self) -> None:

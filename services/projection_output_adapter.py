@@ -64,6 +64,14 @@ _PEER_ADJUSTMENT_DIRECTION_TO_LABEL: dict[str, str] = {
     "neutral": "hold",
 }
 
+# Contract enums for the peer_confirmation_adjustment section. Used by the
+# adapter when picking between a peer_adjustment dict's self-published fields
+# (Step 2B-3) and the legacy fallback derivation.
+_PEER_SIGNAL_VALUES = frozenset({"reinforce", "weaken", "neutral", "unknown"})
+_PEER_ALIGNMENT_VALUES = frozenset({"all_reinforce", "mixed", "all_weaken", "insufficient"})
+_PEER_ADJUSTMENT_VALUES = frozenset({"upgrade", "hold", "downgrade", "flip_to_neutral"})
+_DIRECTION_CN_VALUES = frozenset({"偏多", "偏空", "中性"})
+
 # confidence_level → (probability_bucket, total_confidence midpoint) for placeholder math
 _CONFIDENCE_TO_BUCKET: dict[str, str] = {
     "high": "≥70%",
@@ -202,51 +210,97 @@ def _build_avgo_primary_projection(predict: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _take_enum(d: dict[str, Any], key: str, allowed: frozenset[str]) -> str | None:
+    """Return ``d[key]`` only if it is a contract-valid enum value, else None."""
+    value = d.get(key)
+    return value if value in allowed else None
+
+
 def _build_peer_confirmation_adjustment(
     scan: dict[str, Any], predict: dict[str, Any]
 ) -> dict[str, Any]:
+    """Build contract section 03.
+
+    Step 2B-3 pivot: prefer fields that ``apply_peer_adjustment`` self-publishes
+    on the predict_result["peer_adjustment"] dict. Fall back to the legacy
+    derivation (from scan_result.relative_strength_summary + counts +
+    adjustment_direction) so older predict payloads keep validating.
+    """
     rs = _safe_dict(scan.get("relative_strength_summary"))
     peer_adjustment = _safe_dict(predict.get("peer_adjustment"))
 
-    def _signal(peer: str) -> str:
+    # — fallback derivations (legacy Step 1C path) —
+    def _legacy_signal(peer: str) -> str:
         info = _safe_dict(rs.get(peer))
         rs_label = info.get("relative_strength")
         return _RELATIVE_STRENGTH_TO_PEER_SIGNAL.get(str(rs_label), "unknown") if rs_label else "unknown"
-
-    nvda_signal = _signal("NVDA")
-    soxx_signal = _signal("SOXX")
-    qqq_signal = _signal("QQQ")
 
     confirm_count = _as_int(peer_adjustment.get("confirm_count"))
     oppose_count = _as_int(peer_adjustment.get("oppose_count"))
     if confirm_count is not None and oppose_count is not None:
         if confirm_count >= 3 and oppose_count == 0:
-            peer_alignment = "all_reinforce"
+            legacy_alignment = "all_reinforce"
         elif oppose_count >= 3 and confirm_count == 0:
-            peer_alignment = "all_weaken"
+            legacy_alignment = "all_weaken"
         elif confirm_count == 0 and oppose_count == 0:
-            peer_alignment = "insufficient"
+            legacy_alignment = "insufficient"
         else:
-            peer_alignment = "mixed"
+            legacy_alignment = "mixed"
     else:
-        peer_alignment = "insufficient"
+        legacy_alignment = "insufficient"
 
-    adjustment_direction = peer_adjustment.get("adjustment_direction")
-    peer_adjustment_label = _PEER_ADJUSTMENT_DIRECTION_TO_LABEL.get(
-        str(adjustment_direction), "hold"
+    legacy_peer_adjustment_label = _PEER_ADJUSTMENT_DIRECTION_TO_LABEL.get(
+        str(peer_adjustment.get("adjustment_direction")), "hold"
+    )
+    legacy_adjusted_direction = _bias_to_cn(
+        peer_adjustment.get("adjusted_bias") or predict.get("final_bias")
+    )
+    legacy_reason = str(peer_adjustment.get("notes") or "")
+
+    # — self-published preference (Step 2B-3) —
+    nvda_signal = (
+        _take_enum(peer_adjustment, "nvda_signal", _PEER_SIGNAL_VALUES)
+        or _legacy_signal("NVDA")
+    )
+    soxx_signal = (
+        _take_enum(peer_adjustment, "soxx_signal", _PEER_SIGNAL_VALUES)
+        or _legacy_signal("SOXX")
+    )
+    qqq_signal = (
+        _take_enum(peer_adjustment, "qqq_signal", _PEER_SIGNAL_VALUES)
+        or _legacy_signal("QQQ")
+    )
+    peer_alignment = (
+        _take_enum(peer_adjustment, "peer_alignment", _PEER_ALIGNMENT_VALUES)
+        or legacy_alignment
+    )
+    peer_adjustment_label = (
+        _take_enum(peer_adjustment, "peer_adjustment", _PEER_ADJUSTMENT_VALUES)
+        or legacy_peer_adjustment_label
+    )
+    adjusted_direction = (
+        _take_enum(peer_adjustment, "adjusted_direction", _DIRECTION_CN_VALUES)
+        or legacy_adjusted_direction
     )
 
-    adjusted_bias_en = peer_adjustment.get("adjusted_bias") or predict.get("final_bias")
+    self_reason = peer_adjustment.get("adjustment_reason")
+    adjustment_reason = self_reason if isinstance(self_reason, str) else legacy_reason
+
+    self_symbols = peer_adjustment.get("peer_symbols")
+    peer_symbols = (
+        list(self_symbols) if isinstance(self_symbols, list) and self_symbols
+        else ["NVDA", "SOXX", "QQQ"]
+    )
 
     return {
-        "peer_symbols": ["NVDA", "SOXX", "QQQ"],
+        "peer_symbols": peer_symbols,
         "nvda_signal": nvda_signal,
         "soxx_signal": soxx_signal,
         "qqq_signal": qqq_signal,
         "peer_alignment": peer_alignment,
         "peer_adjustment": peer_adjustment_label,
-        "adjusted_direction": _bias_to_cn(adjusted_bias_en),
-        "adjustment_reason": str(peer_adjustment.get("notes") or ""),
+        "adjusted_direction": adjusted_direction,
+        "adjustment_reason": adjustment_reason,
     }
 
 
