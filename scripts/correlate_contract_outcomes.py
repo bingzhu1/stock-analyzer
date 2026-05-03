@@ -8,6 +8,8 @@ Usage:
     python3 scripts/correlate_contract_outcomes.py
     python3 scripts/correlate_contract_outcomes.py --limit 100
     python3 scripts/correlate_contract_outcomes.py --db /path/to/avgo_agent.db
+    python3 scripts/correlate_contract_outcomes.py --symbol ALL
+    python3 scripts/correlate_contract_outcomes.py --symbol NVDA
 """
 from __future__ import annotations
 
@@ -38,9 +40,16 @@ def main() -> int:
         default=30,
         help="Number of most-recent predictions to scan (default: 30; non-positive falls back to 30).",
     )
+    parser.add_argument(
+        "--symbol",
+        default="AVGO",
+        help='Symbol filter: "AVGO" (default), "ALL" for no filter, or any ticker. Case-insensitive; empty string falls back to "AVGO".',
+    )
     args = parser.parse_args()
 
-    result = correlate_outcomes_with_contract(db_path=args.db, limit=args.limit)
+    result = correlate_outcomes_with_contract(
+        db_path=args.db, limit=args.limit, symbol=args.symbol
+    )
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0
 

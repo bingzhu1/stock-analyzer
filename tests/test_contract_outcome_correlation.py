@@ -1,6 +1,8 @@
-"""Tests for services/contract_outcome_correlation.py (Step 1J)."""
+"""Tests for services/contract_outcome_correlation.py (Steps 1J + 1K)."""
 from __future__ import annotations
 
+import json
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -23,9 +25,10 @@ def _predict_result(
     pred_open: str = "高开",
     pred_path: str = "高开高走",
     pred_close: str = "收涨",
+    symbol: str = "AVGO",
 ) -> dict:
     return {
-        "symbol": "AVGO",
+        "symbol": symbol,
         "final_bias": bias,
         "final_confidence": confidence,
         "scan_bias": bias,
@@ -70,6 +73,7 @@ class CorrelationNoRecordsTests(_IsolatedStoreTestCase):
         self.assertEqual(result["status"], "no_records")
         self.assertEqual(result["predictions_scanned"], 0)
         self.assertEqual(result["requested_limit"], 30)
+        self.assertEqual(result["symbol_filter"], "AVGO")
 
 
 # ── 2. all invalid → no_valid_contracts ──────────────────────────────────────
@@ -420,6 +424,173 @@ class CorrelationGroupPathsContractTests(unittest.TestCase):
             },
         )
         self.assertEqual(len(GROUP_PATHS), 3)
+
+
+# ── 1K. symbol filter ────────────────────────────────────────────────────────
+
+class CorrelationSymbolFilterTests(_IsolatedStoreTestCase):
+    """Step 1K: read-only symbol filter on top of the existing correlation."""
+
+    def _seed_mixed(self) -> None:
+        # 3 AVGO + 2 NVDA, all valid contracts, all bullish/correct so the
+        # bullish bucket is easy to count.
+        for _ in range(3):
+            pid = ps.save_prediction(
+                "AVGO", "2026-04-11", None, None,
+                _predict_result(symbol="AVGO"),
+            )
+            _save_outcome(pid, 1)
+        for _ in range(2):
+            pid = ps.save_prediction(
+                "NVDA", "2026-04-11", None, None,
+                _predict_result(symbol="NVDA"),
+            )
+            _save_outcome(pid, 1)
+
+    def test_default_symbol_filter_is_avgo(self) -> None:
+        self._seed_mixed()
+        result = correlate_outcomes_with_contract()
+        self.assertEqual(result["symbol_filter"], "AVGO")
+        self.assertEqual(result["predictions_scanned"], 3)
+        bullish = result["group_accuracy"]["final_projection.final_direction"]["偏多"]
+        self.assertEqual(bullish["samples"], 3)
+
+    def test_symbol_all_includes_every_symbol(self) -> None:
+        self._seed_mixed()
+        result = correlate_outcomes_with_contract(symbol="ALL")
+        self.assertEqual(result["symbol_filter"], "ALL")
+        self.assertEqual(result["predictions_scanned"], 5)
+        bullish = result["group_accuracy"]["final_projection.final_direction"]["偏多"]
+        self.assertEqual(bullish["samples"], 5)
+
+    def test_symbol_none_is_treated_as_all(self) -> None:
+        self._seed_mixed()
+        result = correlate_outcomes_with_contract(symbol=None)
+        self.assertEqual(result["symbol_filter"], "ALL")
+        self.assertEqual(result["predictions_scanned"], 5)
+
+    def test_empty_symbol_falls_back_to_avgo(self) -> None:
+        self._seed_mixed()
+        result = correlate_outcomes_with_contract(symbol="")
+        self.assertEqual(result["symbol_filter"], "AVGO")
+        self.assertEqual(result["predictions_scanned"], 3)
+
+    def test_whitespace_only_symbol_falls_back_to_avgo(self) -> None:
+        self._seed_mixed()
+        result = correlate_outcomes_with_contract(symbol="   ")
+        self.assertEqual(result["symbol_filter"], "AVGO")
+        self.assertEqual(result["predictions_scanned"], 3)
+
+    def test_lowercase_symbol_is_normalized(self) -> None:
+        self._seed_mixed()
+        result = correlate_outcomes_with_contract(symbol="avgo")
+        self.assertEqual(result["symbol_filter"], "AVGO")
+        self.assertEqual(result["predictions_scanned"], 3)
+
+    def test_symbol_strip_and_uppercase(self) -> None:
+        self._seed_mixed()
+        result = correlate_outcomes_with_contract(symbol="  nvda  ")
+        self.assertEqual(result["symbol_filter"], "NVDA")
+        self.assertEqual(result["predictions_scanned"], 2)
+
+    def test_non_avgo_symbol_only_counts_that_symbol(self) -> None:
+        self._seed_mixed()
+        result = correlate_outcomes_with_contract(symbol="NVDA")
+        self.assertEqual(result["symbol_filter"], "NVDA")
+        self.assertEqual(result["predictions_scanned"], 2)
+        bullish = result["group_accuracy"]["final_projection.final_direction"]["偏多"]
+        self.assertEqual(bullish["samples"], 2)
+        self.assertEqual(bullish["correct"], 2)
+
+    def test_unknown_symbol_yields_no_records(self) -> None:
+        self._seed_mixed()
+        result = correlate_outcomes_with_contract(symbol="TSLA")
+        self.assertEqual(result["status"], "no_records")
+        self.assertEqual(result["symbol_filter"], "TSLA")
+        self.assertEqual(result["predictions_scanned"], 0)
+
+    def test_symbol_filter_does_not_affect_skipped_records_logic(self) -> None:
+        # AVGO row with no contract + AVGO row with valid contract +
+        # NVDA row with no contract + NVDA row with valid contract.
+        ps.save_prediction(
+            "AVGO", "2026-04-11", None, None,
+            _predict_result(symbol="AVGO"), contract_payload=None,
+        )
+        ps.save_prediction(
+            "AVGO", "2026-04-11", None, None,
+            _predict_result(symbol="AVGO"),
+        )
+        ps.save_prediction(
+            "NVDA", "2026-04-11", None, None,
+            _predict_result(symbol="NVDA"), contract_payload=None,
+        )
+        ps.save_prediction(
+            "NVDA", "2026-04-11", None, None,
+            _predict_result(symbol="NVDA"),
+        )
+
+        avgo = correlate_outcomes_with_contract(symbol="AVGO")
+        self.assertEqual(avgo["predictions_scanned"], 2)
+        self.assertEqual(avgo["valid_contracts"], 1)
+        self.assertEqual(avgo["invalid_contracts"], 1)
+        self.assertEqual(
+            [s["reason"] for s in avgo["skipped_records"]],
+            ["missing_contract_payload"],
+        )
+
+        nvda = correlate_outcomes_with_contract(symbol="NVDA")
+        self.assertEqual(nvda["predictions_scanned"], 2)
+        self.assertEqual(nvda["valid_contracts"], 1)
+        self.assertEqual(nvda["invalid_contracts"], 1)
+        self.assertEqual(
+            [s["reason"] for s in nvda["skipped_records"]],
+            ["missing_contract_payload"],
+        )
+
+        all_ = correlate_outcomes_with_contract(symbol="ALL")
+        self.assertEqual(all_["predictions_scanned"], 4)
+        self.assertEqual(all_["valid_contracts"], 2)
+        self.assertEqual(all_["invalid_contracts"], 2)
+
+
+# ── 1K. script CLI passes --symbol through ──────────────────────────────────
+
+class CorrelateScriptSymbolArgTests(_IsolatedStoreTestCase):
+    def _run(self, *extra: str) -> dict:
+        script = ROOT / "scripts" / "correlate_contract_outcomes.py"
+        proc = subprocess.run(
+            [sys.executable, str(script), "--db", str(ps.DB_PATH), *extra],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return json.loads(proc.stdout)
+
+    def test_script_default_symbol_is_avgo(self) -> None:
+        for _ in range(2):
+            ps.save_prediction(
+                "AVGO", "2026-04-11", None, None, _predict_result(symbol="AVGO")
+            )
+            ps.save_prediction(
+                "NVDA", "2026-04-11", None, None, _predict_result(symbol="NVDA")
+            )
+        result = self._run()
+        self.assertEqual(result["symbol_filter"], "AVGO")
+        self.assertEqual(result["predictions_scanned"], 2)
+
+    def test_script_accepts_symbol_all(self) -> None:
+        ps.save_prediction("AVGO", "2026-04-11", None, None, _predict_result(symbol="AVGO"))
+        ps.save_prediction("NVDA", "2026-04-11", None, None, _predict_result(symbol="NVDA"))
+        result = self._run("--symbol", "ALL")
+        self.assertEqual(result["symbol_filter"], "ALL")
+        self.assertEqual(result["predictions_scanned"], 2)
+
+    def test_script_accepts_explicit_symbol(self) -> None:
+        ps.save_prediction("AVGO", "2026-04-11", None, None, _predict_result(symbol="AVGO"))
+        ps.save_prediction("NVDA", "2026-04-11", None, None, _predict_result(symbol="NVDA"))
+        result = self._run("--symbol", "nvda")
+        self.assertEqual(result["symbol_filter"], "NVDA")
+        self.assertEqual(result["predictions_scanned"], 1)
 
 
 if __name__ == "__main__":

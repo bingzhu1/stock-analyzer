@@ -12,11 +12,20 @@ This is a verification tool, not a UI feature:
 - never logs
 
 Public API:
-    correlate_outcomes_with_contract(db_path=None, limit=30) -> dict
+    correlate_outcomes_with_contract(
+        db_path=None, limit=30, symbol="AVGO"
+    ) -> dict
+
+Symbol filter (canonicalized to ``symbol_filter`` in the result):
+    "AVGO"  — only ``prediction_log.symbol == 'AVGO'`` (default)
+    "ALL"   — no symbol filter
+    None    — treated as "ALL"
+    ""      — treated as "AVGO" (default fallback)
+    other   — stripped + uppercased and used as a literal symbol filter
 
 Status values:
     "ok"                   — at least one valid contract; group_accuracy populated
-    "no_records"           — prediction_log empty
+    "no_records"           — prediction_log empty (under the symbol filter)
     "no_valid_contracts"   — every scanned prediction was skipped (no contract /
                              invalid JSON / failed validation)
     "error"                — unexpected internal failure (e.g. DB unreadable)
@@ -65,17 +74,32 @@ def _resolve_limit(limit: Any) -> int:
     return limit
 
 
-def _fetch_recent_with_outcome(db_path: Path, limit: int) -> list[dict[str, Any]]:
+def _resolve_symbol(symbol: Any) -> str:
+    """Coerce caller-provided symbol to the canonical filter value.
+
+    Returns "ALL" to mean "no filter", or an upper-cased ticker to filter by.
+    """
+    if symbol is None:
+        return "ALL"
+    if not isinstance(symbol, str):
+        return "AVGO"
+    stripped = symbol.strip().upper()
+    if not stripped:
+        return "AVGO"
+    return stripped
+
+
+def _fetch_recent_with_outcome(
+    db_path: Path, limit: int, symbol_filter: str
+) -> list[dict[str, Any]]:
     """Read-only fetch of the most recent N predictions + their latest outcome.
 
     The outcome is selected via a correlated subquery so each prediction
     appears at most once even when multiple outcome rows exist for it.
+    When ``symbol_filter`` is ``"ALL"`` the symbol predicate is omitted.
     """
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
-    try:
-        rows = conn.execute(
-            """
+    if symbol_filter == "ALL":
+        sql = """
             SELECT p.id           AS id,
                    p.contract_payload_json AS contract_payload_json,
                    (SELECT o.direction_correct
@@ -86,9 +110,28 @@ def _fetch_recent_with_outcome(db_path: Path, limit: int) -> list[dict[str, Any]
               FROM prediction_log p
              ORDER BY p.created_at DESC, p.rowid DESC
              LIMIT ?
-            """,
-            (limit,),
-        ).fetchall()
+        """
+        params: tuple[Any, ...] = (limit,)
+    else:
+        sql = """
+            SELECT p.id           AS id,
+                   p.contract_payload_json AS contract_payload_json,
+                   (SELECT o.direction_correct
+                      FROM outcome_log o
+                     WHERE o.prediction_id = p.id
+                     ORDER BY o.captured_at DESC, o.rowid DESC
+                     LIMIT 1) AS direction_correct
+              FROM prediction_log p
+             WHERE p.symbol = ?
+             ORDER BY p.created_at DESC, p.rowid DESC
+             LIMIT ?
+        """
+        params = (symbol_filter, limit)
+
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute(sql, params).fetchall()
     finally:
         conn.close()
     return [dict(r) for r in rows]
@@ -163,6 +206,7 @@ def _group_by_field(
 def correlate_outcomes_with_contract(
     db_path: str | Path | None = None,
     limit: int = _DEFAULT_LIMIT,
+    symbol: str | None = "AVGO",
 ) -> dict[str, Any]:
     """Correlate contract field values with their captured outcomes.
 
@@ -170,17 +214,23 @@ def correlate_outcomes_with_contract(
     """
     db = _resolve_db_path(db_path)
     requested_limit = _resolve_limit(limit)
+    symbol_filter = _resolve_symbol(symbol)
 
     try:
-        rows = _fetch_recent_with_outcome(db, requested_limit)
+        rows = _fetch_recent_with_outcome(db, requested_limit, symbol_filter)
     except Exception as exc:
-        return {"status": "error", "error": f"db_read_failed: {exc}"}
+        return {
+            "status": "error",
+            "error": f"db_read_failed: {exc}",
+            "symbol_filter": symbol_filter,
+        }
 
     if not rows:
         return {
             "status": "no_records",
             "requested_limit": requested_limit,
             "predictions_scanned": 0,
+            "symbol_filter": symbol_filter,
         }
 
     valid: list[tuple[dict, Any]] = []
@@ -204,6 +254,7 @@ def correlate_outcomes_with_contract(
         "paired_outcomes": paired,
         "pending_outcomes": pending,
         "skipped_records": skipped,
+        "symbol_filter": symbol_filter,
     }
 
     if not valid:
