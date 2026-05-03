@@ -1093,5 +1093,381 @@ class WriterHardCapAndPandasHygieneTests(unittest.TestCase):
         self.assertNotIn("from pandas", source)
 
 
+# ── 16. Step 2F-4d-2-prereq-1: duplicate guard ───────────────────────────
+
+
+class SnapshotIdExistsHelperTests(unittest.TestCase):
+    """Direct unit tests for ``_snapshot_id_exists`` — the read-only
+    SELECT-by-snapshot_id helper that gates the duplicate guard."""
+
+    def test_returns_false_when_table_missing(self) -> None:
+        # Fresh tmp DB file (created on connect, but no init_db) has no
+        # prediction_log table — helper must swallow OperationalError.
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "fresh.db"
+            self.assertFalse(
+                crw._snapshot_id_exists("replay_AVGO_2024-01-29", db_path)
+            )
+
+    def test_returns_false_when_snapshot_id_not_in_table(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "init.db"
+            saved = ps.DB_PATH
+            ps.DB_PATH = db_path
+            try:
+                ps.init_db()
+            finally:
+                ps.DB_PATH = saved
+            self.assertFalse(
+                crw._snapshot_id_exists("replay_AVGO_2024-01-29", db_path)
+            )
+
+    def test_returns_true_when_snapshot_id_exists(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "seeded.db"
+            saved = ps.DB_PATH
+            ps.DB_PATH = db_path
+            try:
+                ps.init_db()
+                # Seed via save_prediction so we go through the same
+                # column shape the writer would later use.
+                ps.save_prediction(
+                    symbol="AVGO",
+                    prediction_for_date="2024-01-30",
+                    scan_result={"symbol": "AVGO"},
+                    research_result=None,
+                    predict_result={"final_bias": "neutral"},
+                    snapshot_id="replay_AVGO_2024-01-29",
+                    contract_payload=None,
+                )
+            finally:
+                ps.DB_PATH = saved
+            self.assertTrue(
+                crw._snapshot_id_exists("replay_AVGO_2024-01-29", db_path)
+            )
+
+    def test_falls_back_to_ps_db_path_when_arg_is_none(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "default.db"
+            saved = ps.DB_PATH
+            ps.DB_PATH = db_path
+            try:
+                ps.init_db()
+                ps.save_prediction(
+                    symbol="AVGO",
+                    prediction_for_date="2024-01-30",
+                    scan_result={"symbol": "AVGO"},
+                    research_result=None,
+                    predict_result={"final_bias": "neutral"},
+                    snapshot_id="replay_AVGO_2024-01-29",
+                    contract_payload=None,
+                )
+                # No db_path arg → uses ps.DB_PATH (currently the seeded one).
+                self.assertTrue(
+                    crw._snapshot_id_exists("replay_AVGO_2024-01-29")
+                )
+                self.assertFalse(
+                    crw._snapshot_id_exists("replay_AVGO_2099-01-01")
+                )
+            finally:
+                ps.DB_PATH = saved
+
+
+class WriterDuplicateGuardSkipsTests(_IsolatedDB):
+    """When a candidate pair's snapshot_id already exists, the writer
+    must NOT call run_predict / save_prediction / save_outcome for that
+    pair, and the pair appears in skipped_pairs with the documented reason."""
+
+    def _seed(self, n_days: int = 35) -> None:
+        _write_realistic_csv(
+            self._tmp_path, "AVGO", n_days=n_days, bias_up=True,
+        )
+
+    def _preinsert(self, snapshot_id: str) -> None:
+        ps.save_prediction(
+            symbol="AVGO",
+            prediction_for_date="2024-01-30",
+            scan_result={"symbol": "AVGO"},
+            research_result=None,
+            predict_result={"final_bias": "neutral"},
+            snapshot_id=snapshot_id,
+            contract_payload=None,
+        )
+
+    def test_existing_snapshot_lands_in_skipped_pairs(self) -> None:
+        self._seed()
+        self._preinsert("replay_AVGO_2024-01-29")
+        result = run_contract_replay(
+            coded_data_dir=self._tmp_path,
+            start_date="2024-01-29",
+            dry_run=False,
+            limit=3,
+        )
+        skips = [
+            s for s in result["skipped_pairs"]
+            if s["reason"] == "snapshot_id_already_exists"
+        ]
+        self.assertEqual(len(skips), 1)
+        self.assertEqual(skips[0]["snapshot_id"], "replay_AVGO_2024-01-29")
+        self.assertEqual(skips[0]["as_of_date"], "2024-01-29")
+        # No prediction_id field on a duplicate-skip pair.
+        self.assertNotIn("prediction_id", skips[0])
+
+    def test_existing_snapshot_does_not_call_run_predict(self) -> None:
+        self._seed()
+        self._preinsert("replay_AVGO_2024-01-29")
+        # Patch run_predict to count invocations during a 1-pair batch.
+        with patch(
+            "services.contract_replay_writer.run_predict"
+        ) as m_predict:
+            run_contract_replay(
+                coded_data_dir=self._tmp_path,
+                start_date="2024-01-29",
+                dry_run=False,
+                limit=1,  # only the duplicate pair
+            )
+        self.assertEqual(m_predict.call_count, 0)
+
+    def test_existing_snapshot_does_not_call_save_prediction(self) -> None:
+        self._seed()
+        self._preinsert("replay_AVGO_2024-01-29")
+        with patch(
+            "services.contract_replay_writer.save_prediction"
+        ) as m_save:
+            run_contract_replay(
+                coded_data_dir=self._tmp_path,
+                start_date="2024-01-29",
+                dry_run=False,
+                limit=1,
+            )
+        self.assertEqual(m_save.call_count, 0)
+
+    def test_existing_snapshot_does_not_call_save_outcome(self) -> None:
+        self._seed()
+        self._preinsert("replay_AVGO_2024-01-29")
+        with patch(
+            "services.contract_replay_writer.save_outcome"
+        ) as m_save:
+            run_contract_replay(
+                coded_data_dir=self._tmp_path,
+                start_date="2024-01-29",
+                dry_run=False,
+                limit=1,
+            )
+        self.assertEqual(m_save.call_count, 0)
+
+    def test_no_prediction_row_added_when_all_duplicates(self) -> None:
+        self._seed()
+        # Pre-seed the FIRST writable pair only.
+        self._preinsert("replay_AVGO_2024-01-29")
+        with ps._get_conn() as conn:
+            before = conn.execute(
+                "SELECT COUNT(*) FROM prediction_log"
+            ).fetchone()[0]
+        result = run_contract_replay(
+            coded_data_dir=self._tmp_path,
+            start_date="2024-01-29",
+            dry_run=False,
+            limit=1,
+        )
+        with ps._get_conn() as conn:
+            after = conn.execute(
+                "SELECT COUNT(*) FROM prediction_log"
+            ).fetchone()[0]
+        self.assertEqual(after - before, 0)
+        self.assertEqual(result["written_prediction_count"], 0)
+        self.assertEqual(result["written_outcome_count"], 0)
+
+
+class WriterDuplicateGuardNonDuplicatePathTests(_IsolatedDB):
+    """When no snapshot_id pre-exists, the duplicate guard must not
+    block the normal write path."""
+
+    def test_clean_db_writes_normally(self) -> None:
+        _write_realistic_csv(
+            self._tmp_path, "AVGO", n_days=35, bias_up=True,
+        )
+        result = run_contract_replay(
+            coded_data_dir=self._tmp_path,
+            start_date="2024-01-29",
+            dry_run=False,
+            limit=3,
+        )
+        self.assertGreaterEqual(result["written_prediction_count"], 1)
+        # No duplicate-skip reason should appear.
+        dup = [
+            s for s in result["skipped_pairs"]
+            if s["reason"] == "snapshot_id_already_exists"
+        ]
+        self.assertEqual(dup, [])
+
+
+class WriterDuplicateGuardPartialMixTests(_IsolatedDB):
+    """Some pre-existing snapshot_ids + some new pairs → status=partial,
+    duplicates skipped, fresh pairs written."""
+
+    def test_partial_status_when_some_dup_some_write(self) -> None:
+        _write_realistic_csv(
+            self._tmp_path, "AVGO", n_days=35, bias_up=True,
+        )
+        # Pre-seed only the first writable pair.
+        ps.save_prediction(
+            symbol="AVGO",
+            prediction_for_date="2024-01-30",
+            scan_result={"symbol": "AVGO"},
+            research_result=None,
+            predict_result={"final_bias": "neutral"},
+            snapshot_id="replay_AVGO_2024-01-29",
+            contract_payload=None,
+        )
+        result = run_contract_replay(
+            coded_data_dir=self._tmp_path,
+            start_date="2024-01-29",
+            dry_run=False,
+            limit=3,
+        )
+        # Expect: 1 dup skip, 2 written.
+        dup_skips = [
+            s for s in result["skipped_pairs"]
+            if s["reason"] == "snapshot_id_already_exists"
+        ]
+        self.assertEqual(len(dup_skips), 1)
+        self.assertEqual(result["written_prediction_count"], 2)
+        self.assertEqual(result["status"], "partial")
+
+
+class WriterDuplicateGuardDryRunIsReadOnlyTests(_IsolatedDB):
+    """``dry_run=True`` must not invoke the duplicate guard — the
+    dry-run path stays purely planner-driven, never touches the DB."""
+
+    def test_dry_run_does_not_call_snapshot_id_exists(self) -> None:
+        _write_realistic_csv(
+            self._tmp_path, "AVGO", n_days=35, bias_up=True,
+        )
+        with patch(
+            "services.contract_replay_writer._snapshot_id_exists"
+        ) as m_exists:
+            run_contract_replay(
+                coded_data_dir=self._tmp_path,
+                start_date="2024-01-29",
+                dry_run=True,
+                limit=3,
+            )
+        self.assertEqual(m_exists.call_count, 0)
+
+
+class WriterDuplicateGuardExplicitDbPathTests(unittest.TestCase):
+    """When ``db_path`` is provided, the duplicate guard must read from
+    THAT DB — not from ``ps.DB_PATH`` (which may be unrelated)."""
+
+    def test_duplicate_check_routes_to_explicit_db_path(self) -> None:
+        with tempfile.TemporaryDirectory() as csv_dir, \
+             tempfile.TemporaryDirectory() as db_dir, \
+             tempfile.TemporaryDirectory() as alt_dir:
+            csv_path = Path(csv_dir)
+            db_path = Path(db_dir) / "writer.db"
+            alt_path = Path(alt_dir) / "default.db"
+
+            _write_realistic_csv(csv_path, "AVGO", n_days=35, bias_up=True)
+
+            old_default = ps.DB_PATH
+            try:
+                # Init both DBs so they have prediction_log schema.
+                ps.DB_PATH = alt_path
+                ps.init_db()
+
+                ps.DB_PATH = db_path
+                ps.init_db()
+                # Pre-seed a duplicate ONLY in the explicit db_path DB.
+                ps.save_prediction(
+                    symbol="AVGO",
+                    prediction_for_date="2024-01-30",
+                    scan_result={"symbol": "AVGO"},
+                    research_result=None,
+                    predict_result={"final_bias": "neutral"},
+                    snapshot_id="replay_AVGO_2024-01-29",
+                    contract_payload=None,
+                )
+
+                # Switch ps.DB_PATH to the alt (clean) DB, then call
+                # run_contract_replay with explicit db_path=writer DB.
+                ps.DB_PATH = alt_path
+
+                result = run_contract_replay(
+                    coded_data_dir=csv_path,
+                    start_date="2024-01-29",
+                    dry_run=False,
+                    limit=1,
+                    db_path=db_path,
+                )
+                # Duplicate seeded in db_path; alt is clean. The guard
+                # must consult db_path (not alt) and skip the pair.
+                dup_skips = [
+                    s for s in result["skipped_pairs"]
+                    if s["reason"] == "snapshot_id_already_exists"
+                ]
+                self.assertEqual(len(dup_skips), 1)
+                self.assertEqual(result["written_prediction_count"], 0)
+
+                # alt DB must remain empty (no leakage).
+                ps.DB_PATH = alt_path
+                with ps._get_conn() as conn:
+                    n_alt = conn.execute(
+                        "SELECT COUNT(*) FROM prediction_log"
+                    ).fetchone()[0]
+                self.assertEqual(n_alt, 0)
+            finally:
+                ps.DB_PATH = old_default
+
+
+class WriterDuplicateGuardCliTests(_IsolatedDB):
+    """CLI smoke: ``--write`` against a DB with a pre-existing snapshot
+    must report the duplicate as skipped via stdout JSON."""
+
+    def test_cli_write_reports_duplicate_skip(self) -> None:
+        with tempfile.TemporaryDirectory() as csv_dir, \
+             tempfile.TemporaryDirectory() as db_dir:
+            csv_path = Path(csv_dir)
+            db_path = Path(db_dir) / "cli_dup.db"
+            _write_realistic_csv(csv_path, "AVGO", n_days=35, bias_up=True)
+
+            saved = ps.DB_PATH
+            ps.DB_PATH = db_path
+            try:
+                ps.init_db()
+                ps.save_prediction(
+                    symbol="AVGO",
+                    prediction_for_date="2024-01-30",
+                    scan_result={"symbol": "AVGO"},
+                    research_result=None,
+                    predict_result={"final_bias": "neutral"},
+                    snapshot_id="replay_AVGO_2024-01-29",
+                    contract_payload=None,
+                )
+            finally:
+                ps.DB_PATH = saved
+
+            script = ROOT / "scripts" / "run_contract_replay.py"
+            proc = subprocess.run(
+                [sys.executable, str(script),
+                 "--coded-data-dir", str(csv_path),
+                 "--db", str(db_path),
+                 "--start", "2024-01-29",
+                 "--limit", "1",
+                 "--write"],
+                capture_output=True, text=True, check=True,
+            )
+            result = json.loads(proc.stdout)
+            self.assertIs(result["dry_run"], False)
+            dup_skips = [
+                s for s in result["skipped_pairs"]
+                if s["reason"] == "snapshot_id_already_exists"
+            ]
+            self.assertEqual(len(dup_skips), 1)
+            self.assertEqual(result["written_prediction_count"], 0)
+            # All-skip case → status=partial (writer's existing rule).
+            self.assertEqual(result["status"], "partial")
+
+
 if __name__ == "__main__":
     unittest.main()

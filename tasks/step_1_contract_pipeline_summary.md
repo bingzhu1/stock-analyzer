@@ -938,3 +938,93 @@ writer 的 `dry_run=True` 路径在 [services/contract_replay_writer.py](../serv
 | 4d 90-pair 解锁 calibration_ready | 4c-3 落地 + 30 条重写之后 |
 
 测试基线：**2171 → 2213**（+42 个新 case：`ClassifyRelativeStrengthTests` 6 / `ComputeNDayReturnAtTests` 7 / `ComputeSameDayMoveAtTests` 7 / `ComputeRelativeStrengthSummaryAtTests` 8 / `BuildHistoricalScanWithPeerCutoffTests` 3 / `WriterDryRunDoesNotReadPeerCsvTests` 1 / `WriterRealWriteWithPeerCsvTests` 6 / `WriterMissingPeerCsvDegradesTests` 2 / `WriterHardCapAndPandasHygieneTests` 2）。0 failed；10 skipped 不变。
+
+## 22. Replay duplicate guard（Step 2F-4d-2-prereq-1）
+
+> 4d 系列的第一个 prereq：在 writer 调 `run_predict` / `save_prediction` / `save_outcome` 之前，对每个候选 pair SELECT 检查 `prediction_log.snapshot_id = "replay_<SYMBOL>_<D>"`，命中即跳过，不写不算。**只改 writer + tests，不改 schema，不加 UNIQUE index，不提高 `_LIMIT_HARD_CAP`（仍为 30）。**
+
+### 22.1 动机
+
+Step 2F-4d-1 dry-run planning 发现：
+- `prediction_log.snapshot_id` 是普通 TEXT，**没有 UNIQUE 约束**；
+- writer 当前**没有**任何 duplicate guard；
+- 重跑同一段 `(symbol, start, limit)` → 直接写入重复行（同 `snapshot_id`，不同 `prediction_log.id`），把 dashboard / calibration_inputs / correlation 的 `valid_payloads` / `paired_outcomes` / `confidence_level_summary` 全部污染。
+
+90/120-pair 扩量会显著放大该风险（多次重跑、参数微调、批次失败重试），所以扩量前必须先有 guard。
+
+### 22.2 实现摘要
+
+**新 helper**：[`services/contract_replay_writer.py:_snapshot_id_exists`](../services/contract_replay_writer.py)
+- 直接 `sqlite3.connect(db_path or _ps.DB_PATH)` → `SELECT 1 FROM prediction_log WHERE snapshot_id = ? LIMIT 1`；
+- 捕获 `sqlite3.OperationalError`（表不存在 → 返回 `False`，方便 fresh tmp DB 不强制先 `init_db`）；
+- 不调用 `init_db`，不写，不改 schema；
+- `db_path=None` 时回落到 `services.prediction_store.DB_PATH`，与 `save_prediction` / `save_outcome` 的 DB 解析一致。
+
+**guard 接入点**：`run_contract_replay` 的写入循环，在调用 `_write_one_pair` **之前**：
+
+```python
+for pair in candidate_pairs:
+    snapshot_id = f"replay_{effective_symbol}_{as_of_date}"
+    if _snapshot_id_exists(snapshot_id, db_path):
+        skipped_pairs.append({
+            "as_of_date": ...,
+            "prediction_for_date": ...,
+            "status": "skipped",
+            "reason": "snapshot_id_already_exists",
+            "snapshot_id": snapshot_id,
+        })
+        continue
+    result = _write_one_pair(...)
+```
+
+含义：duplicate pair 完全不进 `run_predict` / `save_prediction` / `save_outcome`，零计算、零写入。
+
+### 22.3 状态语义
+
+- 全部 pair 都 dup → 沿用 4c-2 的现有规则（`skipped_pairs` 非空 + `written_records` 空）→ `status="partial"`；
+- 部分 dup + 部分 write → `status="partial"`；
+- 0 dup → `status="ok"`（行为不变）；
+- `attempted_write_count` 仍等于 `len(written_records) + len(skipped_pairs)`；
+- `written_prediction_count` / `written_outcome_count` 都不算 dup pair。
+
+### 22.4 dry_run=True 不查 DB
+
+- guard 仅在 `dry_run=False` 路径里触发；
+- `dry_run=True` 完全不调 `_snapshot_id_exists`（测试 `WriterDryRunDoesNotReadPeerCsvTests` 之外新增 `WriterDuplicateGuardDryRunIsReadOnlyTests` 显式锁住该承诺）。
+
+### 22.5 db_path 路由
+
+- 写入循环包在 `_maybe_override_db_path(db_path)` 上下文里（`_ps.DB_PATH` 临时切换到 `db_path`）；
+- guard 显式接收 `db_path`，确保查的是**写要去的那个 DB**，不会因 `_ps.DB_PATH` 被另外 monkeypatch 而错读；
+- 测试 `WriterDuplicateGuardExplicitDbPathTests` 显式验证：当 `db_path` 与 `ps.DB_PATH` 不同（且 `db_path` 已含 dup、`ps.DB_PATH` 干净）时，guard 仍正确读 `db_path` 并 skip。
+
+### 22.6 边界事实
+
+- **不改 schema**：`prediction_log.snapshot_id` 仍是普通 TEXT，没加 UNIQUE index、没改列定义；
+- **不提 hard cap**：`_LIMIT_HARD_CAP = 30` 不变（4d-2-prereq-2 才会动它）；
+- **不动 `_write_one_pair`**：原来的"无 outcome 数据 → skipped: no_outcome_data" / "历史不足 → skipped: insufficient_history"两条 skip 路径完全不变；
+- **不改 `predict.py` / `scanner.py` / `prediction_store.py`**：4d 系列对 prediction core / DB 层零改动；
+- **不调 yfinance / 网络 / trading API**。
+
+### 22.7 测试增量
+
+| 测试类 | 用途 | case 数 |
+|---|---|---|
+| `SnapshotIdExistsHelperTests` | helper 单元：表缺失返 False / id 不存在返 False / id 存在返 True / `db_path=None` 回落 `_ps.DB_PATH` | 4 |
+| `WriterDuplicateGuardSkipsTests` | dup pair → 进 `skipped_pairs`、不调 `run_predict` / `save_prediction` / `save_outcome`、`prediction_log` 行数零增长 | 5 |
+| `WriterDuplicateGuardNonDuplicatePathTests` | clean DB → 正常写入路径不被 guard 误拦 | 1 |
+| `WriterDuplicateGuardPartialMixTests` | 1 dup + 2 fresh → `status="partial"`，duplicates 跳过、fresh 写入 | 1 |
+| `WriterDuplicateGuardDryRunIsReadOnlyTests` | `dry_run=True` 不调 `_snapshot_id_exists` | 1 |
+| `WriterDuplicateGuardExplicitDbPathTests` | guard 走 `db_path` 而非 `ps.DB_PATH` | 1 |
+| `WriterDuplicateGuardCliTests` | CLI `--write` 遇到 dup → stdout JSON 报告 `reason="snapshot_id_already_exists"`、`status="partial"`、`written=0` | 1 |
+
+测试基线：**2213 → 2227**（+14 个新 case）。0 failed；10 skipped 不变；写测时间增加 < 1 秒。
+
+### 22.8 与 Step 2F-4d 路线对接
+
+| 子步 | 主题 | 状态 |
+|---|---|---|
+| 4d-1 | 90-pair dry-run planning（只读，无代码） | ✅ |
+| **4d-2-prereq-1（本节）** | **writer duplicate guard** | **本轮** |
+| 4d-2-prereq-2 | `_LIMIT_HARD_CAP` 30 → 130 + 边界测试 | 待开 |
+| 4d-2 | 备份 → 130 dry-run → `--write 130` → 跑 calibration_inputs 验证 paired ≥ 90 | 4d-2-prereq-2 之后 |

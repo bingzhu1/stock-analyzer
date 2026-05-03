@@ -21,6 +21,21 @@ loaded once per batch in ``run_contract_replay`` (``dry_run=False``
 only); missing peers degrade to ``unavailable`` without affecting other
 peers.
 
+Step 2F-4d-2-prereq-1: duplicate guard. Before invoking ``run_predict``
+/ ``save_prediction`` / ``save_outcome`` for a pair, the writer
+SELECT-checks ``prediction_log.snapshot_id = "replay_<SYMBOL>_<D>"``;
+if such a row already exists, the pair is appended to ``skipped_pairs``
+with ``reason="snapshot_id_already_exists"`` and no compute / no write
+is performed for it. Idempotent re-runs are now safe: rerunning the
+same ``(symbol, start, limit)`` against a DB that already has those
+replays will skip every pair without writing duplicates. The check
+queries the same DB the writes target (``db_path`` arg, falling back to
+``services.prediction_store.DB_PATH``); when the ``prediction_log``
+table does not exist (fresh tmp DB), the helper returns False so first
+runs work without an extra ``init_db`` step. ``dry_run=True`` does NOT
+invoke the duplicate check (no DB read at all on the dry-run path).
+The DB schema is unchanged — no UNIQUE index added.
+
 Anti-lookahead: every pair reads ``<= D`` data for the scan and reads
 the ``D+1`` row only for the outcome (never feeds the outcome back into
 the projection step). Peer cutoff helpers locate target rows by
@@ -55,6 +70,7 @@ Status values:
 from __future__ import annotations
 
 import csv
+import sqlite3
 from contextlib import contextmanager
 from datetime import date as _date
 from pathlib import Path
@@ -374,6 +390,34 @@ def _read_outcome_row(
     }
 
 
+def _snapshot_id_exists(
+    snapshot_id: str, db_path: str | Path | None = None
+) -> bool:
+    """Step 2F-4d-2-prereq-1 duplicate guard. Read-only existence check.
+
+    Returns True when ``prediction_log.snapshot_id = ?`` matches at least
+    one row. ``db_path`` selects the DB to read; when None, falls back to
+    ``services.prediction_store.DB_PATH`` (so callers inside
+    ``_maybe_override_db_path`` see the override). The
+    ``prediction_log`` table missing returns False rather than raising —
+    fresh tmp DBs without ``init_db`` are treated as "no rows yet".
+    Never writes; never calls ``init_db``.
+    """
+    target = Path(db_path) if db_path is not None else Path(_ps.DB_PATH)
+    try:
+        conn = sqlite3.connect(str(target))
+        try:
+            row = conn.execute(
+                "SELECT 1 FROM prediction_log WHERE snapshot_id = ? LIMIT 1",
+                (snapshot_id,),
+            ).fetchone()
+        finally:
+            conn.close()
+    except sqlite3.OperationalError:
+        return False
+    return row is not None
+
+
 @contextmanager
 def _maybe_override_db_path(db_path: str | Path | None) -> Iterator[None]:
     """Optionally override ``services.prediction_store.DB_PATH`` for the
@@ -570,13 +614,32 @@ def run_contract_replay(
     written_records: list[dict[str, Any]] = []
     skipped_pairs: list[dict[str, Any]] = []
 
+    effective_symbol = planner_result.get("symbol", symbol)
     with _maybe_override_db_path(db_path):
         for pair in candidate_pairs:
+            as_of_date = pair["as_of_date"]
+            prediction_for_date = pair["prediction_for_date"]
+            snapshot_id = f"replay_{effective_symbol}_{as_of_date}"
+
+            # Step 2F-4d-2-prereq-1 duplicate guard: skip pairs whose
+            # snapshot_id already exists in prediction_log. The check
+            # runs before run_predict / save_prediction / save_outcome
+            # so duplicates incur no compute and no write.
+            if _snapshot_id_exists(snapshot_id, db_path):
+                skipped_pairs.append({
+                    "as_of_date": as_of_date,
+                    "prediction_for_date": prediction_for_date,
+                    "status": "skipped",
+                    "reason": "snapshot_id_already_exists",
+                    "snapshot_id": snapshot_id,
+                })
+                continue
+
             try:
                 result = _write_one_pair(
-                    symbol=planner_result.get("symbol", symbol),
-                    as_of_date=pair["as_of_date"],
-                    prediction_for_date=pair["prediction_for_date"],
+                    symbol=effective_symbol,
+                    as_of_date=as_of_date,
+                    prediction_for_date=prediction_for_date,
                     ohlcv=ohlcv,
                     peer_rows_map=peer_rows_map,
                 )
@@ -634,5 +697,9 @@ def run_contract_replay(
             "peer cutoff: NVDA / SOXX / QQQ relative-strength computed "
             "with Date <= D from coded_data; missing peers degrade to "
             "'unavailable'",
+            "duplicate guard: pairs whose snapshot_id already exists in "
+            "prediction_log are skipped with reason="
+            "'snapshot_id_already_exists' (no run_predict / save_prediction "
+            "/ save_outcome invoked)",
         ],
     }
