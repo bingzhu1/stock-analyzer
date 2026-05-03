@@ -10,9 +10,21 @@ one ``outcome_log`` row per pair via ``save_prediction(...,
 analysis_date_override=D)`` + ``save_outcome(...,
 captured_at_override=D+1T16:00:00)``.
 
+Step 2F-4c-3: peer historical cutoff. The historical scan now embeds
+``relative_strength_summary`` and ``relative_strength_same_day_summary``
+computed from ``coded_data/<PEER>_coded.csv`` (NVDA / SOXX / QQQ) with
+``Date <= D``. The 0.5 pp margin and four-state classifier
+(``stronger`` / ``weaker`` / ``neutral`` / ``unavailable``) mirror
+``scanner._classify_rs`` exactly. ``predict.apply_peer_adjustment`` is
+unchanged; only the scan it consumes is now peer-aware. Peer CSVs are
+loaded once per batch in ``run_contract_replay`` (``dry_run=False``
+only); missing peers degrade to ``unavailable`` without affecting other
+peers.
+
 Anti-lookahead: every pair reads ``<= D`` data for the scan and reads
 the ``D+1`` row only for the outcome (never feeds the outcome back into
-the projection step).
+the projection step). Peer cutoff helpers locate target rows by
+``Date == D`` and only read ``idx - n`` (always ≤ target idx).
 
 Half-pair safety: outcome data is read **before** ``run_predict`` /
 ``save_prediction``. If the outcome row is missing or unparseable, the
@@ -62,6 +74,12 @@ _DEFAULT_LIMIT = 30
 # 2F-4d (90-pair replay) to land first.
 _LIMIT_HARD_CAP = 30
 _MIN_HISTORY_ROWS = 20  # primary projection's recent_20 window
+
+# Peer cutoff (Step 2F-4c-3). Peer set + classifier margin mirror scanner.py
+# (PEER_SYMBOLS = ["NVDA", "SOXX", "QQQ"], _RS_MARGIN = 0.005 ratio = 0.5 pp).
+_PEER_SYMBOLS: tuple[str, ...] = ("NVDA", "SOXX", "QQQ")
+_RS_MARGIN_PP: float = 0.5
+_NDAY_RETURN_WINDOW: int = 5
 
 
 def _resolve_writer_limit(limit: Any) -> int:
@@ -125,8 +143,141 @@ def _to_int(value: Any) -> int | None:
     return int(f) if f is not None else None
 
 
+def _read_peer_ohlcv(
+    symbol: str, coded_data_dir: str | Path | None
+) -> list[dict[str, Any]] | None:
+    """Read a peer-symbol coded CSV for relative-strength cutoff.
+
+    Same shape and failure-mode contract as ``_read_symbol_ohlcv``: missing
+    directory / missing file / no parseable Date column → None. Only Date
+    / Close / C_move are consumed downstream (Open is used as a fallback
+    for same-day move when C_move is missing).
+    """
+    return _read_symbol_ohlcv(symbol, coded_data_dir)
+
+
+def _compute_nday_return_at(
+    rows: list[dict[str, Any]] | None,
+    target_date: str,
+    n: int = _NDAY_RETURN_WINDOW,
+) -> float | None:
+    """N-day percent return ending at ``target_date``, or None.
+
+    Mirrors ``scanner._get_nday_return``: requires a row whose Date equals
+    ``target_date`` and at least ``n`` previous rows in the time-ascending
+    list. Anti-lookahead: only reads ``idx - n`` and ``idx`` (both ≤ the
+    target row's index, which is ``Date == target_date`` by construction).
+
+    Returns ``(close_target / close_target_minus_n - 1) * 100`` (percent),
+    or None on any missing / unparseable / zero-divide condition.
+    """
+    if not rows or n <= 0:
+        return None
+    target_idx: int | None = None
+    for i, row in enumerate(rows):
+        if row.get("Date") == target_date:
+            target_idx = i
+            break
+    if target_idx is None or target_idx < n:
+        return None
+    c_now = _to_float(rows[target_idx].get("Close"))
+    c_prev = _to_float(rows[target_idx - n].get("Close"))
+    if c_now is None or c_prev is None or c_prev == 0:
+        return None
+    return (c_now - c_prev) / c_prev * 100.0
+
+
+def _compute_same_day_move_at(
+    rows: list[dict[str, Any]] | None, target_date: str
+) -> float | None:
+    """Same-day percent move at ``target_date``, or None.
+
+    Prefers the ``C_move`` column (matches ``scanner._get_same_day_move``:
+    ``C_move × 100``). When ``C_move`` is missing or unparseable, falls
+    back to ``(Close - Open) / Open × 100`` from the same row. Returns
+    None when neither path produces a usable number.
+    """
+    if not rows:
+        return None
+    target_row: dict[str, Any] | None = None
+    for row in rows:
+        if row.get("Date") == target_date:
+            target_row = row
+            break
+    if target_row is None:
+        return None
+    c_move = _to_float(target_row.get("C_move"))
+    if c_move is not None:
+        return c_move * 100.0
+    open_v = _to_float(target_row.get("Open"))
+    close_v = _to_float(target_row.get("Close"))
+    if open_v is None or close_v is None or open_v == 0:
+        return None
+    return (close_v - open_v) / open_v * 100.0
+
+
+def _classify_relative_strength(
+    avgo_ret: float | None,
+    peer_ret: float | None,
+    margin_pp: float = _RS_MARGIN_PP,
+) -> str:
+    """Classify AVGO vs peer return diff. Mirrors ``scanner._classify_rs``.
+
+    Inputs are in percent (pp). Margin is the half-band: |avgo - peer|
+    must exceed ``margin_pp`` for a directional verdict. Either input
+    being None yields ``"unavailable"`` (no fabricated neutral).
+    """
+    if avgo_ret is None or peer_ret is None:
+        return "unavailable"
+    diff = avgo_ret - peer_ret
+    if diff > margin_pp:
+        return "stronger"
+    if diff < -margin_pp:
+        return "weaker"
+    return "neutral"
+
+
+def _compute_relative_strength_summary_at(
+    as_of_date: str,
+    avgo_rows: list[dict[str, Any]] | None,
+    peer_rows_map: dict[str, list[dict[str, Any]] | None] | None,
+    *,
+    mode: str,
+) -> dict[str, str]:
+    """Build {vs_nvda, vs_soxx, vs_qqq} for ``mode in {"5d", "same_day"}``.
+
+    - Anti-lookahead: every helper reads ``<= as_of_date`` only.
+    - Missing peer rows (None) → that peer = ``"unavailable"``; other
+      peers are computed independently.
+    - Margin / n-day window match ``scanner.compute_relative_strength_summary``.
+    - Unknown ``mode`` → all peers ``"unavailable"`` (defensive, no raise).
+    """
+    if mode == "5d":
+        avgo_ret = _compute_nday_return_at(avgo_rows, as_of_date)
+        peer_metric = lambda rows: _compute_nday_return_at(rows, as_of_date)
+    elif mode == "same_day":
+        avgo_ret = _compute_same_day_move_at(avgo_rows, as_of_date)
+        peer_metric = lambda rows: _compute_same_day_move_at(rows, as_of_date)
+    else:
+        return {f"vs_{p.lower()}": "unavailable" for p in _PEER_SYMBOLS}
+
+    rows_by_peer = peer_rows_map or {}
+    out: dict[str, str] = {}
+    for peer in _PEER_SYMBOLS:
+        # Accept upper- or lower-case keys; either is unambiguous.
+        peer_rows = rows_by_peer.get(peer) or rows_by_peer.get(peer.lower())
+        peer_ret = peer_metric(peer_rows) if peer_rows else None
+        out[f"vs_{peer.lower()}"] = _classify_relative_strength(
+            avgo_ret, peer_ret
+        )
+    return out
+
+
 def _build_historical_scan_at(
-    symbol: str, as_of_date: str, ohlcv: list[dict[str, Any]]
+    symbol: str,
+    as_of_date: str,
+    ohlcv: list[dict[str, Any]],
+    peer_rows_map: dict[str, list[dict[str, Any]] | None] | None = None,
 ) -> dict[str, Any] | None:
     """Build the minimal scan_result run_predict needs for a historical D.
 
@@ -134,12 +285,15 @@ def _build_historical_scan_at(
     or before ``as_of_date`` — primary_projection needs the recent-20
     window to produce a non-degraded output.
 
-    Anti-lookahead: only rows with ``Date <= as_of_date`` are used.
+    Anti-lookahead: only rows with ``Date <= as_of_date`` are used (the
+    AVGO recent-20 window is sliced from ``history``; peer helpers locate
+    the target row by ``Date == as_of_date`` and only read backward).
 
-    Peer relative-strength is left empty (``{}``) on purpose: a future
-    Step 2F-4c-3 can wire NVDA / SOXX / QQQ peer cutoffs; for 4c-2 the
-    minimal scan keeps anti-lookahead trivially correct (nothing to leak
-    from peers because nothing is read from peers).
+    ``peer_rows_map`` is the Step 2F-4c-3 entry-point for NVDA / SOXX /
+    QQQ peer cutoff. When None / empty, ``relative_strength_summary`` and
+    ``relative_strength_same_day_summary`` come back with all three peers
+    classified as ``"unavailable"`` (preserving the 4c-2 degraded shape
+    semantically — three keys present, no fabricated neutrals).
     """
     history = [r for r in ohlcv if r["Date"] <= as_of_date]
     if len(history) < _MIN_HISTORY_ROWS:
@@ -164,15 +318,19 @@ def _build_historical_scan_at(
             return None
         rows.append(row)
 
+    rs_5d = _compute_relative_strength_summary_at(
+        as_of_date, history, peer_rows_map, mode="5d"
+    )
+    rs_same_day = _compute_relative_strength_summary_at(
+        as_of_date, history, peer_rows_map, mode="same_day"
+    )
+
     return {
         "symbol": symbol,
         "scan_timestamp": f"{as_of_date}T00:00:00",
         "avgo_recent_20": rows,
-        # Peer signals deliberately blank — 4c-2 first version. Without
-        # peer data ``apply_peer_adjustment`` produces no shift; the
-        # primary projection still drives final_bias / final_confidence.
-        "relative_strength_summary": {},
-        "relative_strength_same_day_summary": {},
+        "relative_strength_summary": rs_5d,
+        "relative_strength_same_day_summary": rs_same_day,
     }
 
 
@@ -236,6 +394,7 @@ def _write_one_pair(
     as_of_date: str,
     prediction_for_date: str,
     ohlcv: list[dict[str, Any]],
+    peer_rows_map: dict[str, list[dict[str, Any]] | None] | None = None,
 ) -> dict[str, Any]:
     """Replay one pair end-to-end. Returns a record dict.
 
@@ -255,7 +414,9 @@ def _write_one_pair(
         return {**base, "status": "skipped", "reason": "no_outcome_data"}
 
     # 2. Build historical scan. Skip pair when not enough history.
-    scan = _build_historical_scan_at(symbol, as_of_date, ohlcv)
+    scan = _build_historical_scan_at(
+        symbol, as_of_date, ohlcv, peer_rows_map=peer_rows_map
+    )
     if scan is None:
         return {**base, "status": "skipped", "reason": "insufficient_history"}
 
@@ -399,6 +560,13 @@ def run_contract_replay(
             ],
         }
 
+    # Step 2F-4c-3: load NVDA / SOXX / QQQ peer CSVs once for the whole
+    # batch. Missing peers degrade silently to None → that peer's vs_*
+    # entry comes back "unavailable" without affecting the other peers.
+    peer_rows_map: dict[str, list[dict[str, Any]] | None] = {
+        peer: _read_peer_ohlcv(peer, coded_data_dir) for peer in _PEER_SYMBOLS
+    }
+
     written_records: list[dict[str, Any]] = []
     skipped_pairs: list[dict[str, Any]] = []
 
@@ -410,6 +578,7 @@ def run_contract_replay(
                     as_of_date=pair["as_of_date"],
                     prediction_for_date=pair["prediction_for_date"],
                     ohlcv=ohlcv,
+                    peer_rows_map=peer_rows_map,
                 )
             except Exception as exc:
                 # System-level failure — bail out. Already-written rows
@@ -462,5 +631,8 @@ def run_contract_replay(
             f"pair(s); skipped {len(skipped_pairs)}",
             "all writes went through save_prediction / save_outcome — "
             "no raw INSERT was used",
+            "peer cutoff: NVDA / SOXX / QQQ relative-strength computed "
+            "with Date <= D from coded_data; missing peers degrade to "
+            "'unavailable'",
         ],
     }

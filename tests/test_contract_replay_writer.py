@@ -46,18 +46,22 @@ def _write_realistic_csv(
     n_days: int = 35,
     *,
     bias_up: bool = True,
+    step: float | None = None,
 ) -> Path:
     """Write a coded CSV with full per-row OHLCV + O_gap / C_move / V_ratio.
 
     The columns mirror the real coded_data/<SYMBOL>_coded.csv subset that
     ``_build_historical_scan_at`` and ``_read_outcome_row`` consume. With
     ``bias_up=True`` close is rising linearly so the scan trend is
-    bullish; ``bias_up=False`` flips for variety.
+    bullish; ``bias_up=False`` flips for variety. ``step`` overrides the
+    bias_up default — pass an explicit close-per-day delta to widen the
+    AVGO-vs-peer gap for relative-strength tests (Step 2F-4c-3).
     """
     dates = _business_day_dates(n_days)
     rows = ["Date,Open,High,Low,Close,Volume,PrevClose,O_gap,C_move,V_ratio"]
     prev_close: float | None = None
-    step = 0.5 if bias_up else -0.3
+    if step is None:
+        step = 0.5 if bias_up else -0.3
     for i, dt in enumerate(dates):
         close = 100.0 + i * step
         open_ = close - 0.25
@@ -552,6 +556,541 @@ class WriterScriptTests(_IsolatedDB):
             self.assertIs(result["dry_run"], False)
             self.assertIn(result["status"], {"ok", "partial"})
             self.assertGreaterEqual(result["written_prediction_count"], 1)
+
+
+# ── 10. Step 2F-4c-3: peer cutoff helper unit tests ───────────────────────
+
+
+class ClassifyRelativeStrengthTests(unittest.TestCase):
+    def test_unavailable_when_either_input_none(self) -> None:
+        self.assertEqual(crw._classify_relative_strength(None, 0.0), "unavailable")
+        self.assertEqual(crw._classify_relative_strength(0.0, None), "unavailable")
+        self.assertEqual(crw._classify_relative_strength(None, None), "unavailable")
+
+    def test_stronger_when_avgo_beats_peer_by_more_than_margin(self) -> None:
+        # Default margin = 0.5 pp. AVGO 2.0%, peer 1.0% → diff 1.0 > 0.5
+        self.assertEqual(
+            crw._classify_relative_strength(2.0, 1.0), "stronger"
+        )
+
+    def test_weaker_when_peer_beats_avgo_by_more_than_margin(self) -> None:
+        self.assertEqual(
+            crw._classify_relative_strength(1.0, 2.0), "weaker"
+        )
+
+    def test_neutral_when_within_margin(self) -> None:
+        # |2.4 - 2.0| = 0.4 < 0.5 → neutral
+        self.assertEqual(
+            crw._classify_relative_strength(2.4, 2.0), "neutral"
+        )
+        self.assertEqual(
+            crw._classify_relative_strength(2.0, 2.4), "neutral"
+        )
+
+    def test_neutral_at_exactly_margin_boundary(self) -> None:
+        # Match scanner: |diff| must STRICTLY exceed margin (>, not >=).
+        self.assertEqual(
+            crw._classify_relative_strength(2.5, 2.0), "neutral"
+        )
+
+    def test_custom_margin_override(self) -> None:
+        # Tighter margin: same diff now classifies stronger.
+        self.assertEqual(
+            crw._classify_relative_strength(2.4, 2.0, margin_pp=0.3),
+            "stronger",
+        )
+
+
+class ComputeNDayReturnAtTests(unittest.TestCase):
+    @staticmethod
+    def _rows(closes: list[float | None]) -> list[dict]:
+        return [
+            {"Date": f"2024-02-{i+1:02d}", "Close": c}
+            for i, c in enumerate(closes)
+        ]
+
+    def test_normal_5d_return_in_percent(self) -> None:
+        rows = self._rows([100.0, 101.0, 102.0, 103.0, 104.0, 105.0])
+        # idx for 2024-02-06 is 5; close[5] / close[0] - 1 = 5%
+        result = crw._compute_nday_return_at(rows, "2024-02-06", n=5)
+        assert result is not None
+        self.assertAlmostEqual(result, 5.0, places=6)
+
+    def test_returns_none_when_target_idx_lt_n(self) -> None:
+        rows = self._rows([100.0, 101.0, 102.0])
+        # idx for 2024-02-03 is 2; need 5 prev rows → not enough
+        self.assertIsNone(crw._compute_nday_return_at(rows, "2024-02-03", n=5))
+
+    def test_returns_none_when_target_date_missing(self) -> None:
+        rows = self._rows([100.0, 101.0, 102.0, 103.0, 104.0, 105.0])
+        self.assertIsNone(
+            crw._compute_nday_return_at(rows, "2024-02-99", n=5)
+        )
+
+    def test_returns_none_when_close_unparseable(self) -> None:
+        rows = [
+            {"Date": "2024-02-01", "Close": "not-a-number"},
+            {"Date": "2024-02-02", "Close": 100.0},
+            {"Date": "2024-02-03", "Close": 101.0},
+            {"Date": "2024-02-04", "Close": 102.0},
+            {"Date": "2024-02-05", "Close": 103.0},
+            {"Date": "2024-02-06", "Close": 104.0},
+        ]
+        self.assertIsNone(
+            crw._compute_nday_return_at(rows, "2024-02-06", n=5)
+        )
+
+    def test_returns_none_when_prev_close_zero(self) -> None:
+        rows = self._rows([0.0, 1.0, 2.0, 3.0, 4.0, 5.0])
+        self.assertIsNone(
+            crw._compute_nday_return_at(rows, "2024-02-06", n=5)
+        )
+
+    def test_returns_none_for_empty_rows(self) -> None:
+        self.assertIsNone(crw._compute_nday_return_at([], "2024-02-06", n=5))
+        self.assertIsNone(crw._compute_nday_return_at(None, "2024-02-06", n=5))
+
+    def test_returns_none_for_invalid_n(self) -> None:
+        rows = self._rows([100.0, 101.0, 102.0])
+        self.assertIsNone(
+            crw._compute_nday_return_at(rows, "2024-02-03", n=0)
+        )
+        self.assertIsNone(
+            crw._compute_nday_return_at(rows, "2024-02-03", n=-1)
+        )
+
+
+class ComputeSameDayMoveAtTests(unittest.TestCase):
+    def test_uses_c_move_when_present(self) -> None:
+        rows = [{"Date": "2024-02-01", "C_move": 0.012, "Open": 100, "Close": 105}]
+        result = crw._compute_same_day_move_at(rows, "2024-02-01")
+        # 0.012 × 100 = 1.2%
+        assert result is not None
+        self.assertAlmostEqual(result, 1.2, places=6)
+
+    def test_falls_back_to_close_minus_open_when_c_move_missing(self) -> None:
+        rows = [{"Date": "2024-02-01", "Open": 100.0, "Close": 102.0}]
+        result = crw._compute_same_day_move_at(rows, "2024-02-01")
+        # (102 - 100) / 100 × 100 = 2.0%
+        assert result is not None
+        self.assertAlmostEqual(result, 2.0, places=6)
+
+    def test_falls_back_when_c_move_unparseable(self) -> None:
+        rows = [
+            {"Date": "2024-02-01", "C_move": "nan", "Open": 100.0, "Close": 99.0},
+        ]
+        result = crw._compute_same_day_move_at(rows, "2024-02-01")
+        assert result is not None
+        self.assertAlmostEqual(result, -1.0, places=6)
+
+    def test_returns_none_when_target_date_missing(self) -> None:
+        rows = [{"Date": "2024-02-01", "C_move": 0.01, "Open": 100, "Close": 101}]
+        self.assertIsNone(crw._compute_same_day_move_at(rows, "2024-02-99"))
+
+    def test_returns_none_when_c_move_missing_and_open_zero(self) -> None:
+        rows = [{"Date": "2024-02-01", "Open": 0.0, "Close": 1.0}]
+        self.assertIsNone(crw._compute_same_day_move_at(rows, "2024-02-01"))
+
+    def test_returns_none_when_c_move_missing_and_open_close_unparseable(self) -> None:
+        rows = [{"Date": "2024-02-01", "Open": "x", "Close": "y"}]
+        self.assertIsNone(crw._compute_same_day_move_at(rows, "2024-02-01"))
+
+    def test_returns_none_for_empty_rows(self) -> None:
+        self.assertIsNone(crw._compute_same_day_move_at([], "2024-02-01"))
+        self.assertIsNone(crw._compute_same_day_move_at(None, "2024-02-01"))
+
+
+class ComputeRelativeStrengthSummaryAtTests(unittest.TestCase):
+    @staticmethod
+    def _rows(closes: list[float], c_moves: list[float] | None = None) -> list[dict]:
+        rows = []
+        for i, c in enumerate(closes):
+            row = {"Date": f"2024-02-{i+1:02d}", "Close": c, "Open": c - 0.25}
+            if c_moves is not None:
+                row["C_move"] = c_moves[i]
+            rows.append(row)
+        return rows
+
+    def test_keys_are_vs_lowercase_peer_names(self) -> None:
+        avgo = self._rows([100, 101, 102, 103, 104, 105])
+        peers = {
+            "NVDA": self._rows([100, 100.1, 100.2, 100.3, 100.4, 100.5]),
+            "SOXX": self._rows([100, 100.1, 100.2, 100.3, 100.4, 100.5]),
+            "QQQ": self._rows([100, 100.1, 100.2, 100.3, 100.4, 100.5]),
+        }
+        summary = crw._compute_relative_strength_summary_at(
+            "2024-02-06", avgo, peers, mode="5d"
+        )
+        self.assertEqual(set(summary.keys()), {"vs_nvda", "vs_soxx", "vs_qqq"})
+
+    def test_5d_avgo_stronger_than_all_peers(self) -> None:
+        avgo = self._rows([100, 101, 102, 103, 104, 110.0])  # +10%
+        peers = {
+            "NVDA": self._rows([100] * 6),  # 0%
+            "SOXX": self._rows([100] * 6),
+            "QQQ": self._rows([100] * 6),
+        }
+        summary = crw._compute_relative_strength_summary_at(
+            "2024-02-06", avgo, peers, mode="5d"
+        )
+        self.assertEqual(summary["vs_nvda"], "stronger")
+        self.assertEqual(summary["vs_soxx"], "stronger")
+        self.assertEqual(summary["vs_qqq"], "stronger")
+
+    def test_5d_avgo_weaker_than_all_peers(self) -> None:
+        avgo = self._rows([100] * 6)
+        peers = {
+            "NVDA": self._rows([100, 101, 102, 103, 104, 110.0]),
+            "SOXX": self._rows([100, 101, 102, 103, 104, 110.0]),
+            "QQQ": self._rows([100, 101, 102, 103, 104, 110.0]),
+        }
+        summary = crw._compute_relative_strength_summary_at(
+            "2024-02-06", avgo, peers, mode="5d"
+        )
+        self.assertEqual(summary["vs_nvda"], "weaker")
+        self.assertEqual(summary["vs_soxx"], "weaker")
+        self.assertEqual(summary["vs_qqq"], "weaker")
+
+    def test_5d_one_peer_missing_degrades_only_that_entry(self) -> None:
+        avgo = self._rows([100, 101, 102, 103, 104, 110.0])  # +10%
+        peers = {
+            "NVDA": self._rows([100] * 6),
+            "SOXX": None,  # missing peer
+            "QQQ": self._rows([100] * 6),
+        }
+        summary = crw._compute_relative_strength_summary_at(
+            "2024-02-06", avgo, peers, mode="5d"
+        )
+        self.assertEqual(summary["vs_nvda"], "stronger")
+        self.assertEqual(summary["vs_soxx"], "unavailable")
+        self.assertEqual(summary["vs_qqq"], "stronger")
+
+    def test_same_day_mode_reads_c_move(self) -> None:
+        avgo = self._rows(
+            [100, 101, 102, 103, 104, 105],
+            c_moves=[0.0, 0.0, 0.0, 0.0, 0.0, 0.02],  # +2%
+        )
+        peers = {
+            "NVDA": self._rows(
+                [100, 101, 102, 103, 104, 105],
+                c_moves=[0.0, 0.0, 0.0, 0.0, 0.0, 0.001],  # +0.1%
+            ),
+            "SOXX": self._rows(
+                [100, 101, 102, 103, 104, 105],
+                c_moves=[0.0, 0.0, 0.0, 0.0, 0.0, 0.001],
+            ),
+            "QQQ": self._rows(
+                [100, 101, 102, 103, 104, 105],
+                c_moves=[0.0, 0.0, 0.0, 0.0, 0.0, 0.001],
+            ),
+        }
+        summary = crw._compute_relative_strength_summary_at(
+            "2024-02-06", avgo, peers, mode="same_day"
+        )
+        self.assertEqual(summary["vs_nvda"], "stronger")
+        self.assertEqual(summary["vs_soxx"], "stronger")
+        self.assertEqual(summary["vs_qqq"], "stronger")
+
+    def test_unknown_mode_returns_all_unavailable(self) -> None:
+        summary = crw._compute_relative_strength_summary_at(
+            "2024-02-06", [], {}, mode="bogus",
+        )
+        self.assertEqual(
+            summary,
+            {"vs_nvda": "unavailable", "vs_soxx": "unavailable", "vs_qqq": "unavailable"},
+        )
+
+    def test_none_peer_map_yields_all_unavailable(self) -> None:
+        avgo = self._rows([100, 101, 102, 103, 104, 105])
+        summary = crw._compute_relative_strength_summary_at(
+            "2024-02-06", avgo, None, mode="5d"
+        )
+        self.assertEqual(
+            summary,
+            {"vs_nvda": "unavailable", "vs_soxx": "unavailable", "vs_qqq": "unavailable"},
+        )
+
+    def test_lowercase_peer_keys_also_accepted(self) -> None:
+        avgo = self._rows([100, 101, 102, 103, 104, 110.0])
+        peers = {
+            "nvda": self._rows([100] * 6),
+            "soxx": self._rows([100] * 6),
+            "qqq": self._rows([100] * 6),
+        }
+        summary = crw._compute_relative_strength_summary_at(
+            "2024-02-06", avgo, peers, mode="5d"
+        )
+        self.assertEqual(summary["vs_nvda"], "stronger")
+
+
+# ── 11. Step 2F-4c-3: build scan now embeds three-key rs summaries ────────
+
+
+class BuildHistoricalScanWithPeerCutoffTests(unittest.TestCase):
+    """The scan_result returned by _build_historical_scan_at must always
+    expose all three vs_* keys in both rs summaries (not empty dict).
+    Backwards-compat: when peer_rows_map is None, all three keys come
+    back ``"unavailable"`` (no fabricated neutrals)."""
+
+    def setUp(self) -> None:
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self._tmp_path = Path(self._tmpdir.name)
+        _write_realistic_csv(self._tmp_path, "AVGO", n_days=35)
+        self.avgo_rows = crw._read_symbol_ohlcv("AVGO", self._tmp_path)
+
+    def tearDown(self) -> None:
+        self._tmpdir.cleanup()
+
+    def test_scan_has_three_vs_keys_in_5d_summary_when_no_peer_map(self) -> None:
+        scan = crw._build_historical_scan_at("AVGO", "2024-01-29", self.avgo_rows)
+        assert scan is not None
+        rs_5d = scan["relative_strength_summary"]
+        self.assertEqual(set(rs_5d.keys()), {"vs_nvda", "vs_soxx", "vs_qqq"})
+        # No peer rows → unavailable across the board.
+        for value in rs_5d.values():
+            self.assertEqual(value, "unavailable")
+
+    def test_scan_has_three_vs_keys_in_same_day_summary_when_no_peer_map(self) -> None:
+        scan = crw._build_historical_scan_at("AVGO", "2024-01-29", self.avgo_rows)
+        assert scan is not None
+        rs_day = scan["relative_strength_same_day_summary"]
+        self.assertEqual(set(rs_day.keys()), {"vs_nvda", "vs_soxx", "vs_qqq"})
+
+    def test_scan_rs_summaries_populated_when_peers_provided(self) -> None:
+        # Generate AVGO + three peers; AVGO rises faster → all stronger.
+        _write_realistic_csv(self._tmp_path, "NVDA", n_days=35, bias_up=False)
+        _write_realistic_csv(self._tmp_path, "SOXX", n_days=35, bias_up=False)
+        _write_realistic_csv(self._tmp_path, "QQQ", n_days=35, bias_up=False)
+        peer_rows_map = {
+            "NVDA": crw._read_peer_ohlcv("NVDA", self._tmp_path),
+            "SOXX": crw._read_peer_ohlcv("SOXX", self._tmp_path),
+            "QQQ": crw._read_peer_ohlcv("QQQ", self._tmp_path),
+        }
+        scan = crw._build_historical_scan_at(
+            "AVGO", "2024-01-29", self.avgo_rows, peer_rows_map=peer_rows_map,
+        )
+        assert scan is not None
+        rs_5d = scan["relative_strength_summary"]
+        self.assertEqual(set(rs_5d.keys()), {"vs_nvda", "vs_soxx", "vs_qqq"})
+        # AVGO bias_up=True (step +0.5), peers bias_up=False (step -0.3) →
+        # AVGO 5d return clearly higher.
+        self.assertEqual(rs_5d["vs_nvda"], "stronger")
+        self.assertEqual(rs_5d["vs_soxx"], "stronger")
+        self.assertEqual(rs_5d["vs_qqq"], "stronger")
+
+
+# ── 12. Step 2F-4c-3: dry_run still does NOT read peer CSVs ────────────────
+
+
+class WriterDryRunDoesNotReadPeerCsvTests(_IsolatedDB):
+    """The dry-run path returns immediately after the planner; it never
+    reaches _read_peer_ohlcv / _read_symbol_ohlcv for the write side."""
+
+    def _csv(self) -> None:
+        _write_minimal_csv(
+            self._tmp_path, "AVGO",
+            ["2024-01-02", "2024-01-03", "2024-01-04"],
+        )
+
+    def test_dry_run_does_not_call_read_peer_ohlcv(self) -> None:
+        self._csv()
+        with patch("services.contract_replay_writer._read_peer_ohlcv") as m:
+            run_contract_replay(coded_data_dir=self._tmp_path, dry_run=True)
+        self.assertEqual(m.call_count, 0)
+
+
+# ── 13. Step 2F-4c-3: real-write end-to-end with peer CSVs present ────────
+
+
+class WriterRealWriteWithPeerCsvTests(_IsolatedDB):
+    """Generate AVGO + NVDA + SOXX + QQQ tmp CSVs, run --write, and inspect
+    the contract_payload_json that landed in the tmp DB."""
+
+    _WRITABLE_START = "2024-01-29"
+
+    # Step 2F-4c-3 semantic note for these fixtures:
+    #   ``vs_<peer>="stronger"`` means AVGO outperforms peer (AVGO step >
+    #   peer step). Under bullish primary, "stronger" → confirm.
+    #   ``vs_<peer>="weaker"``   means AVGO underperforms peer (peer step >
+    #   AVGO step). Under bullish primary, "weaker" → oppose.
+
+    def _seed_avgo_underperforms_peers(self) -> None:
+        # AVGO mildly bullish (step 0.5 keeps primary bias bullish) but
+        # peers grow much faster (step 2.5) → AVGO 5d return < peer 5d
+        # return by > 0.5 pp → vs_<peer>="weaker" → bullish primary
+        # treats this as "oppose" → oppose_count high.
+        _write_realistic_csv(self._tmp_path, "AVGO", n_days=35, step=0.5)
+        _write_realistic_csv(self._tmp_path, "NVDA", n_days=35, step=2.5)
+        _write_realistic_csv(self._tmp_path, "SOXX", n_days=35, step=2.5)
+        _write_realistic_csv(self._tmp_path, "QQQ", n_days=35, step=2.5)
+
+    def _seed_avgo_outperforms_peers(self) -> None:
+        # AVGO strongly bullish (step 2.5) and peers nearly flat (step
+        # 0.05) → AVGO 5d return > peer 5d return by > 0.5 pp →
+        # vs_<peer>="stronger" → bullish primary treats this as
+        # "confirm" → confirm_count high.
+        _write_realistic_csv(self._tmp_path, "AVGO", n_days=35, step=2.5)
+        _write_realistic_csv(self._tmp_path, "NVDA", n_days=35, step=0.05)
+        _write_realistic_csv(self._tmp_path, "SOXX", n_days=35, step=0.05)
+        _write_realistic_csv(self._tmp_path, "QQQ", n_days=35, step=0.05)
+
+    def _written_contract(self, prediction_id: str) -> dict:
+        row = ps.get_prediction(prediction_id)
+        assert row is not None
+        payload_s = row["contract_payload_json"]
+        self.assertIsNotNone(payload_s)
+        return json.loads(payload_s)
+
+    def test_peer_signals_are_not_all_unknown(self) -> None:
+        self._seed_avgo_underperforms_peers()
+        result = run_contract_replay(
+            coded_data_dir=self._tmp_path,
+            start_date=self._WRITABLE_START,
+            dry_run=False,
+            limit=3,
+        )
+        self.assertGreaterEqual(result["written_prediction_count"], 1)
+        first = result["written_records"][0]
+        payload = self._written_contract(first["prediction_id"])
+        peer = payload["peer_confirmation_adjustment"]
+        self.assertNotEqual(peer["nvda_signal"], "unknown")
+        self.assertNotEqual(peer["soxx_signal"], "unknown")
+        self.assertNotEqual(peer["qqq_signal"], "unknown")
+
+    def test_peer_alignment_is_all_weaken_when_peers_outperform(self) -> None:
+        self._seed_avgo_underperforms_peers()
+        result = run_contract_replay(
+            coded_data_dir=self._tmp_path,
+            start_date=self._WRITABLE_START,
+            dry_run=False,
+            limit=3,
+        )
+        self.assertGreaterEqual(result["written_prediction_count"], 1)
+        first = result["written_records"][0]
+        payload = self._written_contract(first["prediction_id"])
+        peer = payload["peer_confirmation_adjustment"]
+        # 3 oppose under bullish primary → all_weaken; not "insufficient".
+        self.assertEqual(peer["peer_alignment"], "all_weaken")
+
+    def test_oppose_count_positive_when_peers_outperform(self) -> None:
+        self._seed_avgo_underperforms_peers()
+        result = run_contract_replay(
+            coded_data_dir=self._tmp_path,
+            start_date=self._WRITABLE_START,
+            dry_run=False,
+            limit=3,
+        )
+        first = result["written_records"][0]
+        payload = self._written_contract(first["prediction_id"])
+        cs_extras = payload["confidence_system"]["extras"]
+        self.assertGreater(cs_extras["peer_oppose_count"], 0)
+
+    def test_confirm_count_positive_when_avgo_outperforms(self) -> None:
+        self._seed_avgo_outperforms_peers()
+        result = run_contract_replay(
+            coded_data_dir=self._tmp_path,
+            start_date=self._WRITABLE_START,
+            dry_run=False,
+            limit=3,
+        )
+        first = result["written_records"][0]
+        payload = self._written_contract(first["prediction_id"])
+        cs_extras = payload["confidence_system"]["extras"]
+        # AVGO outperforms peers + bullish primary → 3 confirm.
+        self.assertGreater(cs_extras["peer_confirm_count"], 0)
+
+    def test_peer_alignment_is_all_reinforce_when_avgo_outperforms(self) -> None:
+        self._seed_avgo_outperforms_peers()
+        result = run_contract_replay(
+            coded_data_dir=self._tmp_path,
+            start_date=self._WRITABLE_START,
+            dry_run=False,
+            limit=3,
+        )
+        first = result["written_records"][0]
+        payload = self._written_contract(first["prediction_id"])
+        peer = payload["peer_confirmation_adjustment"]
+        self.assertEqual(peer["peer_alignment"], "all_reinforce")
+
+    def test_peer_path_risk_direction_higher_when_peers_outperform(self) -> None:
+        self._seed_avgo_underperforms_peers()
+        result = run_contract_replay(
+            coded_data_dir=self._tmp_path,
+            start_date=self._WRITABLE_START,
+            dry_run=False,
+            limit=3,
+        )
+        first = result["written_records"][0]
+        payload = self._written_contract(first["prediction_id"])
+        es_extras = payload["exclusion_system"]["extras"]
+        # 3 oppose under bullish primary → adjustment_direction "weaken"
+        # → path_risk_direction "higher".
+        self.assertEqual(es_extras["peer_path_risk_direction"], "higher")
+
+
+# ── 14. Step 2F-4c-3: missing peer CSV degrades to unavailable ────────────
+
+
+class WriterMissingPeerCsvDegradesTests(_IsolatedDB):
+    """Real-write succeeds when peer CSVs are missing; signals come back
+    unknown / insufficient (the 4c-2 baseline shape) without crashing."""
+
+    def test_real_write_succeeds_with_no_peer_csvs(self) -> None:
+        # Only AVGO; the three peer CSVs are absent from coded_data_dir.
+        _write_realistic_csv(self._tmp_path, "AVGO", n_days=35, bias_up=True)
+        result = run_contract_replay(
+            coded_data_dir=self._tmp_path,
+            start_date="2024-01-29",
+            dry_run=False,
+            limit=3,
+        )
+        self.assertGreaterEqual(result["written_prediction_count"], 1)
+        first = result["written_records"][0]
+        row = ps.get_prediction(first["prediction_id"])
+        assert row is not None
+        payload = json.loads(row["contract_payload_json"])
+        peer = payload["peer_confirmation_adjustment"]
+        self.assertEqual(peer["nvda_signal"], "unknown")
+        self.assertEqual(peer["soxx_signal"], "unknown")
+        self.assertEqual(peer["qqq_signal"], "unknown")
+        self.assertEqual(peer["peer_alignment"], "insufficient")
+
+    def test_one_peer_missing_does_not_break_others(self) -> None:
+        # AVGO mildly bullish, two present peers grow much faster → those
+        # peers vote oppose under bullish primary → signal "weaken".
+        # SOXX deliberately absent → its signal degrades to "unknown".
+        _write_realistic_csv(self._tmp_path, "AVGO", n_days=35, step=0.5)
+        _write_realistic_csv(self._tmp_path, "NVDA", n_days=35, step=2.5)
+        # SOXX deliberately absent.
+        _write_realistic_csv(self._tmp_path, "QQQ", n_days=35, step=2.5)
+        result = run_contract_replay(
+            coded_data_dir=self._tmp_path,
+            start_date="2024-01-29",
+            dry_run=False,
+            limit=3,
+        )
+        self.assertGreaterEqual(result["written_prediction_count"], 1)
+        first = result["written_records"][0]
+        row = ps.get_prediction(first["prediction_id"])
+        assert row is not None
+        payload = json.loads(row["contract_payload_json"])
+        peer = payload["peer_confirmation_adjustment"]
+        self.assertEqual(peer["nvda_signal"], "weaken")
+        self.assertEqual(peer["soxx_signal"], "unknown")
+        self.assertEqual(peer["qqq_signal"], "weaken")
+
+
+# ── 15. Step 2F-4c-3: hard cap and pandas hygiene unchanged ───────────────
+
+
+class WriterHardCapAndPandasHygieneTests(unittest.TestCase):
+    def test_limit_hard_cap_constant_remains_30(self) -> None:
+        self.assertEqual(crw._LIMIT_HARD_CAP, 30)
+
+    def test_writer_module_does_not_import_pandas(self) -> None:
+        source = Path(crw.__file__).read_text(encoding="utf-8")
+        self.assertNotIn("import pandas", source)
+        self.assertNotIn("from pandas", source)
 
 
 if __name__ == "__main__":
