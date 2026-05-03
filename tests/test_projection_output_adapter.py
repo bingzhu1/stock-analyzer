@@ -507,6 +507,56 @@ class SimulatedTradeDefaultTests(unittest.TestCase):
         self.assertIsInstance(st["no_trade_reason"], str)
         self.assertTrue(st["no_trade_reason"])  # non-empty
 
+    def test_simulated_trade_extras_surfaces_decision_signals(self) -> None:
+        """Step 2D-2: 6 decision fields stay pinned at safe stubs;
+        extras reflects predict_result's final_projection / path_risk /
+        conflicting_factors / final_confidence one-for-one;
+        trade_engine_enabled is constant False."""
+        predict = {
+            "final_confidence": "medium",
+            "prediction_summary": "step 2d-2 live reason",
+            "final_projection": {
+                "final_direction": "偏多",
+                "final_five_state": "小涨",
+                "probability_bucket": "55–70%",
+                "key_price_levels": {"support": 100.0, "resistance": 110.0},
+            },
+            "path_risk": "high",
+            "conflicting_factors": [
+                "peer_confirmation=weaken",
+                "peer_path_risk=high",
+            ],
+        }
+        payload = adapt_projection_output(
+            scan_result=None, research_result=None, predict_result=predict
+        )
+        st = payload["simulated_trade"]
+
+        # Decision fields untouched.
+        self.assertEqual(st["trade_action"], "no_trade")
+        self.assertEqual(st["trade_direction"], "none")
+        self.assertEqual(st["entry_condition"], "")
+        self.assertEqual(st["stop_loss_condition"], "")
+        self.assertEqual(st["take_profit_condition"], "")
+        self.assertEqual(st["suggested_position_size"], "0%")
+        # no_trade_reason is the static honest message, not the legacy stub.
+        self.assertIn("not enabled", st["no_trade_reason"])
+        self.assertIn("final_projection", st["no_trade_reason"])
+
+        # extras populated.
+        extras = st["extras"]
+        self.assertEqual(extras["final_direction"], "偏多")
+        self.assertEqual(extras["final_five_state"], "小涨")
+        self.assertEqual(extras["probability_bucket"], "55–70%")
+        self.assertEqual(extras["confidence_level"], "medium")
+        self.assertEqual(extras["total_confidence"], 0.50)
+        self.assertEqual(extras["path_risk_level"], "high")
+        self.assertEqual(extras["soft_signal"], "peer_weaken")
+        self.assertIs(extras["has_key_price_levels"], True)
+        self.assertIs(extras["trade_engine_enabled"], False)
+        # Validator must still pass.
+        self.assertEqual(validate_projection_output(payload), [])
+
 
 class ReviewPayloadTests(unittest.TestCase):
     def test_review_payload_mirrors_final_projection_labels(self) -> None:

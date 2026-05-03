@@ -195,12 +195,12 @@ prediction_log.contract_payload_json  (TEXT NULL)
 | 04 `exclusion_system` | ⚠️ required 仍占位 + `extras` 暴露真实风险信号（Step 2C-2） | adapter 5 必填字段 stub + `extras` 读取 `predict_result.conflicting_factors / path_risk / peer_path_risk_adjustment` |
 | 05 `confidence_system` | ⚠️ 4 个 score 仍占位 + `extras` 暴露 raw score-like 信号（Step 2C-3b） | adapter `historical_score / structure_score / peer_score / exclusion_penalty = 0.0`、`event_score = None` 不变；`confidence_level / total_confidence / confidence_reason` 真值；`extras` 读取 `primary_projection.score / 三层 confidence / peer 计数 / probability_bucket / conflicting_factors / path_risk` |
 | 06 `final_projection` | **字段化** | `build_final_projection` self-publish（Step 2B-4） |
-| 07 `simulated_trade` | ❌ 占位 | adapter 硬编码 `"no_trade"`；待模拟交易决策层 |
+| 07 `simulated_trade` | ⚠️ 6 决策字段 pinned + `no_trade_reason` 升级静态诚实文本 + `extras` 暴露 trade-relevant 观察信号（Step 2D-2） | adapter `trade_action="no_trade" / trade_direction="none"` 等 6 字段 pinned；`no_trade_reason` 静态指向 06/05；`extras` 读取 `final_projection / final_confidence / path_risk / conflicting_factors`；**`trade_engine_enabled = False` 常量** |
 | 08 `review_payload` | 字段化（依赖 06） | adapter 从 final 字段派生 |
 
-**已完成：** 02 / 03 / 06 三段由 builder 自发布，adapter 退化为"先信 self-published、再回退老推导、非法值不污染输出"。`run_predict` 主决策路径（投票 / 升降 / 收口）一行未改。Step 2C-2 / 2C-3b 让 04 / 05 段在保持 required 字段 stub 不变的前提下，把已有风险信号 / score-like 信号暴露到各自的 `extras`。
+**已完成：** 02 / 03 / 06 三段由 builder 自发布，adapter 退化为"先信 self-published、再回退老推导、非法值不污染输出"。`run_predict` 主决策路径（投票 / 升降 / 收口）一行未改。Step 2C-2 / 2C-3b / 2D-2 让 04 / 05 / 07 三段在保持 required 字段语义不变的前提下，把已有风险信号 / score-like 信号 / trade-relevant 观察信号暴露到各自的 `extras`。
 
-**仍未做：** 07 段仍由 adapter 输出占位值；04 段的 required 字段（`exclusion_level / forced_exclusion / anti_false_exclusion_triggered`）和 05 段的 4 个 score 字段（`historical_score / structure_score / peer_score / exclusion_penalty`）+ `event_score` 也尚未真正字段化，等 Step 2C-3+ / 2D 真正的否定模块 / calibration 引擎落地。
+**仍未做：** 04 段的 required 字段（`exclusion_level / forced_exclusion / anti_false_exclusion_triggered`）尚未真正字段化；05 段的 4 个 score 字段（`historical_score / structure_score / peer_score / exclusion_penalty`）+ `event_score` 尚未真正字段化；07 段的 6 个决策字段（`trade_action / trade_direction` 等）按设计**永不动**——本项目策略禁止开仓建议。这些都需要**真正的子系统**（否定模块 / calibration 引擎 / 交易决策层）落地，不是字段填充。
 
 ## 12. exclusion_system extras（Step 2C-2，仅暴露不决策）
 
@@ -276,3 +276,71 @@ prediction_log.contract_payload_json  (TEXT NULL)
 4. 一个**peer 校准**层定义 `peer_score` 的语义（含数据缺失的 None 表达）
 
 `tests/test_confidence_system_contract_fields.py`（33 case + 14 subtests）+ `tests/test_projection_output_adapter.py`（新增 1 case）锁住"required 不动、extras 反映 predict_result"。
+
+## 14. simulated_trade extras（Step 2D-2，仅暴露不交易）
+
+`services/projection_output_adapter.py::_build_simulated_trade(predict)` 现在做三件事：
+
+1. **6 个交易决策字段保持 pinned 安全 stub**（永不动，与本项目"不允许产生开仓 / 平仓 / 仓位建议"的策略边界绑定）：
+   `trade_action == "no_trade"` / `trade_direction == "none"` / `entry_condition == ""` / `stop_loss_condition == ""` / `take_profit_condition == ""` / `suggested_position_size == "0%"`。
+   语义零变化——任何下游消费者按"不交易、无方向、无开仓条件、无止损止盈、零仓位"理解都仍然正确。
+2. **`no_trade_reason` 从 Step 1C 时期的"adapter default..."字面量升级为静态诚实文本**：
+   ```
+   Simulated trade engine not enabled in this build; section is informational
+   only. See final_projection and confidence_system for decision signals.
+   ```
+   全静态、零未来字段漂移风险；明确告知下游"决策信号在 06 / 05 段，不是 07"，避免误读 `extras.*` 为交易建议。
+3. **新增 `extras` 子 dict**，把已发布的 trade-relevant 观察信号原样暴露：
+
+| extras 键 | 类型 | 来源（仅读 predict_result，**不跨 contract section 读**） |
+|---|---|---|
+| `final_direction` | enum 偏多/偏空/中性 | `predict["final_projection"]["final_direction"]`；非合法 → `"中性"` |
+| `final_five_state` | enum 大涨/小涨/震荡/小跌/大跌 | `predict["final_projection"]["final_five_state"]`；非合法 → `"震荡"` |
+| `probability_bucket` | enum ≥70%/55–70%/45–55%/30–45%/≤30% \| `"unknown"` | `predict["final_projection"]["probability_bucket"]`；非合法 → `"unknown"` |
+| `confidence_level` | enum high/medium/low | `_normalize_confidence(predict["final_confidence"])` |
+| `total_confidence` | float | `_CONFIDENCE_TO_TOTAL[confidence_level]`（0.75 / 0.50 / 0.25） |
+| `path_risk_level` | enum low/medium/high \| `"unknown"` | `predict["path_risk"]`；非合法 → `"unknown"` |
+| `soft_signal` | enum peer_weaken/high_path_risk/none | **独立重派生**，与 §12 / §13 同决策树 |
+| `has_key_price_levels` | bool | `isinstance(klp, dict) and bool(klp)`（今天永远 `False`，因为 `key_price_levels` 全链路硬编码 `{}`） |
+| `trade_engine_enabled` | bool 常量 | `False`，明示交易引擎未启用 |
+
+`soft_signal` 决策树（与 §12 / §13 完全一致、**独立重派生**，不读 `predict["exclusion_system"]` 或 `predict["confidence_system"]`——adapter 各段独立产出，且 `predict_result` 顶层根本没有这些 contract section key）：
+- `"peer_confirmation=weaken" in conflicting_factors` → `"peer_weaken"`
+- 否则 `path_risk == "high"` → `"high_path_risk"`
+- 否则 → `"none"`
+
+**严守边界（Step 2D-2 没做的事 / 永远不会做的事）：**
+- ❌ 没接 longbridge / 任何 broker / paper_trade / 真实交易 / 模拟盘 API
+- ❌ 没接 `risk_model.py` / `contradiction_engine.py` / `confidence_engine.py` 三个 v1 stub
+- ❌ 没接 `big_up_contradiction_card` / `exclusion_reliability_review` / `big_down_tail_warning` / `anti_false_exclusion_audit` 到主链
+- ❌ 没改 `predict.py` / `run_predict` / 4 个 builder / UI / `prediction_store` / contract validator
+- ❌ **`trade_action` 永不离开 `"no_trade"`**（本项目策略边界，不是工程缺失）
+- ❌ **`entry_condition` / `stop_loss_condition` / `take_profit_condition` 永不非空**
+- ❌ **`suggested_position_size` 永不离开 `"0%"`**
+- ❌ `extras` 完全只读派生，下游消费者**绝对不应**据 `final_direction` / `soft_signal` / `probability_bucket` 等做开 / 平仓判断
+- ❌ `extras` 中**不包含** `exclusion_level`——会需要跨段读 sibling section，违反"adapter 各段独立"原则
+
+**真正的 07 字段化无路径**——本项目策略明确**不允许**让 07 决策字段动起来。如果未来需要"模拟交易演练"，应当：
+1. 新增独立的 contract section（不是改 07）
+2. 或新增 `simulated_trade.extras` 内部子键明确标注为"演练记录"而非"交易建议"
+3. 永远配合 `trade_engine_enabled = False` / 类似明示开关
+
+`tests/test_simulated_trade_contract_fields.py`（29 case + 22 subtests）+ `tests/test_projection_output_adapter.py`（新增 1 case）锁住"6 决策字段 pinned、no_trade_reason 静态、extras 反映 predict_result、`trade_engine_enabled` 常量 False"。
+
+## 15. Step 2C / 2D extras 模式总览
+
+04 / 05 / 07 三段已完成"required 字段保语义、extras 暴露 raw signals"模式。共有特征：
+
+| 段 | required 字段 | required 字段策略 | extras 关键键 |
+|---|---|---|---|
+| 04 `exclusion_system`（Step 2C-2） | 5 字段全 stub | `exclusion_level="none"` / 空 list / 全 `False` | `conflicting_factors` / `path_risk_level` / `peer_path_risk_*` / `soft_signal` |
+| 05 `confidence_system`（Step 2C-3b） | 4 score = 0.0 + `event_score=None` + 3 真值（confidence_level / total_confidence / confidence_reason） | 4 score 永不动；3 真值保原映射 | `primary_score_raw`（未归一化）/ peer 计数 / `final_confidence` / `probability_bucket` / `soft_signal` |
+| 07 `simulated_trade`（Step 2D-2） | 6 决策字段 pinned + `no_trade_reason` 静态 | 6 决策永不动；策略边界 | `final_direction` / `final_five_state` / `probability_bucket` / `confidence_level` / `path_risk_level` / `soft_signal` / `trade_engine_enabled=False` |
+
+**统一不变量：**
+- 三段的 `extras.soft_signal` 用**完全相同**的决策树**独立**派生（不跨段读）
+- `extras` 是**额外**字段；contract validator 不强制其形状（已在 Step 2C-2 抽查证实）
+- 所有 extras 只读派生，下游不应据此决策
+- 三个 v1 stub trio（`risk_model.py` / `contradiction_engine.py` / `confidence_engine.py`）整仓库零 import，本轮 / 下一轮都不接
+
+**剩余占位段：** 仅 08 `review_payload` 的 `prediction_id == ""` 还有空字符串问题；其他 7 段 + 08 的非 `prediction_id` 字段都已是字段化或 extras 模式。

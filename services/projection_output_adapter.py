@@ -525,8 +525,76 @@ def _build_final_projection(predict: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+_NO_TRADE_REASON_STATIC = (
+    "Simulated trade engine not enabled in this build; section is "
+    "informational only. See final_projection and confidence_system for "
+    "decision signals."
+)
+
+
 def _build_simulated_trade(predict: dict[str, Any]) -> dict[str, Any]:
-    # 07 is intentionally a no-trade default this round (per Step 1C scope).
+    """Build contract section 07.
+
+    Step 2D-2: the 6 trading-decision fields stay at their pinned safe
+    stubs (``no_trade`` / ``none`` / empty conditions / ``0%``). There is
+    no trading engine wired into ``run_predict``, and this project is not
+    allowed to recommend opening, holding, or closing positions. The
+    ``no_trade_reason`` is upgraded from the legacy "adapter default..."
+    string to a static, honest statement that points consumers at the
+    real decision-signal sections (06 / 05).
+
+    What this step adds is a read-only ``extras`` sub-dict that surfaces
+    trade-relevant *observation signals* already produced upstream
+    (final direction / five-state / probability bucket / confidence /
+    path risk / a re-derived ``soft_signal``). ``extras`` MUST NOT be
+    interpreted by downstream consumers as a recommendation to trade —
+    every extras key is informational only.
+    """
+    final_block = _safe_dict(predict.get("final_projection"))
+    conflicting = _safe_list(predict.get("conflicting_factors"))
+
+    final_direction_value = final_block.get("final_direction")
+    final_direction = (
+        final_direction_value
+        if final_direction_value in _DIRECTION_CN_VALUES
+        else "中性"
+    )
+
+    final_five_state_value = final_block.get("final_five_state")
+    final_five_state = (
+        final_five_state_value
+        if final_five_state_value in _FIVE_STATE_VALUES
+        else "震荡"
+    )
+
+    bucket_value = final_block.get("probability_bucket")
+    probability_bucket = (
+        bucket_value
+        if bucket_value in _PROBABILITY_BUCKET_VALUES
+        else "unknown"
+    )
+
+    confidence_level = _normalize_confidence(predict.get("final_confidence"))
+    total_confidence = _CONFIDENCE_TO_TOTAL.get(confidence_level, 0.0)
+
+    path_risk_raw = predict.get("path_risk")
+    path_risk_level = (
+        path_risk_raw if path_risk_raw in {"low", "medium", "high"} else "unknown"
+    )
+
+    if any(
+        isinstance(factor, str) and factor == "peer_confirmation=weaken"
+        for factor in conflicting
+    ):
+        soft_signal = "peer_weaken"
+    elif path_risk_level == "high":
+        soft_signal = "high_path_risk"
+    else:
+        soft_signal = "none"
+
+    klp = final_block.get("key_price_levels")
+    has_key_price_levels = isinstance(klp, dict) and bool(klp)
+
     return {
         "trade_action": "no_trade",
         "trade_direction": "none",
@@ -534,7 +602,18 @@ def _build_simulated_trade(predict: dict[str, Any]) -> dict[str, Any]:
         "stop_loss_condition": "",
         "take_profit_condition": "",
         "suggested_position_size": "0%",
-        "no_trade_reason": "adapter default: simulated trade decision not yet wired",
+        "no_trade_reason": _NO_TRADE_REASON_STATIC,
+        "extras": {
+            "final_direction": final_direction,
+            "final_five_state": final_five_state,
+            "probability_bucket": probability_bucket,
+            "confidence_level": confidence_level,
+            "total_confidence": total_confidence,
+            "path_risk_level": path_risk_level,
+            "soft_signal": soft_signal,
+            "has_key_price_levels": has_key_price_levels,
+            "trade_engine_enabled": False,
+        },
     }
 
 
