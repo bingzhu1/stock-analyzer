@@ -344,3 +344,67 @@ prediction_log.contract_payload_json  (TEXT NULL)
 - 三个 v1 stub trio（`risk_model.py` / `contradiction_engine.py` / `confidence_engine.py`）整仓库零 import，本轮 / 下一轮都不接
 
 **剩余占位段：** 仅 08 `review_payload` 的 `prediction_id == ""` 还有空字符串问题；其他 7 段 + 08 的非 `prediction_id` 字段都已是字段化或 extras 模式。
+
+## 16. Contract Extras Dashboard（Step 2E-2，read-only 汇总工具）
+
+> 让 04 / 05 / 07 三段的 `extras` 字段真正"可被人类看到"。Step 2C / 2D 模式落地后的闭环验证基础设施。
+
+### 16.1 新增文件
+
+| 文件 | 角色 |
+|---|---|
+| [services/contract_payload_extras_dashboard.py](../services/contract_payload_extras_dashboard.py) | service：`summarize_contract_extras_dashboard(db_path, limit, symbol) -> dict` + `DISTRIBUTION_PATHS` 常量（14 个 (section, extras_field) tuple） |
+| [scripts/dashboard_contract_extras.py](../scripts/dashboard_contract_extras.py) | CLI wrapper，argparse 支持 `--db / --limit / --symbol`，stdout JSON 输出 |
+| [tests/test_contract_payload_extras_dashboard.py](../tests/test_contract_payload_extras_dashboard.py) | 30 case，10 组：no_records / all_invalid / ok shape / latest_snapshot 选最新 valid / extras 分布映射 / missing extras 走 MISSING 桶 / limit 防御 / symbol 过滤 / 不修改 DB / DB 不可读 error / CLI |
+
+### 16.2 工具语义
+
+- **只读：** 仅 `SELECT` 不调用 `init_db`，不 `INSERT` / `UPDATE`
+- **三级回退状态：** `ok` / `no_records` / `no_valid_payloads` / `error`
+- **复用 correlate 风格：** `_resolve_db_path / _resolve_limit / _resolve_symbol` 三个 helper 各工具独立重写（与现有 4 工具一致）；symbol 规则与 `correlate_contract_outcomes` 完全一致（默认 AVGO，None / "ALL" → 不过滤，空字符串回退 AVGO）
+- **`latest_snapshot`：** 取 `created_at DESC, rowid DESC` 的最新 **valid** payload；含 `prediction_id` / `prediction_for_date` / 4 个决策摘要字段（`final_direction` / `probability_bucket` / `confidence_level` / `trade_action`）+ 三段 `extras` 原 dict（缺失则 `None`）
+- **`extras_distributions`：** 14 个统计字段，每个产出 `dict[str, int]`：
+  - 04 段：`soft_signal` / `path_risk_level` / `peer_path_risk_direction` / `conflicting_factors_count`
+  - 05 段：`primary_confidence_raw` / `peer_adjusted_confidence` / `final_confidence` / `probability_bucket` / `path_risk_level` / `soft_signal`
+  - 07 段：`trade_engine_enabled` / `has_key_price_levels` / `final_direction` / `soft_signal`
+
+### 16.3 桶 key 规则（关键防御性细节）
+
+| 输入 | bucket key |
+|---|---|
+| `None` | `"NULL"` |
+| `True` | `"True"` |
+| `False` | `"False"` |
+| 其他 | `str(value)` |
+| 整段 `extras` 缺失（老 payload，Step 2C-2 之前写入）| `"MISSING"` |
+| `extras` 存在但具体键缺失 | `"MISSING"` |
+
+老 payload 缺 extras **不算 invalid**——payload 仍 contract-valid，进入 `extras_distributions` 时计入 `MISSING` 桶，让用户能看到"多少老 prediction 无 extras"。这与 `skipped_records`（仅 `missing_contract_payload` / `invalid_json` / `validation_failed` 三 reason）严格区分。
+
+### 16.4 不统计的字段（避免桶爆 / 连续值无意义）
+
+- `extras.conflicting_factors`（`list[str]`，桶会爆）
+- `extras.peer_path_risk_reasons`（同上）
+- `extras.primary_score_raw`（连续 float；放 `latest_snapshot` 即可）
+- `extras.total_confidence`（连续 float，同上）
+- `extras.peer_confirm_count` / `peer_oppose_count`（int 0–3，但小空间分布意义有限；如有需要 Step 2F 单独统计）
+
+### 16.5 CLI 用法
+
+```bash
+python3 scripts/dashboard_contract_extras.py
+python3 scripts/dashboard_contract_extras.py --limit 50
+python3 scripts/dashboard_contract_extras.py --symbol ALL
+python3 scripts/dashboard_contract_extras.py --symbol NVDA --limit 100
+python3 scripts/dashboard_contract_extras.py --db /path/to/avgo_agent.db
+```
+
+### 16.6 严守边界
+
+- ❌ **不替代** inspector / trend / diff / correlation 四个现有工具（它们的 `DIFF_PATHS` / `GROUP_PATHS` 一行未改）
+- ❌ **不产生交易建议**：dashboard 只统计 `extras` 分布，**不**输出任何"建议方向 / 仓位 / 入场点"信息；`simulated_trade.extras.trade_engine_enabled` 只统计是否永远是 `False`
+- ❌ **不改变任何 contract 字段语义**：required 字段值不动；`extras` 是 Step 2C / 2D 已落地的 metadata，dashboard 是 read-only 消费者
+- ❌ 不接 `risk_model.py` / `contradiction_engine.py` / `confidence_engine.py`
+- ❌ 不接 `big_up_contradiction_card` / `exclusion_reliability_review` / `big_down_tail_warning` / `anti_false_exclusion_audit`
+- ❌ 不接 longbridge / broker / paper_trade / 真实交易 / 模拟盘 API
+- ❌ 不动 `predict.py` / `run_predict` / 4 个 builder / adapter / contract validator / UI / `prediction_store` / DB schema
