@@ -697,3 +697,118 @@ for pair in plan_contract_replay(...).candidate_pairs:
 - ❌ 没让 04 / 05 / 07 任何 required 字段升级
 
 测试基线：2128 → 2139（+11）。0 failed；10 skipped 不变。
+
+## 20. Contract Replay Writer Skeleton（Step 2F-4c-1，dry-run default）
+
+> Step 2F-4 plan §8 的 Option C 第一阶段。**dry-run-only 安全骨架**——`dry_run=True` 是默认；`dry_run=False`（CLI `--write`）今天只返回 `status="not_implemented_for_write"` 并不写任何 DB。**真写入逻辑（`run_predict + save_prediction(analysis_date_override=D) + save_outcome(captured_at_override=D+1)`）留给 Step 2F-4c-2。** 本节是 writer 的契约 + 安全边界 spec。
+
+### 20.1 新增文件
+
+| 文件 | 角色 |
+|---|---|
+| [services/contract_replay_writer.py](../services/contract_replay_writer.py) | service：`run_contract_replay(symbol, start_date, end_date, limit, coded_data_dir, *, dry_run=True, db_path=None) -> dict`；`_DEFAULT_LIMIT = 30` / `_LIMIT_HARD_CAP = 50`；本地 `_resolve_writer_limit` 在 planner 防御之上加 hard cap |
+| [scripts/run_contract_replay.py](../scripts/run_contract_replay.py) | CLI：默认 dry-run；`--write` flag 翻转 `dry_run=False`；其他参数（`--symbol / --start / --end / --limit / --coded-data-dir / --db`）pass-through 到 service |
+| [tests/test_contract_replay_writer.py](../tests/test_contract_replay_writer.py) | 28 case，8 测试组：dry_run 默认 True / dry_run 不调 run_predict / save_prediction / save_outcome（patch + assert call_count == 0） / planner 三种失败模式透传 / 参数转发 / limit hard cap 50 + 5 防御 / `--write` 返回 not_implemented + 同样不调 write 函数 / 依赖卫生 / CLI 2 case |
+
+### 20.2 核心契约
+
+#### dry_run=True（默认）
+
+- 调 `plan_contract_replay(...)` 拿 `candidate_pairs`
+- 返回字段：`status="ok"` / `would_write_count = len(candidate_pairs)` / `written_prediction_count=0` / `written_outcome_count=0` / `notes=["dry_run=True: no prediction/outcome records were written", ...]`
+- **绝对不调** `run_predict` / `save_prediction` / `save_outcome`（patch 测试锁住）
+
+#### dry_run=False（CLI `--write`）
+
+- 仍调 `plan_contract_replay(...)` 拿 `candidate_pairs`
+- 但**第一版 4c-1 在此停下**——返回 `status="not_implemented_for_write"`
+- `notes` 显式写"Step 2F-4c-1 is a dry-run-only skeleton; real write logic is deferred to Step 2F-4c-2"
+- **同样绝对不调** `run_predict` / `save_prediction` / `save_outcome`
+- 即使未来 4c-2 启用真写入，也必须走 `save_prediction(analysis_date_override=D)` + `save_outcome(captured_at_override=D+1)`，**永远不允许直接 INSERT**
+
+#### planner 失败模式透传
+
+- planner `missing_data` / `insufficient_data` / `error` → writer 同状态返回；`notes` 描述"planner returned status=X; no candidate pairs available, nothing was written"
+
+### 20.3 limit 安全边界
+
+| 输入 | 输出 | 理由 |
+|---|---|---|
+| `None` / 默认 | 30 | `_DEFAULT_LIMIT` |
+| 1 ≤ N ≤ 50 | N | 直接通过 |
+| N > 50 | **50** | **`_LIMIT_HARD_CAP=50`** 强制 clamp——writer 是高风险（未来会真写 DB），故比 planner 更紧 |
+| `0` / 负数 / `bool` / `非 int` | 30 | 同 planner 防御口径 |
+
+测试 `test_limit_clamped_at_hard_cap_50` 锁住：`run_contract_replay(limit=200)` → `requested_limit=50`。
+
+### 20.4 严守边界
+
+- ❌ **`dry_run=False` 不调用** `run_predict` / `save_prediction` / `save_outcome` —— 4c-1 范围
+- ❌ **永远不允许直接 INSERT / UPDATE** —— 未来 4c-2 真写也必须走 `save_prediction` / `save_outcome` 真路径
+- ❌ **不调 yfinance / 不调网络**（writer 只调 planner，planner 已是离线）
+- ❌ **不动** `predict.py` / `run_predict` / 4 个 builder / `prediction_store` (`save_prediction` / `save_outcome`) / adapter / contract validator / `scanner.py` / `matcher.py` / 6 个现有 read-only 工具 / DB schema / UI
+- ❌ **不接** `risk_model.py` / `contradiction_engine.py` / `confidence_engine.py`
+- ❌ **不接** `big_up_contradiction_card` / `exclusion_reliability_review` / `big_down_tail_warning` / `anti_false_exclusion_audit`
+- ❌ **不接** longbridge / broker / paper_trade / 真实交易 / 模拟盘 API
+- ❌ **不清理 2099 synthetic records**（DB hygiene 范围；不在 4c-1 范围）
+- ❌ **不让** 04 / 05 / 07 任何 required 字段升级
+
+### 20.5 CLI 用法
+
+```bash
+# 默认 dry-run（永远是默认）
+python3 scripts/run_contract_replay.py
+python3 scripts/run_contract_replay.py --start 2024-01-01 --end 2024-01-31
+python3 scripts/run_contract_replay.py --limit 50
+
+# 显式 --write（4c-1 阶段返回 not_implemented_for_write，仍然不写 DB）
+python3 scripts/run_contract_replay.py --write
+```
+
+stdout 输出 UTF-8 JSON（`ensure_ascii=False, indent=2`）；进程不写文件、不写 DB、不调网络。
+
+### 20.6 与 Step 2F-4 plan 的对接
+
+| Step 2F-4 阶段 | 状态 |
+|---|---|
+| 方案文档（plan）| ✅ commit `e9b44e2` |
+| 4a 诊断 | ✅（无代码） |
+| 4b dry-run planner | ✅ commit `4c89d98` |
+| 4b-verify 实跑 | ✅（无代码；2502 trading days 验证）|
+| 4c-prereq 时间 override | ✅ commit `5dbd9ac` |
+| **4c-1 writer skeleton（本节）** | **本轮** |
+| 4c-2 真写入逻辑 | 待办——必须在 DB hygiene 后启动 |
+| 4d 90-pair 解锁 calibration_ready | 4c-2 完成后 |
+
+### 20.7 Step 2F-4c-2 的最小动作（本节范围之外）
+
+writer 内部填入 4 步链路（每步都已就位）：
+
+```python
+# 4c-2 范围（本节不实施）
+for pair in planner_result["candidate_pairs"]:
+    D = pair["as_of_date"]
+    D_plus_1 = pair["prediction_for_date"]
+    scan = build_historical_scan_at(D)              # ← 需要 4c-2 设计
+    predict = run_predict(scan, ...)                # ← 已就位（pure 函数）
+    pid = save_prediction(
+        ..., snapshot_id=f"replay_phaseA_{D}",
+        analysis_date_override=D,                    # ← 4c-prereq 已就位
+    )
+    actual_ohlcv = fetch_actual_ohlcv_at(D_plus_1)  # ← 需要 4c-2 设计
+    direction_correct = _compute_direction_correct(  # ← 已就位
+        predict["final_bias"],
+        (actual_ohlcv["close"] - actual_ohlcv["prev_close"]) / actual_ohlcv["prev_close"],
+    )
+    save_outcome(
+        ..., direction_correct=direction_correct,
+        captured_at_override=f"{D_plus_1}T16:00:00",  # ← 4c-prereq 已就位
+    )
+```
+
+**4c-2 真正的工程难点**：
+1. `build_historical_scan_at(D)`：需要把 scanner 输入按 `<= D` 截断（含 peer NVDA / SOXX / QQQ 的 `<= D`）
+2. `fetch_actual_ohlcv_at(D_plus_1)`：从 `coded_data/AVGO_coded.csv` 读 D+1 行 OHLCV（已存在数据，直接读）
+3. anti-lookahead 端到端验证：可能需要新增一个独立 audit 工具（仿 calibration_inputs 模式）
+
+测试基线：2139 → 2167（+28）。0 failed；10 skipped 不变。
