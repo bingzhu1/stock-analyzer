@@ -313,25 +313,25 @@ calibration_regime = {
 - ❌ 不接 yfinance / 网络
 - ❌ 不写 Python module / 不动 tests / 不动 schema
 
-## 11. 2006-01-01 最终测试集原则
+## 11. 2026-01-01 最终测试集原则
 
-> **用户明确要求**：2006-01-01 之后的数据作为系统**全部完成后的最终测试数据**，开发期间不能反复使用避免数据污染。
+> **用户明确要求**：**2026-01-01 之后**的真实运行 prediction → outcome 对照作为系统**全部完成后的最终测试数据**，开发期间不能反复使用避免数据污染。今天是 2026-05-04，2026-01-01 之后已经累积了实盘 / 真实运行的预测数据，这部分 forward-looking 验证集不能在 calibration design / tuning 阶段动用。
 
 ### 11.1 数据范围分层
 | 层 | 范围 | 用途 | 当前已用 |
 |---|---|---|---|
 | **Development replay windows** | 2023-08-07 → 2024-08-02（当前 250 records） | Step 2F-3B 设计 / 诊断 / Holdout | ✅ |
-| **Validation windows** | 2024-08 之后 + 2023-08 之前（**待划分**） | Step 3B-1 / 3B-3 holdout 之后的 robustness 验证 | ❌ |
-| **Final test range** | 2006-01-01 之后**全量**（含 2008 / 2018 / 2020 / 2022 等不同 regime） | 系统全部完成后的最终验收 | ❌（保留） |
+| **Validation windows** | 2024-08-06 之后到 2025-12-31 之间 + 2023-08-07 之前的有限历史段（**待划分**） | Step 3B-1 / 3B-3 holdout 之后的 robustness 验证 | ❌ |
+| **Final test range** | **2026-01-01 之后** 的真实运行 prediction → outcome 对照（forward-looking） | 系统全部完成后的最终验收 | ❌（保留，禁触） |
 
 ### 11.2 设计期约束
 - **本步骤（Step 3B 设计）只用 development windows**；
 - **Step 3B-1 holdout** 在 development windows 内做 within-sample / within-regime 验证；
-- **Step 3B-2 之后引入 Validation windows**：选取 development windows **以外**的有限时间段做 out-of-sample 测试；
-- **Step 3C 上线前必须做一次 Final test range 抽样**（比如 2010-2018 不重叠子段），但**不能反复抽样调参**；
-- **不要用 final test range 做 grid search / hyperparameter tuning**；
-- **不要把整个 2006-后数据当训练集**；
-- **任何"复用 final test 子段调参"的请求，本设计文档明确禁止**。
+- **Step 3B-2 之后引入 Validation windows**：选取 development windows **以外**的 2024-08-06..2025-12-31 时间段做 out-of-sample 测试；
+- **Step 3C 上线前必须做一次 Validation windows 抽样**（不重叠子段），但**不能反复抽样调参**；
+- **绝对不要用 2026-01-01 之后的 Final test range 做 design / grid search / hyperparameter tuning / sanity check**；
+- **不要把 2026-01-01 之后的最终测试数据当训练 / 调参数据**；
+- **任何"复用 final test 子段调参"或"先看一眼 2026 的 prediction → outcome 再回头改公式"的请求，本设计文档明确禁止**。
 
 ### 11.3 设计选择倾向于 robust over fitting
 - 第一版只用 1 个主轴 + 1 个辅助 R4 规则；
@@ -377,7 +377,7 @@ calibration_regime = {
 - ❌ 没写 Python module / 没建 service
 - ❌ 没接 trading API / longbridge / broker / paper_trade
 - ❌ 没接 yfinance / 网络
-- ❌ 没用 final test range（2006-后 / 2010-2018 等）做任何调参
+- ❌ 没用 final test range（2026-01-01 之后的真实运行 prediction → outcome 对照）做任何调参 / 抽样 / sanity check
 - ❌ 没保存 csv / 新脚本进仓库
 - ❌ 没触碰 stash / .claude/worktrees/ / logs/prediction_log.jsonl
 - ✅ 仅新增 1 个 markdown design doc
