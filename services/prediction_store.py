@@ -25,7 +25,7 @@ import json
 import sqlite3
 import uuid
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any, NoReturn
 
@@ -227,6 +227,52 @@ def _try_build_contract_payload(
 # prediction_log
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _coerce_analysis_date_override(value: Any) -> str:
+    """Coerce ``analysis_date_override`` to a YYYY-MM-DD string.
+
+    Accepted forms:
+      - ``datetime.date`` (or ``datetime.datetime``) → ``.date().isoformat()``
+      - ``str`` parseable by ``date.fromisoformat`` → canonicalized to YYYY-MM-DD
+
+    Anything else → ValueError. Caller is responsible for short-circuiting
+    on ``None`` (i.e. "no override; keep legacy now() path") before calling.
+    """
+    if isinstance(value, datetime):
+        return value.date().isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    if isinstance(value, str):
+        try:
+            return date.fromisoformat(value).isoformat()
+        except ValueError as exc:
+            raise ValueError(
+                "analysis_date_override must be YYYY-MM-DD"
+            ) from exc
+    raise ValueError("analysis_date_override must be YYYY-MM-DD")
+
+
+def _coerce_captured_at_override(value: Any) -> str:
+    """Coerce ``captured_at_override`` to an ISO datetime string.
+
+    Accepted forms:
+      - ``datetime.datetime`` → ``.isoformat(timespec='seconds')``
+      - ``str`` parseable by ``datetime.fromisoformat`` → canonical ISO
+
+    Anything else → ValueError. Caller is responsible for short-circuiting
+    on ``None``.
+    """
+    if isinstance(value, datetime):
+        return value.isoformat(timespec="seconds")
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value).isoformat(timespec="seconds")
+        except ValueError as exc:
+            raise ValueError(
+                "captured_at_override must be ISO datetime"
+            ) from exc
+    raise ValueError("captured_at_override must be ISO datetime")
+
+
 def save_prediction(
     symbol: str,
     prediction_for_date: str,
@@ -236,6 +282,7 @@ def save_prediction(
     snapshot_id: str = "—",
     *,
     contract_payload: Any = _AUTO_GENERATE_CONTRACT,
+    analysis_date_override: str | date | None = None,
 ) -> str:
     """
     Persist a prediction. Returns the new prediction_id (UUID4).
@@ -250,15 +297,28 @@ def save_prediction(
         fall back to NULL; the legacy save flow always succeeds.
       - **None** → store NULL explicitly; no side-path runs.
       - **dict** → store as-is, no validation, no rebuild.
+
+    ``analysis_date_override`` (Step 2F-4c-prereq):
+      - **None** (default) → legacy path; ``analysis_date`` set to today
+        via ``datetime.now().date()``.
+      - **str (YYYY-MM-DD) | date** → use that value verbatim. Required
+        for replay writers that need ``analysis_date = D`` (the historical
+        day whose data was used) rather than the wall-clock today.
+        Raises ``ValueError`` on malformed input; no row is written in
+        that case.
     """
     if contract_payload is _AUTO_GENERATE_CONTRACT:
         contract_payload = _try_build_contract_payload(
             scan_result, research_result, predict_result
         )
 
+    if analysis_date_override is None:
+        analysis_date = datetime.now().date().isoformat()
+    else:
+        analysis_date = _coerce_analysis_date_override(analysis_date_override)
+
     init_db()
     prediction_id = str(uuid.uuid4())
-    analysis_date = datetime.now().date().isoformat()
     with _get_conn() as conn:
         conn.execute(
             """INSERT INTO prediction_log
@@ -370,8 +430,26 @@ def save_outcome(
     actual_prev_close: float | None,
     direction_correct: int | None,
     scenario_match: str | None = None,
+    *,
+    captured_at_override: str | datetime | None = None,
 ) -> str:
-    """Persist an outcome. Returns the new outcome_id (UUID4)."""
+    """Persist an outcome. Returns the new outcome_id (UUID4).
+
+    ``captured_at_override`` (Step 2F-4c-prereq):
+      - **None** (default) → legacy path; ``captured_at`` set to now via
+        ``datetime.now().isoformat(timespec="seconds")``.
+      - **str (ISO) | datetime** → use that value verbatim. Required for
+        replay writers that need ``captured_at`` to reflect when the
+        historical outcome was *observable* (i.e. D+1 close), not the
+        wall-clock now. Raises ``ValueError`` on malformed input;
+        validation runs before any DB work, so no row is written in that
+        case.
+    """
+    if captured_at_override is None:
+        captured_at = datetime.now().isoformat(timespec="seconds")
+    else:
+        captured_at = _coerce_captured_at_override(captured_at_override)
+
     init_db()
     outcome_id = str(uuid.uuid4())
     open_change = (
@@ -397,7 +475,7 @@ def save_outcome(
                 outcome_id,
                 prediction_id,
                 prediction_for_date,
-                datetime.now().isoformat(timespec="seconds"),
+                captured_at,
                 actual_open,
                 actual_high,
                 actual_low,

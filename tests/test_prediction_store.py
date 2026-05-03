@@ -704,5 +704,177 @@ class ContractSavePathSideEffectTests(unittest.TestCase):
         self.assertEqual(json.loads(row["contract_payload_json"]), custom)
 
 
+# ── Step 2F-4c-prereq: replay timestamp overrides ──────────────────────────
+
+class ReplayTimestampOverrideTests(unittest.TestCase):
+    """``analysis_date_override`` and ``captured_at_override`` are optional
+    kw-only args; default behavior must remain identical."""
+
+    def setUp(self) -> None:
+        self._tmpdir = tempfile.TemporaryDirectory()
+        ps.DB_PATH = Path(self._tmpdir.name) / "test.db"
+        ps.init_db()
+
+    def tearDown(self) -> None:
+        self._tmpdir.cleanup()
+
+    # — save_prediction —
+
+    def test_save_prediction_default_path_keeps_now_analysis_date(self) -> None:
+        # Without override, analysis_date is set to today via datetime.now();
+        # we don't pin a specific date but assert it is a valid YYYY-MM-DD.
+        pid = ps.save_prediction(
+            "AVGO", "2026-04-11", None, None, _make_predict_result(),
+        )
+        row = ps.get_prediction(pid)
+        assert row is not None
+        self.assertIsNotNone(row["analysis_date"])
+        # Round-trips back to a date.
+        from datetime import date as _date  # local import to avoid top noise
+        _date.fromisoformat(row["analysis_date"])
+        # contract_payload_json still auto-generated (Step 1E behavior intact).
+        self.assertIsNotNone(row["contract_payload_json"])
+        self.assertIsNotNone(row["created_at"])
+
+    def test_save_prediction_string_override_is_used_verbatim(self) -> None:
+        pid = ps.save_prediction(
+            "AVGO", "2026-04-11", None, None, _make_predict_result(),
+            analysis_date_override="2024-01-02",
+        )
+        row = ps.get_prediction(pid)
+        assert row is not None
+        self.assertEqual(row["analysis_date"], "2024-01-02")
+        # created_at remains "now" — not affected by override.
+        self.assertIsNotNone(row["created_at"])
+        self.assertNotEqual(row["created_at"], row["analysis_date"])
+        # contract_payload_json still auto-generated.
+        self.assertIsNotNone(row["contract_payload_json"])
+
+    def test_save_prediction_date_override_is_isoformatted(self) -> None:
+        from datetime import date as _date
+        pid = ps.save_prediction(
+            "AVGO", "2026-04-11", None, None, _make_predict_result(),
+            analysis_date_override=_date(2024, 1, 2),
+        )
+        row = ps.get_prediction(pid)
+        assert row is not None
+        self.assertEqual(row["analysis_date"], "2024-01-02")
+
+    def test_save_prediction_datetime_override_uses_date_part(self) -> None:
+        from datetime import datetime as _datetime
+        pid = ps.save_prediction(
+            "AVGO", "2026-04-11", None, None, _make_predict_result(),
+            analysis_date_override=_datetime(2024, 1, 2, 16, 0, 0),
+        )
+        row = ps.get_prediction(pid)
+        assert row is not None
+        self.assertEqual(row["analysis_date"], "2024-01-02")
+
+    def test_save_prediction_invalid_string_raises_and_writes_nothing(self) -> None:
+        with self.assertRaises(ValueError) as ctx:
+            ps.save_prediction(
+                "AVGO", "2026-04-11", None, None, _make_predict_result(),
+                analysis_date_override="not-a-date",
+            )
+        self.assertIn("YYYY-MM-DD", str(ctx.exception))
+        # No row was written.
+        with ps._get_conn() as conn:
+            count = conn.execute(
+                "SELECT COUNT(*) FROM prediction_log"
+            ).fetchone()[0]
+        self.assertEqual(count, 0)
+
+    def test_save_prediction_non_date_type_raises(self) -> None:
+        with self.assertRaises(ValueError):
+            ps.save_prediction(
+                "AVGO", "2026-04-11", None, None, _make_predict_result(),
+                analysis_date_override=12345,  # type: ignore[arg-type]
+            )
+
+    # — save_outcome —
+
+    def _save_pred(self) -> str:
+        return ps.save_prediction(
+            "AVGO", "2026-04-11", None, None, _make_predict_result(),
+        )
+
+    def test_save_outcome_default_path_uses_now_for_captured_at(self) -> None:
+        pid = self._save_pred()
+        oid = ps.save_outcome(
+            prediction_id=pid,
+            prediction_for_date="2026-04-11",
+            actual_open=100.0,
+            actual_high=101.0,
+            actual_low=99.0,
+            actual_close=100.5,
+            actual_prev_close=100.0,
+            direction_correct=1,
+        )
+        outcome = ps.get_outcome_for_prediction(pid)
+        assert outcome is not None
+        self.assertEqual(outcome["id"], oid)
+        # captured_at is a non-empty ISO datetime.
+        from datetime import datetime as _datetime
+        _datetime.fromisoformat(outcome["captured_at"])
+
+    def test_save_outcome_string_override_is_used_verbatim(self) -> None:
+        pid = self._save_pred()
+        ps.save_outcome(
+            prediction_id=pid,
+            prediction_for_date="2026-04-11",
+            actual_open=100.0, actual_high=101.0, actual_low=99.0,
+            actual_close=100.5, actual_prev_close=100.0,
+            direction_correct=1,
+            captured_at_override="2024-01-03T16:00:00",
+        )
+        outcome = ps.get_outcome_for_prediction(pid)
+        assert outcome is not None
+        self.assertEqual(outcome["captured_at"], "2024-01-03T16:00:00")
+
+    def test_save_outcome_datetime_override_iso_seconds(self) -> None:
+        from datetime import datetime as _datetime
+        pid = self._save_pred()
+        ps.save_outcome(
+            prediction_id=pid,
+            prediction_for_date="2026-04-11",
+            actual_open=100.0, actual_high=101.0, actual_low=99.0,
+            actual_close=100.5, actual_prev_close=100.0,
+            direction_correct=1,
+            captured_at_override=_datetime(2024, 1, 3, 16, 0, 0),
+        )
+        outcome = ps.get_outcome_for_prediction(pid)
+        assert outcome is not None
+        self.assertEqual(outcome["captured_at"], "2024-01-03T16:00:00")
+
+    def test_save_outcome_invalid_string_raises_and_writes_nothing(self) -> None:
+        pid = self._save_pred()
+        with self.assertRaises(ValueError) as ctx:
+            ps.save_outcome(
+                prediction_id=pid,
+                prediction_for_date="2026-04-11",
+                actual_open=100.0, actual_high=101.0, actual_low=99.0,
+                actual_close=100.5, actual_prev_close=100.0,
+                direction_correct=1,
+                captured_at_override="not-a-datetime",
+            )
+        self.assertIn("ISO datetime", str(ctx.exception))
+        # No outcome row was written.
+        self.assertIsNone(ps.get_outcome_for_prediction(pid))
+
+    def test_save_outcome_non_datetime_type_raises(self) -> None:
+        pid = self._save_pred()
+        with self.assertRaises(ValueError):
+            ps.save_outcome(
+                prediction_id=pid,
+                prediction_for_date="2026-04-11",
+                actual_open=100.0, actual_high=101.0, actual_low=99.0,
+                actual_close=100.5, actual_prev_close=100.0,
+                direction_correct=1,
+                captured_at_override=12345,  # type: ignore[arg-type]
+            )
+        # No outcome row was written.
+        self.assertIsNone(ps.get_outcome_for_prediction(pid))
+
+
 if __name__ == "__main__":
     unittest.main()

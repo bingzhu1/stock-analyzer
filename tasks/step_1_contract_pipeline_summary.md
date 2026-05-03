@@ -592,3 +592,108 @@ planner 输出可作为 writer 输入的"候选 pair 清单"。但 writer 启动
 6. 直接调 `save_prediction` + `save_outcome`（注意 `analysis_date` 处理）
 
 planner 测试基线：2094 → 2128（+34）。0 failed；10 skipped 不变。
+
+## 19. Replay timestamp overrides（Step 2F-4c-prereq）
+
+> Step 2F-4a 诊断 §3.2 推荐的 Option (a) 落地。**最小扩展**——给 `services/prediction_store.py` 的 `save_prediction` / `save_outcome` 各加一个可选 kw-only override 参数，默认行为完全不变。**这是 Step 2F-4c replay writer 的最后一块前置拼图，本身不写 replay writer。**
+
+### 19.1 改动文件
+
+| 文件 | 改动 | 概要 |
+|---|---|---|
+| [services/prediction_store.py](../services/prediction_store.py) | 修改 | `from datetime import date, datetime`（加 `date` 类型 import）；新增 `_coerce_analysis_date_override(value)` + `_coerce_captured_at_override(value)` 两个 helper；`save_prediction` 加 kw-only `analysis_date_override: str \| date \| None = None`；`save_outcome` 加 kw-only `captured_at_override: str \| datetime \| None = None` |
+| [tests/test_prediction_store.py](../tests/test_prediction_store.py) | 修改 | 新增 `ReplayTimestampOverrideTests` 类，11 case |
+
+### 19.2 行为定义
+
+#### `save_prediction.analysis_date_override`
+
+| 输入 | 行为 |
+|---|---|
+| `None`（默认） | 走旧路径：`analysis_date = datetime.now().date().isoformat()`，**完全不变** |
+| `date(2024, 1, 2)` | `.isoformat()` → `"2024-01-02"` |
+| `datetime(2024, 1, 2, 16, 0, 0)` | `.date().isoformat()` → `"2024-01-02"`（取日期部分，丢时分秒） |
+| `"2024-01-02"` | `date.fromisoformat(...).isoformat()` → 同上（含校验） |
+| `"not-a-date"` / 12345 / 其他 | `raise ValueError("analysis_date_override must be YYYY-MM-DD")` —— **校验在 INSERT 之前，失败时不写任何行** |
+
+`created_at` 仍用 `now()`，**不**受 override 影响（创建时间记录的是"何时写入 DB"，与 prediction 的 analysis 时间是不同维度）。
+
+#### `save_outcome.captured_at_override`
+
+| 输入 | 行为 |
+|---|---|
+| `None`（默认） | 走旧路径：`captured_at = datetime.now().isoformat(timespec="seconds")`，**完全不变** |
+| `datetime(2024, 1, 3, 16, 0, 0)` | `.isoformat(timespec="seconds")` → `"2024-01-03T16:00:00"` |
+| `"2024-01-03T16:00:00"` | `datetime.fromisoformat(...).isoformat(timespec="seconds")` → 同上（含校验、保留时分秒） |
+| `"not-a-datetime"` / 12345 / 其他 | `raise ValueError("captured_at_override must be ISO datetime")` —— 校验在 INSERT 之前，失败时不写任何行 |
+
+### 19.3 严格不变量
+
+- ❌ **DB schema 一行未改**——`analysis_date` / `captured_at` 列名 / 类型不动
+- ❌ **`contract_payload_json` 自动旁路语义未改**——`_AUTO_GENERATE_CONTRACT` / `_try_build_contract_payload` 路径不变；override 完全不影响 contract 生成
+- ❌ **现有 39 个 `tests/test_prediction_store.py` case 全绿**（无回归）
+- ❌ **现有 caller 无需改动**——所有现有 `save_prediction(...)` / `save_outcome(...)` 调用方默认不传 override，行为与升级前完全一致
+- ❌ **`scenario_match` 等其他参数顺序 / 默认值不动**
+- ❌ **没有新增任何 replay writer**——本步是单点能力扩展，不实施 4c
+
+### 19.4 失败原子性
+
+两个 override 都遵循 **"先校验再 INSERT"** 模式：
+- `_coerce_*_override` 在拿锁之前 raise；任何非法输入都不会触发 `init_db()` / `_get_conn()`
+- `save_prediction` 的 `_try_build_contract_payload` 也已经在 INSERT 前；override 失败时 contract 不构建
+
+测试 `test_save_prediction_invalid_string_raises_and_writes_nothing` 与 `test_save_outcome_invalid_string_raises_and_writes_nothing` 锁住此原子性。
+
+### 19.5 与 Step 2F-4 plan 的对接
+
+Step 2F-4a 诊断 §3.2 的三 Option：
+- **Option (a)** —— 给 `save_prediction` / `save_outcome` 加可选 override → ✅ **本节落地**
+- ~~Option (b)~~ —— 把 D 编码进 `snapshot_id`：不需要了
+- ~~Option (c)~~ —— 新增 `save_prediction_replay()` 函数：不需要了
+
+Step 2F-4c writer 现在可以：
+
+```python
+# 伪代码（4c writer 范围；本节不实施）
+for pair in plan_contract_replay(...).candidate_pairs:
+    D = pair["as_of_date"]
+    D_plus_1 = pair["prediction_for_date"]
+    scan = build_historical_scan_at(D)             # 4c 范围
+    predict = run_predict(scan, ...)
+    pid = save_prediction(
+        symbol="AVGO",
+        prediction_for_date=D_plus_1,
+        scan_result=scan,
+        research_result=None,
+        predict_result=predict,
+        snapshot_id=f"replay_phaseA_{D}",
+        analysis_date_override=D,                  # ← 关键
+    )
+    actual_ohlcv = fetch_actual_ohlcv_at(D_plus_1)  # 4c 范围
+    direction_correct = _compute_direction_correct(
+        predict["final_bias"],
+        (actual_ohlcv["close"] - actual_ohlcv["prev_close"]) / actual_ohlcv["prev_close"],
+    )
+    save_outcome(
+        prediction_id=pid,
+        prediction_for_date=D_plus_1,
+        ...,
+        direction_correct=direction_correct,
+        captured_at_override=f"{D_plus_1}T16:00:00",  # ← 关键
+    )
+```
+
+### 19.6 严守边界（Step 2 全程一致）
+
+- ❌ 没改 `predict.py` / `run_predict` / 4 个 builder / adapter / contract validator
+- ❌ 没改 `scanner.py` / `matcher.py` / 数据层
+- ❌ 没改 6 个现有 read-only 工具（inspector / trend / diff / correlation / dashboard / calibration_inputs）/ `DIFF_PATHS` / `GROUP_PATHS` / `DISTRIBUTION_PATHS`
+- ❌ 没改 `services/contract_replay_planner.py`（Step 2F-4b 工具）
+- ❌ 没改 DB schema
+- ❌ 没接 `risk_model.py` / `contradiction_engine.py` / `confidence_engine.py`
+- ❌ 没接 `big_up_contradiction_card` / `exclusion_reliability_review` / `big_down_tail_warning` / `anti_false_exclusion_audit`
+- ❌ 没接 longbridge / broker / paper_trade / 真实交易 / 模拟盘 API
+- ❌ 没新增 replay writer（Step 2F-4c 范围）
+- ❌ 没让 04 / 05 / 07 任何 required 字段升级
+
+测试基线：2128 → 2139（+11）。0 failed；10 skipped 不变。
