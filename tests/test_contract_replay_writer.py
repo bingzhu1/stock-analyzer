@@ -555,6 +555,22 @@ class WriterScriptTests(_IsolatedDB):
         self.assertEqual(result["status"], "ok")
         self.assertEqual(result["written_prediction_count"], 0)
 
+    def test_cli_help_reports_current_hard_cap(self) -> None:
+        # Step 2F-4d-2-prereq-2b: --limit help text must read the live
+        # _LIMIT_HARD_CAP constant, not a stale literal. The previous
+        # version said "hard cap 50" (left over from 4c-1 50→30).
+        script = ROOT / "scripts" / "run_contract_replay.py"
+        proc = subprocess.run(
+            [sys.executable, str(script), "--help"],
+            capture_output=True, text=True, check=True,
+        )
+        help_text = proc.stdout
+        self.assertIn(f"hard cap {crw._LIMIT_HARD_CAP}", help_text)
+        # Stale "hard cap 50" must not resurface.
+        self.assertNotIn("hard cap 50", help_text)
+        # Default-limit clause should also reflect the live constant.
+        self.assertIn(f"default {crw._DEFAULT_LIMIT}", help_text)
+
     def test_cli_write_flag_actually_writes(self) -> None:
         # Use a separate tmp DB; pass via --db so CLI subprocess writes
         # to our isolated location.

@@ -29,7 +29,11 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from services.contract_replay_writer import run_contract_replay
+from services.contract_replay_writer import (
+    _DEFAULT_LIMIT,
+    _LIMIT_HARD_CAP,
+    run_contract_replay,
+)
 
 
 def main() -> int:
@@ -54,8 +58,11 @@ def main() -> int:
     parser.add_argument(
         "--limit",
         type=int,
-        default=30,
-        help="Maximum candidate pairs (default 30; hard cap 50).",
+        default=_DEFAULT_LIMIT,
+        help=(
+            f"Maximum candidate pairs (default {_DEFAULT_LIMIT}; "
+            f"hard cap {_LIMIT_HARD_CAP})."
+        ),
     )
     parser.add_argument(
         "--coded-data-dir",

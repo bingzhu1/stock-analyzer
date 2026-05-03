@@ -1026,8 +1026,9 @@ for pair in candidate_pairs:
 |---|---|---|
 | 4d-1 | 90-pair dry-run planning（只读，无代码） | ✅ |
 | 4d-2-prereq-1 | writer duplicate guard | ✅ commit `19800ac` |
-| **4d-2-prereq-2（§23）** | **`_LIMIT_HARD_CAP` 30 → 130** | **本轮** |
-| 4d-2 | 备份 → 130 dry-run → `--write 130` → 跑 calibration_inputs 验证 paired ≥ 90 | 4d-2-prereq-2 之后 |
+| 4d-2-prereq-2 | `_LIMIT_HARD_CAP` 30 → 130 | ✅ commit `7d685a6` |
+| **4d-2-prereq-2b（§23.5 已转 ✅）** | **CLI `--help` 文案随常量更新** | **本轮** |
+| 4d-2 | 备份 → 130 dry-run → `--write 130` → 跑 calibration_inputs 验证 paired ≥ 90 | 4d-2-prereq-2b 之后 |
 
 ## 23. Replay writer hard cap 30 → 130（Step 2F-4d-2-prereq-2）
 
@@ -1092,7 +1093,7 @@ for pair in candidate_pairs:
 - ❌ 未跑主项目 `--write` / 未跑 90 / 120 / 130 真写入；
 - ❌ 未走网络 / yfinance / trading API；
 - ❌ 未触碰 stash / .claude/worktrees/ / logs/prediction_log.jsonl；
-- ⚠️ **CLI `--help` 文案 stale**：[`scripts/run_contract_replay.py`](../scripts/run_contract_replay.py) 第 58 行仍写 `"hard cap 50"`，是 4c-1 把 cap 50 → 30 时漏改的旧 typo，不属于本步骤范围；本轮亦未修。建议在 4d-2-prereq-3（如果设）或下一次 CLI 整理时一并改成 `"hard cap 130"`。
+- ✅ **CLI `--help` 文案 stale 已修**（Step 2F-4d-2-prereq-2b）：[`scripts/run_contract_replay.py`](../scripts/run_contract_replay.py) 改为从 `services.contract_replay_writer` import `_DEFAULT_LIMIT` / `_LIMIT_HARD_CAP`，`--limit` 的 help 用 f-string 模板注入，CLI 文案随常量自动更新；`WriterScriptTests::test_cli_help_reports_current_hard_cap` 锁定 `--help` 输出含 `"hard cap {_LIMIT_HARD_CAP}"`、不含 stale `"hard cap 50"`。
 
 ### 23.6 4d-2 实跑前置清单（落地前必须满足）
 
