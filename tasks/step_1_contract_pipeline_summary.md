@@ -512,3 +512,83 @@ python3 scripts/summarize_confidence_calibration_inputs.py --db /path/to/avgo_ag
 | `summarize_confidence_calibration_inputs` (本节，Step 2F-2) | 05 段 extras + outcome 关联 + **calibration 数据缺口** | `records` / `confidence_level_summary` / `primary_score_raw_summary` / `data_gap_report` | `prediction_log` LEFT JOIN `outcome_log` |
 
 两工具互补、不重叠：dashboard 看"什么 extras 字段值在出现"；calibration_inputs 看"哪些 extras 字段 + outcome 配对足够做归一化决定"。
+
+## 18. Contract Replay Planner（Step 2F-4b，dry-run only）
+
+> Step 2F-4 方案文档 §8 的 Option B 落地。**只读枚举 (D, D+1) pair，不写 DB、不调 yfinance、不运行 prediction、不生成 outcome。** 是 Step 2F-4c writer 的前置工具。
+
+### 18.1 新增文件
+
+| 文件 | 角色 |
+|---|---|
+| [services/contract_replay_planner.py](../services/contract_replay_planner.py) | service：`plan_contract_replay(symbol, start_date, end_date, limit, coded_data_dir) -> dict`；stdlib only（`csv` + `datetime`），不 import pandas / yfinance / requests |
+| [scripts/plan_contract_replay.py](../scripts/plan_contract_replay.py) | CLI：`--symbol / --start / --end / --limit / --coded-data-dir`，stdout JSON 输出 |
+| [tests/test_contract_replay_planner.py](../tests/test_contract_replay_planner.py) | 34 case，7 测试组：missing_data 三种 / 时间正序 + 去重 + ISO 时间后缀截断 / limit 5 防御 / start-end 过滤 7 case / symbol 7 路径（含 ALL→error）/ 依赖卫生（不 import yfinance/requests + 不依赖 DB）/ CLI 2 case |
+
+### 18.2 工具语义
+
+- **完全只读：** 仅读 `coded_data/<SYMBOL>_coded.csv` 的 `Date` 列；不写 DB / 不调 init_db / 不 INSERT/UPDATE
+- **完全离线：** 不调 yfinance / 网络；不 import pandas（与 Step 2 全程 read-only 工具一致，stdlib only）
+- **不运行 prediction / 不生成 outcome：** Step 2F-4c writer 的职责；本工具只枚举"会跑哪些 (D, D+1) pair"
+- **status 四值：** `ok` / `missing_data` / `insufficient_data` / `error`
+- **不影响 Step 1E + Step 2F-4 严守边界：** 不动 `predict.py` / `prediction_store.py` / adapter / contract validator / 6 个 read-only 工具 / DB schema
+
+### 18.3 数据来源与 CWD 行为
+
+- **默认数据源：** `Path.cwd() / "coded_data" / "<SYMBOL>_coded.csv"`
+- **`coded_data_dir` 显式覆盖：** 可通过参数或 CLI `--coded-data-dir` 指定
+- **CWD 差异：** 主项目根 `/Users/may/Desktop/stock-analyzer-main/` 有 `coded_data/`（4 份 CSV：AVGO / NVDA / QQQ / SOXX）；worktree 根没有
+- **缺数据时不抛异常：** `coded_data` 目录或 `<SYMBOL>_coded.csv` 不存在 → 返回 `status="missing_data"` + `data_source_status="missing_dir" | "missing_file"`
+
+### 18.4 候选 pair 生成
+
+按时间正序：
+1. 读 CSV `Date` 列（前 10 字符 ISO truncate，handles `2024-01-02 00:00:00` 后缀）
+2. 跳过非合法日期（无效日期不抛，silently skip）
+3. dedupe + sort 得 `trading_days`（YYYY-MM-DD 字符串列表）
+4. 应用 `start_date <= D` / `D <= end_date` 过滤
+5. 构造 `[(days[i], days[i+1]) for i in range(len(days)-1)]`
+6. 截断到 `limit` 个（默认 30；非法回退 30，含 bool / non-int / `<=0` 防御）
+7. 自查 `as_of_date < prediction_for_date`（anti-lookahead self-check，输出在 `anti_lookahead_check`）
+
+### 18.5 错误处理（status=error）
+
+- `start_date` / `end_date` 不是合法 YYYY-MM-DD → error + 描述错误的字段
+- `start_date > end_date` → error
+- `symbol="ALL"` / `"all"` → error（**planner 是 per-symbol，不支持聚合**——这是与 dashboard / correlate / calibration_inputs 的关键差异）
+
+### 18.6 CLI 用法
+
+```bash
+python3 scripts/plan_contract_replay.py
+python3 scripts/plan_contract_replay.py --start 2024-01-01 --end 2024-06-30
+python3 scripts/plan_contract_replay.py --limit 100
+python3 scripts/plan_contract_replay.py --symbol NVDA
+python3 scripts/plan_contract_replay.py --coded-data-dir /path/to/coded_data
+```
+
+### 18.7 严守边界
+
+- ❌ **不解决 `save_prediction.analysis_date = now()` 问题** —— 这是 Step 2F-4c writer 启动前的独立决策（Step 2F-4a 诊断 §3.2 推荐 Option (a) "给 `save_prediction` 加 `analysis_date` kwarg"）
+- ❌ **不调 `run_predict` / `save_prediction` / `save_outcome`** —— 那是 Step 2F-4c
+- ❌ **不调 yfinance / 任何网络**
+- ❌ **不动 6 个现有 read-only 工具**（inspector / trend / diff / correlation / dashboard / calibration_inputs）
+- ❌ 不接 `risk_model.py` / `contradiction_engine.py` / `confidence_engine.py`
+- ❌ 不接 `big_up_contradiction_card` / `exclusion_reliability_review` / `big_down_tail_warning` / `anti_false_exclusion_audit`
+- ❌ 不接 longbridge / broker / paper_trade / 真实交易 / 模拟盘 API
+- ❌ 不写 DB / 不动 schema / 不 import pandas
+- ❌ 不让 04 / 05 / 07 任何 required 字段升级
+- ❌ 不使用 2099 synthetic records（与本工具范围正交：planner 完全不读 `prediction_log`）
+
+### 18.8 与 Step 2F-4c writer 的关系
+
+planner 输出可作为 writer 输入的"候选 pair 清单"。但 writer 启动前必须先：
+
+1. 决定 `analysis_date` 处理方案（Option (a) / (b) / (c)）—— 见 Step 2F-4a 诊断 §3.2
+2. 同样决定 `outcome_log.captured_at` 处理（同问题）
+3. 复用 `services/historical_replay_training.py::run_historical_replay_for_date(...)` 作为 projection 框架（已存在、anti-lookahead 严格）
+4. 复用 `services/outcome_capture.py::_compute_direction_correct(...)` 计算 outcome（不能手工传 0/1）
+5. **不**使用 `services/replay_record_wiring.py`（写到 `projection_runs` 表，与 contract pair 不同维度）
+6. 直接调 `save_prediction` + `save_outcome`（注意 `analysis_date` 处理）
+
+planner 测试基线：2094 → 2128（+34）。0 failed；10 skipped 不变。
