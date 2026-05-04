@@ -1412,3 +1412,165 @@ Step 2G-3 §10 / Step 2G-4.5 §10.1.6 hard gate 全失败）。
 - ✅ 所有 48 个新增测试 pass；2302 / 0 failed / 10 skipped；现有 2254
   基线零回归
 
+## 26. Soft Metadata Renderer（Step 2G-6A，pure UI helper）
+
+### 26.1 为什么做
+
+Step 2G-6 display design（commit `0c5f421`）冻结了 dashboard / review
+显示层的 11 条文案禁止词、4 种归因组合、12 项 UI safety checks。
+Step 2G-6A 是该 design 的第一段实现：一个**纯函数 UI helper**，输入
+`soft_metadata.v1` dict，输出**安全的展示模型** + 可选 markdown
+字符串，**不**直接调用 Streamlit、**不**接 Predict / Review 页面、
+**不**写任何 contract 字段。Step 2G-6B / 6C 才会把这个 helper
+插入 `app.py` / `ui/predict_tab.py` / `ui/review_tab.py`。
+
+### 26.2 改动文件
+
+| 文件 | 角色 | 说明 |
+|---|---|---|
+| `ui/soft_metadata_renderer.py` | 新增纯函数 helper | `render_soft_metadata_card_data(soft_metadata, *, context, include_debug)` 输出展示 dict；`render_soft_metadata_markdown(card_data)` 输出 markdown 字符串 |
+| `tests/test_soft_metadata_renderer.py` | 新增测试 | 36 个 unittest，覆盖 §3 文案禁止词 / §11 12 项 safety checks / debug toggle / context (predict / review) / 缺失字段防御 / unknown signal graceful degradation |
+
+未改：`predict.py` / `run_predict` / `scanner.py` / `prediction_store.py` /
+`projection_output_adapter.py` / `projection_output_contract.py` /
+`regime_diagnostics_dashboard.py` / `soft_metadata_simulator.py` /
+`app.py` / 任何现有 `ui/*` 模块 / 任何 builder / DB schema / 04 / 05 /
+07 任何 required 字段。
+
+### 26.3 输入 / 输出 API
+
+```python
+def render_soft_metadata_card_data(
+    soft_metadata: dict,                # simulator's soft_metadata.v1 dict
+    *,
+    context: str = "predict",           # "predict" | "review"
+    include_debug: bool = False,
+) -> dict:
+    """Pure function. Always returns a dict; never raises."""
+
+def render_soft_metadata_markdown(card_data: dict) -> str:
+    """Pure function. Empty string when card_data.visible is False."""
+```
+
+`render_soft_metadata_card_data` 输出形状：
+
+```
+{
+  "visible": bool,
+  "title": str,                        # "结构性偏多风险提示" / "结构性偏多归因维度（候选）"
+  "subtitle": str,
+  "cards": [
+    {
+      "name": str,                     # "r4_overextension" | "bullish_high_pos20_residual"
+      "display_label": str,
+      "severity": "low" | "medium",
+      "badge_text": str,               # "信息提示" | "复核建议"
+      "badge_tone": str,               # "info" | "caution" — never "danger" / "red"
+      "summary_text": str,
+      "metrics": [{"label": str, "value": str}, ...],
+      "safety_note": str,              # always includes "不改变主推演方向" + "不构成交易指令"
+      "expandable_details": [{"label": str, "text": str}, ...],
+      "recommended_action": str,
+      "holdout_status": "FAIL" | None,
+    }
+  ],
+  "debug": dict | None,                # only when include_debug=True
+  "warnings": [str, ...],
+}
+```
+
+### 26.4 文案安全策略
+
+- **禁止词** (`FORBIDDEN_COPY_TOKENS`，模块级常量)：`禁止交易` /
+  `强制否定` / `必须不做` / `hard exclusion` / `forced exclusion` /
+  `自动拦截` / `no_trade` / `卖出信号` / `做空信号` / `看空信号` /
+  `否决主推演` / `推翻主推演` / `强制平仓` / `force close` /
+  `阻止下单` / `block order` —— 共 16 个
+- **测试 `ForbiddenCopyTests`** 把 6 个典型场景（empty predict /
+  empty review / R4 / residual / debug / final_test_refusal）的输出
+  全部 grep 一遍，确保 16 个禁止词**没有任何一个**出现
+- `severity` enum 只接受 `"low"` / `"medium"`；输入 `"high"` /
+  `"hard"` / 其他值会被 coerce 到 `"medium"` + 写
+  `renderer_warning` 到 `warnings`
+- `badge_tone` 只产生 `"info"` / `"caution"`；**永远**不是 `"danger"` /
+  `"red"`（测试 `SeverityToneTests` 锁定）
+- `safety_note` 由 renderer 自己生成（**不**接受 caller 注入），
+  保证每张 card 都包含"不改变主推演方向"+ "不构成交易指令"+
+  "07 段策略边界（不交易）不变"
+
+### 26.5 行为规则（Step 2G-6 §4 / §9 / §11.5 / §11.7 visibility 矩阵）
+
+| 输入 | context | visible | 显示 |
+|---|---|---|---|
+| `signals=[]`、无 warnings | `predict` | `False` | 完全隐藏 |
+| `signals=[]`、无 warnings | `review` | `True` | "未触发 soft metadata（候选归因维度为空）" |
+| `signals=[]`、`warnings=["final_test_range_refusal"]` | `predict` 或 `review` | `True` | "本预测进入 final test 保留区间，soft_metadata 已暂停" + warnings |
+| `signals=[]`、warnings 仅含其他 dev warning | `predict` | `True` | 折叠 dev hint："未触发 metadata（仅有开发者 warning）" |
+| `signals` 非空 | `predict` | `True` | 标题"结构性偏多风险提示" + cards |
+| `signals` 非空 | `review` | `True` | 标题"结构性偏多归因维度（候选）" + 副标题强调"不是确定原因" + cards |
+| `signals` 超 3 条 | 任意 | `True` | 仅渲染前 3 条（Step 2G-4.5 §9.3）|
+
+### 26.6 R4 / Residual 文案（Step 2G-6 §6 / §7）
+
+R4 (`r4_overextension`)：
+- `display_label`: "高位跑赢同行后的偏多过热"（来自 simulator）
+- `summary_text`: 包含"历史样本中该结构容易高估上涨概率"
+- `metrics`: 历史命中率 32.4% / 看多 vs 实际上涨差 +67.6pp / 误杀率 32.4% / 净收益 +2.2pp
+- `expandable_details` 含三条 hard 禁止理由：
+  - "为什么不强制排除"（fer 32.4% > 10.0% gate）
+  - "净收益不达 gate"（+2.2pp < +5.0pp gate）
+  - "跨窗口 holdout"（FAIL）
+
+Residual (`bullish_high_pos20_residual`)：
+- `summary_text` 文案**弱于** R4，强调"上下文提示"
+- `expandable_details` 中"净收益为负"（**不升反降** −0.1pp）—— 比 R4
+  的 fer 解释更严，强调"绝对不能 hard"
+- 测试 `ResidualCardTests::test_residual_summary_uses_weaker_context_wording`
+  锁定 residual 不复用 R4 的强动量措辞
+
+### 26.7 测试覆盖（36 个）
+
+按 §11 12 项 safety checks + §3 文案禁止 + §9 visibility 矩阵：
+
+| 类 | 数量 | 内容 |
+|---|---|---|
+| `EmptyPredictHiddenTests` | 2 | 空 signals + predict context → 完全隐藏 |
+| `EmptyReviewVisibleTests` | 1 | 空 signals + review context → 显示"未触发" |
+| `R4CardTests` | 4 | display_label / metrics / safety_note / expandable_details |
+| `ResidualCardTests` | 2 | weaker context wording / negative net_benefit phrasing |
+| `ForbiddenCopyTests` | 6 | 6 个典型场景 grep 16 个禁止词 |
+| `HardExclusionAllowedSurfacedTests` | 1 | safety_note 必含"不改变主推演方向"+ "策略边界（不交易）不变" |
+| `FinalTestRefusalVisibleTests` | 2 | predict / review 都不隐藏 final_test_range_refusal |
+| `DebugToggleTests` | 2 | include_debug=False 隐藏 / =True 含 schema_version + metrics_window |
+| `SeverityToneTests` | 3 | medium → caution；low → info；high 输入 coerce + renderer_warning |
+| `UnknownSignalGracefulTests` | 3 | 未知 name → generic 文案；缺 label → 占位符；非 dict signal 丢弃 |
+| `SignalCountMismatchTests` | 1 | summary.signal_count != len(signals) → renderer_warning |
+| `MaxThreeCardsTests` | 1 | 5 signals → 仅渲染 3 |
+| `NoForbiddenImportsTests` | 1 | `ast.walk` parse：禁 yfinance / requests / longbridge / broker / paper_trade / streamlit / sqlite3 / simulator / dashboard / prediction_store / 三个 v1 stub trio |
+| `MarkdownRendererTests` | 4 | 空时返回空串 / R4 markdown 含 label+summary+metric+safety / review empty state / markdown 不含禁止词 |
+| `DefensiveInputTests` | 3 | 非 dict 输入 → hidden / 未知 context → fallback predict / 缺 metrics → "n/a" |
+
+测试基线：**2302 → 2338**（+36 净增）；0 failed；10 skipped 不变。
+
+### 26.8 边界事实
+
+- ❌ renderer **没有** import `streamlit` / `st.*` —— 完全 framework-
+  agnostic；下游 `ui/` 模块自己决定怎么渲染 cards / metrics / debug
+- ❌ renderer **没有** import `services.soft_metadata_simulator` /
+  `services.regime_diagnostics_dashboard` / `services.prediction_store`
+  —— 输入 dict 是唯一数据源
+- ❌ renderer **没有** import `sqlite3` / `yfinance` / `requests` /
+  `longbridge` / `broker` / `paper_trade` / 任何 trading API
+- ❌ renderer **没有** import 三个 v1 stub trio
+  (`confidence_engine` / `contradiction_engine` / `risk_model`)
+- ❌ renderer **没**改 04 / 05 / 07 任何 required 字段路径
+- ❌ renderer **没**接 Predict / Review 页面（留给 Step 2G-6B / 6C）
+- ❌ renderer **没**修改任何现有 `ui/*` 模块
+- ✅ renderer 是**纯函数**：相同输入 → 相同输出；无副作用；从不
+  raise（异常通过 `warnings` 表面化）
+- ✅ renderer 永远满足 Step 2G-6 §3.1 文案禁止 + §11 12 项 safety
+  checks（测试锁定）
+- ✅ Step 2G-6B / 6C 实施时只需调用 `render_soft_metadata_card_data`
+  + `render_soft_metadata_markdown`，**不需要**重新决策文案 / dedup /
+  visibility 规则
+
