@@ -35,6 +35,10 @@ from ui.soft_metadata_renderer import (
 from ui.soft_metadata_baseline_cache import (
     ensure_soft_metadata_baseline_cached,
 )
+from ui.anti_false_exclusion_display import (
+    build_anti_false_exclusion_display,
+    render_anti_false_exclusion_markdown,
+)
 from services.soft_metadata_injection import (
     enrich_predict_result_with_soft_metadata,
 )
@@ -1013,6 +1017,19 @@ def _render_review_result(review_result: dict) -> None:
         render_review_soft_metadata_section(
             soft_metadata, prediction_correct=prediction_correct,
         )
+        # Step 2G-7B — anti-false-exclusion sidecar (Review context).
+        # Carries the survival-case finding (correct + R4 triggered) +
+        # gate-fail diagnostics. Only renders when soft_metadata has
+        # signals; failure → silent skip (UI never crashes).
+        if isinstance(soft_metadata, dict) and soft_metadata.get("signals"):
+            _afx_display = build_anti_false_exclusion_display(
+                soft_metadata, prediction_correct=prediction_correct,
+            )
+            if _afx_display.get("visible"):
+                with st.expander("保护层诊断", expanded=False):
+                    st.markdown(
+                        render_anti_false_exclusion_markdown(_afx_display)
+                    )
     except Exception:  # noqa: BLE001 — review must never crash on metadata
         pass
 
@@ -1426,6 +1443,21 @@ def render_predict_tab(scan_result: dict | None, research_result: dict | None) -
     except Exception:  # noqa: BLE001 — UI must never crash on metadata
         _enriched_for_display = predict_result
     render_soft_metadata_section(_extract_soft_metadata(_enriched_for_display))
+    # Step 2G-7B — anti-false-exclusion display (read-only sidecar
+    # diagnostic). Quantifies "why this metadata cannot be auto-
+    # enforced". Only shown when soft_metadata produced any signals;
+    # Predict context has no prediction_correct (outcome not yet
+    # known), so the survival case finding is suppressed here and only
+    # surfaces in the Review panel.
+    try:
+        _afx_soft = _extract_soft_metadata(_enriched_for_display)
+        if isinstance(_afx_soft, dict) and _afx_soft.get("signals"):
+            _afx_display = build_anti_false_exclusion_display(_afx_soft)
+            if _afx_display.get("visible"):
+                with st.expander("为什么这里只做提示", expanded=False):
+                    st.markdown(render_anti_false_exclusion_markdown(_afx_display))
+    except Exception:  # noqa: BLE001 — UI must never crash on metadata
+        pass
     # Step 2G-6C — stash enriched payload so the review-result panel
     # (rendered later in layer 4) can read the same canonical
     # extras.soft_metadata without re-running enrichment. We only set

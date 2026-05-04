@@ -394,6 +394,95 @@ class ReviewSoftMetadataAppTests(unittest.TestCase):
         for token in FORBIDDEN_COPY_TOKENS:
             self.assertNotIn(token, text)
 
+    def test_apptest_correct_with_r4_anti_false_section_includes_survival(self) -> None:
+        # Step 2G-7B Review integration — when correct + R4, the anti-
+        # false sidecar emits r4_survival_case + gate-fail findings.
+        # We exercise the helper directly via AppTest (mirrors the
+        # _render_review_result block).
+        from ui.anti_false_exclusion_display import FORBIDDEN_COPY_TOKENS as AFX_FORBIDDEN
+        sm = _shell(signals=[_r4_signal()])
+        script = textwrap.dedent(
+            f"""
+            import sys
+            sys.path.insert(0, {str(ROOT)!r})
+
+            import streamlit as st
+            from ui.review_tab import render_review_soft_metadata_section
+            from ui.anti_false_exclusion_display import (
+                build_anti_false_exclusion_display,
+                render_anti_false_exclusion_markdown,
+            )
+
+            sm = {sm!r}
+            render_review_soft_metadata_section(sm, prediction_correct=True)
+            if isinstance(sm, dict) and sm.get('signals'):
+                afx = build_anti_false_exclusion_display(
+                    sm, prediction_correct=True,
+                )
+                if afx.get('visible'):
+                    with st.expander('保护层诊断', expanded=False):
+                        st.markdown(render_anti_false_exclusion_markdown(afx))
+            """
+        )
+        at = AppTest.from_string(script).run()
+        text = self._all_markdown(at)
+        labels = " ".join(
+            getattr(el, "label", "") or "" for el in getattr(at, "expander", [])
+        )
+        self.assertIn("保护层诊断", labels)
+        self.assertIn("结构幸存", text)  # survival case wording
+        self.assertIn("32.4%", text)     # gate-fail evidence
+        # Page-level grep uses the renderer 16 tokens only; AFX-only
+        # stricter tokens (hard / forced / 排除 standalone) are locked
+        # in tests/test_anti_false_exclusion_display.py against the
+        # AFX markdown alone — checking them at page level would trip
+        # on the renderer's existing "误杀率（若强制排除）" label.
+        del AFX_FORBIDDEN  # noqa: F841 — imported above; suppress unused
+        for token in FORBIDDEN_COPY_TOKENS:
+            self.assertNotIn(token, text)
+
+    def test_apptest_wrong_with_r4_anti_false_section_includes_gate_fail(self) -> None:
+        from ui.anti_false_exclusion_display import FORBIDDEN_COPY_TOKENS as AFX_FORBIDDEN
+        sm = _shell(signals=[_r4_signal()])
+        script = textwrap.dedent(
+            f"""
+            import sys
+            sys.path.insert(0, {str(ROOT)!r})
+
+            import streamlit as st
+            from ui.review_tab import render_review_soft_metadata_section
+            from ui.anti_false_exclusion_display import (
+                build_anti_false_exclusion_display,
+                render_anti_false_exclusion_markdown,
+            )
+
+            sm = {sm!r}
+            render_review_soft_metadata_section(sm, prediction_correct=False)
+            if isinstance(sm, dict) and sm.get('signals'):
+                afx = build_anti_false_exclusion_display(
+                    sm, prediction_correct=False,
+                )
+                if afx.get('visible'):
+                    with st.expander('保护层诊断', expanded=False):
+                        st.markdown(render_anti_false_exclusion_markdown(afx))
+            """
+        )
+        at = AppTest.from_string(script).run()
+        text = self._all_markdown(at)
+        # wrong + R4 → no survival case; should still include gate-fail
+        # evidence and the missing_protection_layer finding.
+        self.assertNotIn("结构幸存", text)
+        self.assertIn("误杀风险较高", text)
+        self.assertIn("保护层未接入", text)
+        # Page-level grep uses the renderer 16 tokens only; AFX-only
+        # stricter tokens (hard / forced / 排除 standalone) are locked
+        # in tests/test_anti_false_exclusion_display.py against the
+        # AFX markdown alone — checking them at page level would trip
+        # on the renderer's existing "误杀率（若强制排除）" label.
+        del AFX_FORBIDDEN  # noqa: F841 — imported above; suppress unused
+        for token in FORBIDDEN_COPY_TOKENS:
+            self.assertNotIn(token, text)
+
     def test_apptest_wrong_no_metadata_renders_no_attribution_band(self) -> None:
         sm = _shell(signals=[])
         at = AppTest.from_string(self._script(repr(sm), "False")).run()

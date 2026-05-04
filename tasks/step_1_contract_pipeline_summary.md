@@ -2244,3 +2244,219 @@ def render_review_soft_metadata_section(
 - ✅ Step 2G-6 §8 设计文档的 4-quadrant 归因规则**已在 UI 真实落地**
 - ✅ **2448 / 0 failed / 10 skipped**；现有 2420 基线零回归
 
+## 31. Anti-False-Exclusion Display Helper（Step 2G-7A/7B，read-only sidecar）
+
+### 31.1 为什么做
+
+Step 2G-7 design（commit `cd571e4`）冻结了 anti-false-exclusion 显示
+层 spec：5 个 protective findings + sidecar schema + UI 显示位置 +
+文案边界 + 与 hard gate 的强制阻断关系。Step 2G-7A 实现 read-only
+display helper；Step 2G-7B 在 Predict / Review soft metadata
+expandable area 接入；同 step 完成可避免"helper 写完没接 UI / 接了
+没测"的拆分浪费。Step 2G 链路至此完整 end-to-end 闭环：simulator →
+renderer → display hook → injection → Predict integration → baseline
+cache + scan features → Review attribution → **anti-false-exclusion
+display 显式量化"为什么不能 hard"**。
+
+### 31.2 改动文件
+
+| 文件 | 类型 | 说明 |
+|---|---|---|
+| `ui/anti_false_exclusion_display.py` | 新增 ui helper | `build_anti_false_exclusion_display(soft_metadata, *, prediction_correct)` 纯函数 + `render_anti_false_exclusion_markdown(display)`；模块级常量 `SCHEMA_VERSION` / `FORBIDDEN_COPY_TOKENS` (19 个) / 3 severity 枚举 |
+| `ui/predict_tab.py` | 修改（+~28 行）| import anti-false helper；`render_predict_tab` Layer-2 hook 之后加 try/except 包裹的 expander "为什么这里只做提示"；`_render_review_result` 在 attribution band 之后加 try/except 包裹的 expander "保护层诊断" |
+| `tests/test_anti_false_exclusion_display.py` | 新增 | 35 个 unittest |
+| `tests/test_predict_tab_soft_metadata_display.py` | 修改 | +1 个 AppTest 验证 Predict 集成的 anti-false expander |
+| `tests/test_review_tab_soft_metadata_display.py` | 修改 | +2 个 AppTest 验证 correct+R4 / wrong+R4 的 Review 集成 |
+| `tasks/step_1_contract_pipeline_summary.md` | 修改 | 新增本 §31 |
+
+未改：`predict.py` / `run_predict` / `scanner.py` / `prediction_store.py` /
+`projection_output_adapter.py` / `projection_output_contract.py` /
+`regime_diagnostics_dashboard.py` / `soft_metadata_simulator.py` /
+`soft_metadata_renderer.py` / `soft_metadata_injection.py` /
+`regime_features_builder.py` / `soft_metadata_baseline_cache.py` /
+`review_tab.py` / 任何 builder / DB schema / 04 / 05 / 07 任何 required
+字段 / `review_log` 任何 required 字段 / `review_orchestrator` /
+`review_agent` / 任何其他 `ui/*` 模块。
+
+### 31.3 helper 输出结构（`anti_false_exclusion_display.v1`）
+
+```python
+{
+    "schema_version": "anti_false_exclusion_display.v1",
+    "visible": True,
+    "status": "blocked",
+    "hard_exclusion_allowed": False,                    # 永远 False
+    "primary_reason": "false_exclusion_rate_too_high",
+    "protective_findings": [
+        {
+            "name": "r4_false_exclusion_risk",
+            "severity": "medium",                       # informational | medium | high
+            "evidence": {
+                "false_exclusion_rate": 0.3235,
+                "threshold": 0.10,
+                "correct_when_triggered": 11,
+                "paired": 34,
+            },
+            "message": "误杀风险较高...",
+        },
+        # ... 0..N protective findings
+    ],
+    "recommended_action": "review_only",
+    "required_next_step": "collect_more_review_outcomes",
+    "warnings": [...],
+}
+```
+
+不变量（`tests/test_anti_false_exclusion_display.py` 35 个测试锁定）：
+
+- ✅ `hard_exclusion_allowed` **永远** `False`（v1 spec 强约束）
+- ✅ `status` **永远** `"blocked"`（不允许 `"allowed"`）
+- ✅ input dict 不被原地修改（snapshot 锁定）
+- ✅ 5 个 protective finding 的触发条件与 Step 2G-7 §6 一致
+- ✅ `r4_survival_case` **仅当** `prediction_correct=True` 且 R4
+  signal 存在时触发
+- ✅ `r4_false_exclusion_risk` 仅当 `false_exclusion_rate > 0.10` 触发
+  （边界严格大于）
+- ✅ `net_benefit_insufficient` 仅当 `net_benefit < 0.05` 触发
+- ✅ `missing_protection_layer` 总是触发（only when signals 非空）
+- ✅ `primary_reason` 优先 `false_exclusion_rate_too_high`，否则
+  fallback 第一个非 informational finding
+- ❌ 模块**不** import `services.soft_metadata_simulator` /
+  `soft_metadata_injection` / `regime_diagnostics_dashboard` /
+  `prediction_store` / `streamlit` / `sqlite3` / `yfinance` /
+  `requests` / `longbridge` / `broker` / `paper_trade` / v1 stub trio
+  （`ast.walk` 锁定）
+
+### 31.4 5 个 protective findings 行为
+
+| # | name | 触发条件 | severity | 真数据示例（main DB R4）|
+|---|---|---|---|---|
+| 1 | `r4_survival_case` | `prediction_correct=True` 且 R4 signal 存在 | `informational` | survived_count=11 / total=34 / survival_rate=32.4% |
+| 2 | `r4_false_exclusion_risk` | R4 `false_exclusion_rate > 0.10` | `medium` | fer=32.4% / threshold=10% / correct=11 / paired=34 |
+| 3 | `soft_metadata_holdout_fail` | 任意 signal `holdout_status == "FAIL"` | `medium` | holdout_status=FAIL（Step 3A-4 / 3B-1 已 FAIL）|
+| 4 | `net_benefit_insufficient` | R4 `net_benefit < 0.05` | `medium` | nb=2.2% / threshold=5% |
+| 5 | `missing_protection_layer` | signals 非空时总是 | `high` | connected=0 / candidate_modules=4 |
+
+`primary_reason` 选取顺序（Step 2G-7 §7）：
+1. `false_exclusion_rate_too_high`（如果 #2 触发）
+2. 否则第一个非 `informational` finding 的 name
+3. 否则 None
+
+### 31.5 Predict / Review 接入位置
+
+**Predict** (`render_predict_tab` Layer-2 之后)：
+
+```python
+render_soft_metadata_section(_extract_soft_metadata(_enriched_for_display))
+# Step 2G-7B — anti-false-exclusion display
+try:
+    _afx_soft = _extract_soft_metadata(_enriched_for_display)
+    if isinstance(_afx_soft, dict) and _afx_soft.get("signals"):
+        _afx_display = build_anti_false_exclusion_display(_afx_soft)
+        if _afx_display.get("visible"):
+            with st.expander("为什么这里只做提示", expanded=False):
+                st.markdown(render_anti_false_exclusion_markdown(_afx_display))
+except Exception:  # noqa: BLE001
+    pass
+```
+
+**Review** (`_render_review_result` 在 attribution band 之后)：
+
+```python
+render_review_soft_metadata_section(soft_metadata, prediction_correct=...)
+# Step 2G-7B — anti-false-exclusion sidecar (Review context)
+if isinstance(soft_metadata, dict) and soft_metadata.get("signals"):
+    _afx_display = build_anti_false_exclusion_display(
+        soft_metadata, prediction_correct=prediction_correct,
+    )
+    if _afx_display.get("visible"):
+        with st.expander("保护层诊断", expanded=False):
+            st.markdown(render_anti_false_exclusion_markdown(_afx_display))
+```
+
+设计要点：
+- **两个接入位置都默认折叠**（`expanded=False`）—— UI 不打扰用户
+  日常浏览
+- **Predict context** 没有 `prediction_correct`（outcome 未知），所以
+  `r4_survival_case` 在 Predict 不触发；只在 Review context 出现
+- **Review context** 有 `prediction_correct`（来自
+  `comparison.direction_match`），所以 4 象限的"survival case"在 Review
+  能区分显示
+- **try/except 防御兜底**：anti-false 路径任何意外都不让主页面崩
+- **不**改 `_render_review_result` 已有的 metric / error analysis /
+  attribution band 行为（仅在末尾追加新 expander）
+
+### 31.6 文案安全策略
+
+`FORBIDDEN_COPY_TOKENS`（**19** 个，比 renderer 的 16 严格）：
+- 16 个 renderer tokens（与 `ui/soft_metadata_renderer.FORBIDDEN_COPY_TOKENS`
+  一致）
+- 额外 3 个：`" hard "` / `" forced "` / `"排除"`（Step 2G-7 §9 强约束）
+
+测试锁定路径：
+- `MarkdownSafetyTests` 5 个场景（带 R4 / final_test_refusal /
+  unknown signal）grep AFX markdown 全部 19 个 forbidden tokens
+- AppTest（Predict + Review）只 grep **renderer 16 tokens**（页面级），
+  避免与 renderer 既有 "误杀率（若强制排除）" 文本冲突 —— AFX
+  特定的 3 个 tokens 在 AFX markdown 单独锁定
+
+### 31.7 测试基线
+
+| 命令 | 结果 |
+|---|---|
+| `pytest tests/test_anti_false_exclusion_display.py -q` | **35 passed in 0.03s** |
+| `pytest tests/test_predict_tab_soft_metadata_display.py tests/test_review_tab_soft_metadata_display.py -q` | **62 passed in 1.13s** |
+| `pytest tests/test_soft_metadata_renderer.py tests/test_soft_metadata_injection.py -q` | **62 passed in 0.06s** |
+| `pytest -q`（全量） | **2486 passed, 10 skipped, 26 warnings, 65 subtests passed in 10.33s** |
+
+测试覆盖（共 38 个新增）：
+
+| 测试类 / 文件 | 数量 | 内容 |
+|---|---|---|
+| `EmptyAndShapeTests` (`test_anti_false_exclusion_display.py`) | 4 | 空 signals invisible / 非 dict / 有 signals visible / warnings 透传 |
+| `InvariantsTests` | 4 | hard_exclusion_allowed 永远 False（3 场景）/ status 永远 blocked / input 不变 |
+| `R4FalseExclusionRiskTests` | 3 | fer > threshold 触发 / fer ≤ threshold 不触发 / correct_when_triggered 派生正确 |
+| `R4SurvivalCaseTests` | 4 | prediction_correct=True 触发 / =False 不触发 / =None 不触发 / severity=informational |
+| `HoldoutFailTests` | 2 | FAIL 触发 / PASS 不触发 |
+| `NetBenefitInsufficientTests` | 3 | nb < threshold 触发 / nb ≥ threshold 不触发 / 负 nb 也触发 |
+| `MissingProtectionLayerTests` | 3 | signals 非空总是触发 / severity=high / signals 空时不触发 |
+| `PrimaryReasonTests` | 2 | false_exclusion_rate 优先 / fallback 到第一个非 informational |
+| `UnknownSignalTests` | 2 | 未知 signal 只 emit missing_protection_layer / 缺 metrics 不 crash |
+| `MarkdownSafetyTests` | 6 | 空 → 空串 / safe title / 19 forbidden tokens grep（3 prediction_correct 场景 + final_test + unknown）/ 数字清晰 |
+| `IsolationTests` | 1 | `ast.walk` 锁定禁 import（含 `streamlit` / `sqlite3` / 模块自身不依赖 UI 框架） |
+| Predict AppTest 增量 | 1 | Predict 集成 expander label "为什么这里只做提示" + 32.4% 可见 + 16 forbidden tokens 不出现 |
+| Review AppTest 增量 | 2 | correct+R4 → "结构幸存" + "32.4%"；wrong+R4 → "误杀风险较高" + "保护层未接入"；都 grep 16 forbidden tokens |
+
+测试基线累积：**Step 2G-7A/7B 起点 2448 → 2486**（+38 净增）；
+0 failed；10 skipped 不变。
+
+### 31.8 边界事实
+
+- ❌ **没**改 `predict.py` / `run_predict` / `scanner.py` /
+  `prediction_store.py` / 任何 builder
+- ❌ **没**改 04 / 05 / 07 任何 required 字段
+- ❌ **没**改 `review_log` 任何 required 字段
+- ❌ **没**改 `final_projection` / `simulated_trade` /
+  `confidence_system` 任何字段
+- ❌ **没**写 DB（helper 模块不接 sqlite / `prediction_store`；UI 接入
+  不写 session_state / DB）
+- ❌ **没**接 `yfinance` / `requests` / 任何网络
+- ❌ **没**接 trading API / `longbridge` / `broker` / `paper_trade`
+- ❌ **没**启用 `hard` / `forced_exclusion` /
+  `anti_false_exclusion_triggered`（**这个 04 required 字段与本
+  sidecar 不同名**：required 字段需要真接入保护层 + hard gate 通过；
+  本 sidecar 是 display-only diagnostic）
+- ❌ **没**让 16 + 3 = 19 forbidden words 出现在 anti-false-exclusion
+  markdown 里（`MarkdownSafetyTests` grep 锁定）
+- ❌ **没**让 16 forbidden words 出现在 Predict / Review 集成页面
+  （AppTest grep 锁定）
+- ❌ **没**触碰 2026-01-01 之后 final test range（warnings 透传 +
+  refusal warning visibility 已在 Step 2G-5 / 6A 锁定）
+- ✅ Predict 页面在 R4 触发时新增"为什么这里只做提示"折叠区，
+  显式量化"为什么不能 hard"
+- ✅ Review 页面在 4 象限归因下新增"保护层诊断"折叠区，区分
+  survival case vs gate-fail case
+- ✅ Step 2G-7 设计文档的 5 个 protective findings + sidecar schema
+  + UI 显示位置都**已在真实代码落地**
+- ✅ **2486 / 0 failed / 10 skipped**；现有 2448 基线零回归
+

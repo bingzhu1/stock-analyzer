@@ -599,6 +599,89 @@ class EnrichmentAppTests(unittest.TestCase):
         for token in FORBIDDEN_COPY_TOKENS:
             self.assertNotIn(token, text)
 
+    def test_apptest_anti_false_exclusion_section_renders_safely(self) -> None:
+        # Step 2G-7B — when soft_metadata has signals, the Predict
+        # integration adds an "为什么这里只做提示" expander with the
+        # anti-false-exclusion markdown. We exercise it via a minimal
+        # script that mirrors the Predict-tab integration block.
+        from ui.anti_false_exclusion_display import FORBIDDEN_COPY_TOKENS as AFX_FORBIDDEN
+        pr = {
+            "regime_features": {"pos20": 0.81, "avgo_minus_soxx_20d": 7.3},
+            "contract_payload": {
+                "current_structure": {"analysis_date": "2024-01-08"},
+                "final_projection": {"final_direction": "偏多"},
+                "confidence_system": {
+                    "confidence_level": "high",
+                    "extras": {"primary_score_raw": 2.7},
+                },
+                "peer_confirmation_adjustment": {"peer_adjustment": "upgrade"},
+                "exclusion_system": {"extras": {}},
+            },
+        }
+        baseline = {
+            "metrics_source": "regime_diagnostics_dashboard_v1",
+            "metrics_window": {
+                "analysis_date_min": "2023-01-03",
+                "analysis_date_max": "2024-08-02",
+                "paired_total": 286, "db_snapshot_id": None,
+            },
+            "metrics_computed_at": "2026-05-04T00:00:00",
+            "r4_overextension": {
+                "samples": 36, "paired": 34,
+                "accuracy": 0.324, "bias_gap": 0.676,
+                "false_exclusion_rate": 0.3235, "net_benefit": 0.0219,
+            },
+            "bullish_high_pos20_residual": None,
+            "holdout_status": "FAIL", "warnings": [],
+        }
+        script = textwrap.dedent(
+            f"""
+            import sys
+            sys.path.insert(0, {str(ROOT)!r})
+
+            import streamlit as st
+            from ui.predict_tab import (
+                enrich_predict_result_with_soft_metadata,
+                _extract_soft_metadata,
+                render_soft_metadata_section,
+            )
+            from ui.anti_false_exclusion_display import (
+                build_anti_false_exclusion_display,
+                render_anti_false_exclusion_markdown,
+            )
+
+            pr = {pr!r}
+            baseline = {baseline!r}
+            enriched = enrich_predict_result_with_soft_metadata(
+                pr, baseline=baseline,
+            )
+            sm = _extract_soft_metadata(enriched)
+            render_soft_metadata_section(sm)
+            if isinstance(sm, dict) and sm.get('signals'):
+                afx = build_anti_false_exclusion_display(sm)
+                if afx.get('visible'):
+                    with st.expander('为什么这里只做提示', expanded=False):
+                        st.markdown(render_anti_false_exclusion_markdown(afx))
+            """
+        )
+        at = AppTest.from_string(script).run()
+        # Expander label should appear among the page elements.
+        all_labels = " ".join(
+            getattr(el, "label", "") or "" for el in getattr(at, "expander", [])
+        )
+        self.assertIn("为什么这里只做提示", all_labels)
+        # Markdown body should mention the gate-fail evidence.
+        text = self._all_markdown(at)
+        self.assertIn("32.4%", text)
+        # Page-level grep uses the well-known renderer 16 tokens; the
+        # AFX-only stricter tokens (hard / forced / 排除 standalone) are
+        # locked in tests/test_anti_false_exclusion_display.py against
+        # the AFX markdown alone — checking them at page level would
+        # trip on the renderer's existing "误杀率（若强制排除）" label.
+        del AFX_FORBIDDEN  # noqa: F841 — referenced earlier; suppress lint
+        for token in FORBIDDEN_COPY_TOKENS:
+            self.assertNotIn(token, text)
+
     def test_apptest_predict_result_without_features_shows_dev_hint_no_card(self) -> None:
         pr = {
             "contract_payload": {
