@@ -3191,3 +3191,190 @@ shape 不变量（schema-level 测试锁定）：
   缺数据 5 个 scenario 下都按 v1 spec 锁定
 - ✅ **2604 / 0 failed / 10 skipped**；现有 2591 基线零回归
 
+## 36. Regime Labels Builder（Step 3R-2，read-only diagnostics）
+
+### 36.1 目标
+
+落地 Step 3R-1 design（commit `a8df93a`）+ checkpoint（`8d4fe8f`）+
+Step 3R-4 protocol design（`a58aad4`）+ checkpoint（`abe3ba2`）的
+helper 层：实现 `regime_labels.v1` 的纯函数 builder，给后续 3R-3
+smoothing / 3R-5 formula / 3R-6 simulator / 3R-7 sidecar 提供稳定
+的 per-day regime 输入。
+
+**强约束**（继承 Step 3R-0 / 3R-1 / 3R-4 全程边界）：
+- 只新增 read-only helper（`services/regime_labels_builder.py`）+
+  tests + doc；**不**改 `predict.py` / `run_predict` / `scanner.py` /
+  `prediction_store.py` / `app.py` / 任何 builder / DB schema /
+  `services/regime_features_builder.py`
+- **不**写 DB；helper 是纯函数；caller-injected DataFrame 输入
+- **不**优化 thresholds：所有 bucket 阈值是 Step 3R-1 §5 列出的
+  **design candidates**，由调用方决定何时用，**不**由本 helper
+  validate
+- **不**宣称 pass / fail：本 helper 只产生 labels + raw_features +
+  warnings；validation 报告（`regime_validation_report.v1`）由
+  Step 3R-4 协议下的 future 工具产出
+- **不**升级 04 / 05 / 07 required 字段
+- **不**让 Gate 5 / Gate 6 自动 pass；不改 `_PROTECTION_LAYER_CONNECTED`
+- **不**触碰 2026-01-01 之后 final test range（`as_of_date >= cutoff`
+  → `final_test_refusal=True` + 全 unknown）
+
+### 36.2 公共 API
+
+```python
+build_regime_labels(
+    avgo_df,
+    peer_dfs: dict | None = None,
+    market_dfs: dict | None = None,
+    *,
+    as_of_date: str,
+    final_test_cutoff: str = "2026-01-01",
+) -> dict
+```
+
+输入：
+- `avgo_df`：pandas DataFrame（`Date` / `High` / `Low` / `Close`）
+- `peer_dfs`：可选 `{"NVDA": df, "SOXX": df, "QQQ": df}`；
+  缺 ticker → 该 peer 的 5d return 跳过 + warning
+- `market_dfs`：可选 `{"QQQ": df, "SOXX": df}` 用于 60-day market
+  trend；未提供时 fallback 到 `peer_dfs` 同 ticker
+- `as_of_date`：ISO 日期；strict-causal 上限
+- `final_test_cutoff`：默认 `"2026-01-01"`，可 override（仅用于 test）
+
+输出：`regime_labels.v1`（schema 见 §36.3）。
+
+### 36.3 输出 schema（`regime_labels.v1`）
+
+```json
+{
+  "schema_version": "regime_labels.v1",
+  "as_of_date": "YYYY-MM-DD",
+  "data_cutoff_date": "YYYY-MM-DD",
+  "labels": {
+    "pos20_regime": "low | mid | high | extreme | unknown",
+    "avgo_minus_soxx_20d_regime": "underperform | neutral | outperform | extreme_outperform | unknown",
+    "peer_momentum_regime": "weak | mixed | confirmed | overheated | unknown",
+    "market_trend_regime": "weak_market | neutral_market | bull_market | sustained_bull_market | unknown",
+    "monthly_context_regime": "normal | earnings_month | breakout_month | shock_month | unknown"
+  },
+  "raw_features": {
+    "pos20": "float | null",
+    "avgo_minus_soxx_20d": "float (decimal fraction) | null",
+    "peer_confirm_count": "int | null",
+    "peer_5d_aligned_pct": "float [0,1] | null",
+    "qqq_60d_slope_per_month": "float (decimal/month) | null",
+    "qqq_60d_drawdown": "float [0,1] | null",
+    "soxx_60d_slope_per_month": "float (decimal/month) | null",
+    "monthly_return_pct": "float (decimal) | null",
+    "monthly_max_abs_daily_return": "float (decimal) | null"
+  },
+  "warnings": [],
+  "final_test_refusal": false
+}
+```
+
+**单位约定**：
+- `avgo_minus_soxx_20d` 是 **decimal fraction**（与 design §6 例
+  `0.077` 一致）；与现有 `regime_features_builder._compute_nday_return`
+  返回的 percent 单位**不同**（本 helper 内部已除以 100）
+- `pos20` / `qqq_60d_drawdown` / `peer_5d_aligned_pct` ∈ [0, 1]
+- 60d slope / monthly return / max daily 全部 decimal fraction
+
+### 36.4 5 个 label 的 bucket 行为
+
+| label | 阈值（decimal） | 输入条件 |
+|---|---|---|
+| `pos20_regime` | `< 0.35` low / `< 0.65` mid / `< 0.85` high / `≥ 0.85` extreme | 需要 ≥ 20 bar 历史 + 完整 OHLC |
+| `avgo_minus_soxx_20d_regime` | `< −0.05` underperform / `< +0.05` neutral / `< +0.12` outperform / `≥ +0.12` extreme_outperform | 需要 AVGO + SOXX 各 20-day Close |
+| `peer_momentum_regime` | confirm_count = 0/1/2/3 → weak/mixed/confirmed/overheated | 至少 1 个可计算 5d return 的 peer（NVDA / SOXX / QQQ） |
+| `market_trend_regime` | qqq_slope > 0.015 ∧ soxx_slope > 0.015 ∧ qqq_dd < 0.05 → sustained_bull；qqq_slope > 0.01 ∨ soxx_slope > 0.01 → bull；否则 weak / neutral by drawdown / 双跌 | 至少 1 项 60-day metric 可算 |
+| `monthly_context_regime` | max_abs_daily ≥ 0.08 → shock；monthly_return ≥ 0.12 → breakout；月份 ∈ {3,6,9,12} → earnings_month；否则 normal | 当月 strict-causal AVGO Close |
+
+任何 label 缺数据 → `"unknown"` + warning 入 `warnings` list。
+
+### 36.5 anti-lookahead / cutoff（继承 Step 3R-1 §7 / 3R-4 §3.3）
+
+| # | 规则 | 实现 |
+|---|---|---|
+| 1 | `data_cutoff_date == as_of_date` | helper 设置时强制 |
+| 2 | 不读 outcome / prediction / review | helper 不接受这些输入；测试 `IsolationTests` 锁定 |
+| 3 | 不读 2026-01-01 之后任何数据 | `as_of_date >= cutoff` → `final_test_refusal=True` + 全 unknown + None |
+| 4 | replay 中只能用当天以前数据 | `_compute_pos20_at` / `_nday_return_decimal` / `_trailing_slice` 都用 `idx <= target_idx` |
+| 5 | strict-causal monthly | `_monthly_context_from_avgo` 用 `avgo_df.index <= target_idx` mask；prior_close 取 `first_in_month_idx - 1` |
+| 6 | `peer_5d` 计算用 `t-5` 到 `t` 的 5-day return | `_nday_return_decimal(df, target_ts, 5)` 复用现有 anti-lookahead 实现 |
+| 7 | input DataFrame 不被 mutate | `InputImmutabilityTests` 锁定 |
+| 8 | refusal 路径输出全 unknown / 全 None | `_empty_payload` 实现；`FinalTestRefusalTests` 锁定 |
+
+### 36.6 测试矩阵（`tests/test_regime_labels_builder.py`，38 cases）
+
+| 测试类 | 数量 | 覆盖点 |
+|---|---|---|
+| `OutputSchemaTests` | 4 | 顶层 key / `schema_version` 锁定 / `data_cutoff_date == as_of_date` / 不出现 pass/fail 字段 |
+| `LabelsPresentTests` | 2 | 5 labels + 9 raw_features 全部 present |
+| `Pos20BucketTests` | 3 | extreme（≥ 0.85）/ low / unknown when insufficient |
+| `DiffBucketTests` | 4 | extreme_outperform / underperform / neutral / unknown when missing SOXX |
+| `PeerMomentumTests` | 4 | overheated（3）/ confirmed（2）/ weak（0）/ unknown when no peers |
+| `MarketTrendTests` | 5 | sustained_bull / bull / weak / unknown / market_dfs 优先级 |
+| `MonthlyContextTests` | 4 | breakout / shock / earnings_month / normal |
+| `MissingPeersGracefulTests` | 1 | 缺一个 peer 仍聚合其它 + warning |
+| `MissingMarketGracefulTests` | 2 | 缺 QQQ → warning / 缺双 → unknown |
+| `FinalTestRefusalTests` | 3 | ≥ 2026 / < 2026 / 自定 cutoff |
+| `AntiLookaheadTests` | 2 | full vs truncated df 在同 target 下 pos20 / diff 一致 |
+| `InputImmutabilityTests` | 2 | avgo_df / peer_dfs 不被 mutate |
+| `IsolationTests` | 1 | `ast.walk` 锁定禁 import |
+| `NoValidationClaimsTests` | 1 | 输出 dict 不含 "pass" / "fail" / "validation_passed" / `regime_validation_report.v1` 等字符串 |
+
+### 36.7 与现有模块的关系
+
+| 模块 | 关系 |
+|---|---|
+| `services/regime_features_builder.py` | **未改**；builder 仍输出 `pos20` + `avgo_minus_soxx_20d` (percent)；本 helper 独立实现等价 anti-lookahead 计算 + decimal-fraction 单位 |
+| `services/anti_false_exclusion_dashboard.py` | 未改；regime_labels 是**正交维度**（per-day regime context），与 dashboard 6-gate / protection_layer_diagnostics 并列 |
+| `services/protection_layer_diagnostics.py` / `ui/protection_layer_diagnostics_renderer.py` | 未改；继承 19/16/8 token forbidden lockdown |
+| `services/soft_metadata_simulator.py` | 未改；soft_metadata.v1 仍是 per-prediction signal；regime_labels.v1 是 per-day context；两者并列 |
+| Step 2G-7C dashboard 6-gate | **不解封**；regime_labels 不参与 gate |
+| `hard_exclusion_allowed` | 永远 False |
+| 04 / 05 / 07 required schema | 永远不升级 |
+
+### 36.8 验证
+
+| 命令 | 结果 |
+|---|---|
+| `pytest tests/test_regime_labels_builder.py -q` | **38 passed** |
+| `pytest tests/test_regime_features_from_scan.py -q` | **17 passed**（零回归） |
+| `pytest -q`（全量） | **2642 passed / 10 skipped / 0 failed / 26 warnings / 94 subtests** |
+
+测试基线累积：**Step 3R-4 终点 2604 → Step 3R-2 终点 2642**
+（+38 净增；现有 2604 基线零回归）。
+
+### 36.9 边界事实
+
+- ❌ **没**改 `predict.py` / `run_predict` / `scanner.py` /
+  `prediction_store.py` / `app.py` / 任何 builder / DB schema
+- ❌ **没**改 04 / 05 / 07 任何 required 字段
+- ❌ **没**改 `final_projection` / `final_direction` /
+  `simulated_trade` / `no_trade` / `confidence_system`
+- ❌ **没**写 DB；helper 是纯函数，caller-injected 输入
+- ❌ **没**改 `services/regime_features_builder.py` /
+  `services/regime_diagnostics_dashboard.py` /
+  `services/anti_false_exclusion_dashboard.py` /
+  `services/soft_metadata_simulator.py` /
+  `services/protection_layer_diagnostics.py` /
+  `ui/protection_layer_diagnostics_renderer.py` / 任何 ui 模块
+- ❌ **没**让 `_PROTECTION_LAYER_CONNECTED` 翻 True
+- ❌ **没**让 `hard_gate_status.protection_layer_connected` 自动 pass
+- ❌ **没**启用 `hard` / `forced_exclusion` /
+  `anti_false_exclusion_triggered`
+- ❌ **没**接 `yfinance` / `requests` / 任何网络
+- ❌ **没**接 trading API / `longbridge` / `broker` / `paper_trade`
+- ❌ **没**触碰 2026-01-01 之后 final test range
+- ❌ **没** import `streamlit` / `prediction_store` / `confidence_engine` /
+  `contradiction_engine` / `risk_model` / `predict` / `scanner` /
+  `services.soft_metadata_simulator` / `services.anti_false_exclusion_dashboard`
+  / `services.regime_diagnostics_dashboard` /
+  `ui.protection_layer_diagnostics_renderer`（`ast.walk` 锁定）
+- ❌ **没**优化 thresholds（bucket 阈值是 design candidates）
+- ❌ **没**宣称 pass / fail（输出不含任何 validation 字段；`NoValidationClaimsTests` 锁定）
+- ✅ `regime_labels.v1` schema + 5 labels + 9 raw_features 在缺数据 /
+  正常 / refusal 三条路径都稳定输出
+- ✅ **2642 / 0 failed / 10 skipped**；现有 2604 基线零回归
+
