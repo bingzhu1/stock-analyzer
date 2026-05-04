@@ -366,6 +366,14 @@ class EnrichmentIntegrationTests(unittest.TestCase):
         from ui.predict_tab import enrich_predict_result_with_soft_metadata
         self.assertTrue(callable(enrich_predict_result_with_soft_metadata))
 
+    def test_baseline_cache_helper_importable_from_predict_tab(self) -> None:
+        # Step 2G-6B.6 — the lazy baseline cache must be wired into the
+        # Predict tab so historical_metrics_in_sample is populated rather
+        # than n/a. UI cannot regress to the pre-6B.6 state where
+        # baseline was always None.
+        from ui.predict_tab import ensure_soft_metadata_baseline_cached
+        self.assertTrue(callable(ensure_soft_metadata_baseline_cached))
+
     def test_enrichment_fills_canonical_slot_for_predict_payload(self) -> None:
         # Mini integration: a typical predict_result with regime_features
         # threaded through the helper produces a populated canonical slot
@@ -524,6 +532,70 @@ class EnrichmentAppTests(unittest.TestCase):
         text = self._all_markdown(at)
         self.assertIn("高位跑赢同行后的偏多过热", text)
         self.assertIn("不改变主推演方向", text)
+        for token in FORBIDDEN_COPY_TOKENS:
+            self.assertNotIn(token, text)
+
+    def test_apptest_predict_result_with_baseline_shows_real_metrics(self) -> None:
+        # Step 2G-6B.6 — when a baseline dict is present, the R4 card's
+        # historical_metrics_in_sample is filled with the baseline numbers
+        # rather than n/a. We exercise this by building a script that
+        # supplies a baseline directly.
+        pr = {
+            "regime_features": {"pos20": 0.81, "avgo_minus_soxx_20d": 7.3},
+            "contract_payload": {
+                "current_structure": {"analysis_date": "2024-01-08"},
+                "final_projection": {"final_direction": "偏多"},
+                "confidence_system": {
+                    "confidence_level": "high",
+                    "extras": {"primary_score_raw": 2.7},
+                },
+                "peer_confirmation_adjustment": {"peer_adjustment": "upgrade"},
+                "exclusion_system": {"extras": {}},
+            },
+        }
+        baseline = {
+            "metrics_source": "regime_diagnostics_dashboard_v1",
+            "metrics_window": {
+                "analysis_date_min": "2023-01-03",
+                "analysis_date_max": "2024-08-02",
+                "paired_total": 286, "db_snapshot_id": None,
+            },
+            "metrics_computed_at": "2026-05-04T00:00:00",
+            "r4_overextension": {
+                "samples": 36, "paired": 34,
+                "accuracy": 0.324, "bias_gap": 0.676,
+                "false_exclusion_rate": 0.3235, "net_benefit": 0.0219,
+            },
+            "bullish_high_pos20_residual": None,
+            "holdout_status": "FAIL",
+            "warnings": [],
+        }
+        script = textwrap.dedent(
+            f"""
+            import sys
+            sys.path.insert(0, {str(ROOT)!r})
+
+            import streamlit as st
+            from ui.predict_tab import (
+                enrich_predict_result_with_soft_metadata,
+                _extract_soft_metadata,
+                render_soft_metadata_section,
+            )
+
+            pr = {pr!r}
+            baseline = {baseline!r}
+            enriched = enrich_predict_result_with_soft_metadata(
+                pr, baseline=baseline,
+            )
+            render_soft_metadata_section(_extract_soft_metadata(enriched))
+            """
+        )
+        at = AppTest.from_string(script).run()
+        text = self._all_markdown(at)
+        # With baseline, the metrics should be real (32.4% accuracy from
+        # the canned baseline, not n/a).
+        self.assertIn("32.4%", text)
+        self.assertNotIn("n/a", text)
         for token in FORBIDDEN_COPY_TOKENS:
             self.assertNotIn(token, text)
 

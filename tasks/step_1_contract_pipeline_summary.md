@@ -1883,3 +1883,179 @@ render_soft_metadata_section(_extract_soft_metadata(_enriched_for_display))
   baseline 缓存优化（不属于 6B.3 范围）
 - ✅ **2393 / 0 failed / 10 skipped**；现有 2360 基线零回归
 
+## 29. Soft Metadata Baseline Cache + Regime Features Source（Step 2G-6B.6/6B.7）
+
+### 29.1 为什么做
+
+Step 2G-6B.3 checkpoint（commit `4e60df5`）+ Step 2G-6B.4/6B.5 design
+（commit `35b239d`）已 honest 列出 production 看不到 R4 的两个根因：
+**baseline=None**（→ historical metrics n/a / dev hint）+
+**regime_features=None**（→ R4 / residual 不触发）。Step 2G-6B.6 实现
+session_state baseline cache，Step 2G-6B.7 在 `scanner.run_scan` 暴露
+`regime_features` 字段；同 step 完成可一次解决"production 看不到完整
+R4 card"。
+
+### 29.2 改动文件
+
+| 文件 | 类型 | 说明 |
+|---|---|---|
+| `services/regime_features_builder.py` | 新增 service | `build_regime_features(coded_df, peer_dfs, target_date_str, *, final_test_cutoff)` 纯函数；返回 `{pos20, avgo_minus_soxx_20d, source, as_of_date, data_cutoff_date, warnings}` |
+| `scanner.py` | 修改（+13 行）| `run_scan` 末尾 try/except 调 `build_regime_features`；新增 `scan_result["regime_features"]` 字段；deferred import 不引入 hard dependency |
+| `ui/soft_metadata_baseline_cache.py` | 新增 ui helper | `ensure_soft_metadata_baseline_cached(*, symbol, limit, session_state)` lazy build + cache `session_state["soft_metadata_baseline"]`；失败时设 `soft_metadata_baseline_error`；从不 raise |
+| `ui/predict_tab.py` | 修改（+8 行）| import baseline cache helper；`render_predict_tab` 调用 cache helper 替代之前的 `session_state.get("soft_metadata_baseline")` 直读 |
+| `tests/test_soft_metadata_baseline_cache.py` | 新增 | 8 个 unittest（cache miss/hit / builder 异常 / 非 dict / 无 session / symbol limit 透传 / `ast.walk` import + prediction_store 锁定）|
+| `tests/test_regime_features_from_scan.py` | 新增 | 17 个 unittest（pos20 / SOXX diff / 输出 shape / 2026 cutoff / `ast.walk` import / DataFrame 不变 / scanner 集成 smoke 2 项）|
+| `tests/test_predict_tab_soft_metadata_display.py` | 修改 | +2 个测试（baseline cache helper 可 import / 带 baseline 的 AppTest 显示真实 metrics 32.4% 不显示 n/a）|
+| `tasks/step_1_contract_pipeline_summary.md` | 修改 | 新增本 §29 |
+
+未改：`predict.py` / `run_predict` / `prediction_store.py` /
+`projection_output_adapter.py` / `projection_output_contract.py` /
+`regime_diagnostics_dashboard.py` / `soft_metadata_simulator.py` /
+`soft_metadata_renderer.py` / `soft_metadata_injection.py` / 任何
+builder / DB schema / 04 / 05 / 07 任何 required 字段 /
+`simulated_trade.no_trade` 策略边界 / 任何其他 `ui/*` 模块。
+
+### 29.3 baseline cache 行为
+
+```python
+def ensure_soft_metadata_baseline_cached(
+    *, symbol: str = "AVGO", limit: int = 450, session_state: Any = None,
+) -> dict | None:
+    """Lazy-build + cache soft_metadata_baseline. Never raises."""
+```
+
+不变量（`tests/test_soft_metadata_baseline_cache.py` 8 个测试锁定）：
+
+- ✅ **cache hit**：`session_state[CACHE_KEY]` 已是 dict → 直接返回，不调 builder
+- ✅ **cache miss**：调 `build_soft_metadata_baseline(symbol, limit)` 一次 → 写入 cache
+- ✅ **builder exception**：捕获 → 写 `session_state[ERROR_KEY] = "baseline_build_failed: ..."` → 返回 None
+- ✅ **builder 返回非 dict**：不缓存；返回 None
+- ✅ **session_state 不可用**（非 Streamlit context）：仍调 builder 一次（无缓存收益但不 crash）
+- ✅ **symbol / limit 透传**给 builder
+- ❌ 模块**不**写 DB / 不写文件 / 不接网络
+- ❌ 模块**不** import `prediction_store` / `yfinance` / `requests` /
+  `longbridge` / `broker` / `paper_trade` / `sqlite3` / v1 stub trio
+  （`ast.walk` 锁定）
+- ❌ 不在 import 时执行（lazy）
+
+### 29.4 regime_features 计算口径
+
+```python
+def build_regime_features(
+    coded_df, peer_dfs: dict | None, target_date_str: str,
+    *, final_test_cutoff: str = "2026-01-01",
+) -> dict:
+    """Pure function. Returns regime_features dict; never raises."""
+```
+
+| 字段 | 计算 |
+|---|---|
+| `pos20` | `(Close_D − rolling_low_20) / (rolling_high_20 − rolling_low_20)`，window 长度 20，含当日 |
+| `avgo_minus_soxx_20d` | `(AVGO_Close_D / AVGO_Close_{D-20} − 1) × 100 − (SOXX_Close_D / SOXX_Close_{D-20} − 1) × 100`（pp）|
+| `source` | 固定 `"scan_result"` |
+| `as_of_date` | `target_date_str[:10]`（YYYY-MM-DD） |
+| `data_cutoff_date` | == `as_of_date`（anti-lookahead by construction） |
+| `warnings` | list[str] —— `pos20_skipped: <reason>` / `missing_soxx_coded_df` / `soxx_20d_return_unavailable` / `final_test_range_refusal` 等 |
+
+不变量（`tests/test_regime_features_from_scan.py` 17 个测试锁定）：
+
+- ✅ **anti-lookahead**：只读 `Date <= target_date` 的行（与
+  `scanner._get_nday_return` 同语义）
+- ✅ **DataFrame 不被原地修改**（`pd.testing.assert_frame_equal`
+  before / after snapshot）
+- ✅ **SOXX 缺失**：`avgo_minus_soxx_20d=None` + warning（不 crash）
+- ✅ **历史不足 20 日**：`pos20=None` + `pos20_skipped: insufficient_history`
+- ✅ **2026 cutoff 双重锁定**：`as_of_date >= "2026-01-01"` →
+  warnings 含 `"final_test_range_refusal"`（与 simulator 双重防护）
+- ❌ 模块**不** import `yfinance` / `requests` / `sqlite3` / 网络 / trading
+  （`ast.walk` 锁定）
+
+### 29.5 Predict 接入方式
+
+`render_predict_tab` Layer 2 主结论之后插入：
+
+```python
+try:
+    _baseline_for_display = ensure_soft_metadata_baseline_cached(
+        symbol=str(predict_result.get("symbol", "AVGO")),
+        session_state=st.session_state,
+    )
+except Exception:  # noqa: BLE001
+    _baseline_for_display = None
+try:
+    _enriched_for_display = enrich_predict_result_with_soft_metadata(
+        predict_result, scan_result=scan_result,
+        research_result=research_result,
+        baseline=_baseline_for_display,
+    )
+except Exception:  # noqa: BLE001
+    _enriched_for_display = predict_result
+render_soft_metadata_section(_extract_soft_metadata(_enriched_for_display))
+```
+
+设计要点：
+- **两个 try/except** 防御兜底：baseline cache 失败 → baseline=None
+  （metric 显示 n/a 但 R4 仍可触发）；enrichment 失败 → 用原
+  predict_result（display 隐藏区块）—— UI 永不崩
+- **baseline 来自 session_state cache**（lazy build；session 内复用）
+- **scan_result 透传**：helper 4 级 fallback 自动从
+  `scan_result["regime_features"]` 命中（scanner.run_scan 已写入；Step
+  2G-6B.7）
+- **不重写 renderer 文案**：renderer + display hook 已锁定文案安全
+- **不**回写 session_state（除 cache helper 自身写入 baseline / error
+  键）
+
+### 29.6 测试基线
+
+| 命令 | 结果 |
+|---|---|
+| `pytest tests/test_soft_metadata_baseline_cache.py -q` | **8 passed in 0.03s** |
+| `pytest tests/test_regime_features_from_scan.py -q` | **17 passed in 0.53s** |
+| `pytest tests/test_predict_tab_soft_metadata_display.py tests/test_soft_metadata_injection.py -q` | **57 passed in 0.90s** |
+| `pytest tests/test_soft_metadata_simulator.py tests/test_regime_diagnostics_dashboard.py -q` | **69 passed in 0.39s** |
+| `pytest -q`（全量） | **2420 passed, 10 skipped, 26 warnings, 65 subtests passed in 10.93s** |
+
+测试覆盖（共 27 个新增）：
+
+| 测试类 / 文件 | 数量 | 内容 |
+|---|---|---|
+| `CacheBehaviorTests` (`test_soft_metadata_baseline_cache.py`) | 6 | cache miss / hit / builder 异常 / 非 dict / 无 session 不 crash / symbol+limit 透传 |
+| `IsolationTests`（同上） | 2 | `ast.walk` 锁定禁 import + `prediction_store` 不调 |
+| `Pos20Tests` (`test_regime_features_from_scan.py`) | 3 | top-of-range / insufficient_history / missing_target_date |
+| `SoxxDiffTests` | 4 | 正常计算 / 缺 SOXX / 缺 peer_dfs / SOXX 不足 |
+| `OutputShapeTests` | 4 | 必填字段 / data_cutoff == as_of / 空 target_date / 缺 coded_df |
+| `FinalTestCutoffTests` | 2 | >=2026 emit refusal / <2026 不 emit |
+| `IsolationTests`（同上） | 2 | `ast.walk` import 锁定 / DataFrame 不被改 |
+| `ScannerIntegrationSmokeTests` | 2 | scanner.run_scan 暴露 regime_features / 失败时 fallback None |
+| `EnrichmentIntegrationTests::test_baseline_cache_helper_importable_from_predict_tab` | 1 | Predict tab import 锁定 |
+| `EnrichmentAppTests::test_apptest_predict_result_with_baseline_shows_real_metrics` | 1 | AppTest 验证带 baseline 时显示 32.4% 而非 n/a |
+
+**测试基线**：**Step 2G-6B.6/6B.7 起点 2393 → 2420**（+27 净增）；
+0 failed；10 skipped 不变。
+
+### 29.7 边界事实
+
+- ❌ **没**改 `predict.py` / `run_predict` / `prediction_store.py` /
+  任何 builder
+- ❌ **没**改 04 / 05 / 07 任何 required 字段
+- ❌ **没**改 `final_projection` / `simulated_trade` /
+  `confidence_system` 任何字段
+- ❌ **没**写 DB（baseline cache + features builder + scanner 改动
+  全程 SELECT-free / IO-free）
+- ❌ **没**接 `yfinance` / `requests` / 任何网络（features builder
+  从已有 pandas df 计算；scanner 已有 `load_peer_coded` SELECT-only）
+- ❌ **没**接 trading API / `longbridge` / `broker` / `paper_trade`
+- ❌ **没**启用 `hard` / `forced_exclusion` / `anti_false_exclusion_triggered`
+- ❌ **没**触碰 2026-01-01 之后 final test range（features builder 也
+  锁定 refusal warning；与 simulator 双重防护）
+- ✅ **scanner.run_scan 现在暴露 `regime_features`** —— Predict 页面
+  自动消费 → R4 / residual 满足条件时立即触发
+- ✅ **session_state baseline cache** —— `historical_metrics_in_sample`
+  显示真实数字（accuracy / bias_gap / fer / nb），不再是 n/a
+- ✅ **production 显示 dev hint 的两个根因都已消除** —— 当 features
+  满足 R4 condition 时，Predict 页面真实显示完整 R4 card（含 32.4%
+  accuracy / +67.6pp bias_gap 等真实指标）
+- ✅ **AppTest 验证**：`test_apptest_predict_result_with_baseline_shows_real_metrics`
+  断言页面文本含 "32.4%"、不含 "n/a"、不含 16 个 forbidden words
+- ✅ **2420 / 0 failed / 10 skipped**；现有 2393 基线零回归
+

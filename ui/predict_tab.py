@@ -32,6 +32,9 @@ from ui.soft_metadata_renderer import (
     render_soft_metadata_card_data,
     render_soft_metadata_markdown,
 )
+from ui.soft_metadata_baseline_cache import (
+    ensure_soft_metadata_baseline_cached,
+)
 from services.soft_metadata_injection import (
     enrich_predict_result_with_soft_metadata,
 )
@@ -1378,14 +1381,22 @@ def render_predict_tab(scan_result: dict | None, research_result: dict | None) -
     # Step 2G-6 §4.1. Hidden when no soft_metadata is present.
     #
     # Step 2G-6B.3 — call the read-only enrichment helper before display
-    # so the canonical extras.soft_metadata slot is filled. The helper
-    # is a pure function (no DB / no network); on any unexpected error
-    # we fall back to the raw predict_result (display hook will hide
-    # the section), so the page never crashes.
+    # so the canonical extras.soft_metadata slot is filled.
+    # Step 2G-6B.6 — lazy-build the soft_metadata baseline once per
+    # session so historical_metrics_in_sample is populated rather than
+    # n/a. Both helpers are pure / read-only; on any unexpected error
+    # we fall back to the raw predict_result so the page never crashes.
+    try:
+        _baseline_for_display = ensure_soft_metadata_baseline_cached(
+            symbol=str(predict_result.get("symbol", "AVGO")),
+            session_state=st.session_state,
+        )
+    except Exception:  # noqa: BLE001
+        _baseline_for_display = None
     try:
         _enriched_for_display = enrich_predict_result_with_soft_metadata(
             predict_result, scan_result=scan_result, research_result=research_result,
-            baseline=st.session_state.get("soft_metadata_baseline"),
+            baseline=_baseline_for_display,
         )
     except Exception:  # noqa: BLE001 — UI must never crash on metadata
         _enriched_for_display = predict_result

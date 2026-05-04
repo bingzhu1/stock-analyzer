@@ -625,6 +625,20 @@ def run_scan(
         states, rs_5d_summary, rs_same_day_summary, hist_summary, conf_state, bias, confidence
     )
 
+    # ── Step 2G-6B.7: regime features for soft_metadata simulator ─────────────
+    # Pure read-only computation from already-loaded coded_df + peer_codeds.
+    # Adds informational fields for the soft_metadata sidecar; does NOT
+    # change any existing scan_result field; does NOT affect downstream
+    # scan_bias / scan_confidence. Deferred-imported so this module's
+    # import surface stays unchanged when the helper is unavailable.
+    try:
+        from services.regime_features_builder import build_regime_features
+        regime_features = build_regime_features(
+            coded_df, peer_codeds, target_date_str,
+        )
+    except Exception:  # noqa: BLE001 — never let metadata break the scan
+        regime_features = None
+
     return {
         "symbol":         "AVGO",
         "scan_timestamp": timestamp,
@@ -647,4 +661,6 @@ def run_scan(
         "scan_bias":          bias,
         "scan_confidence":    confidence,
         "notes":              notes,
+        # Step 2G-6B.7 — informational sidecar input (consumed by enrichment helper)
+        "regime_features":    regime_features,
     }
