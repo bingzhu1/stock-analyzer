@@ -9,10 +9,19 @@ ui/review_tab.py
   ③ 错误分布区        (常见错误类型 / 高频误判维度)
   ④ 最近复盘记录区    (表格，区分真实复盘与历史训练)
   ⑤ 推演统计（原有） (review_center 四项 KPI + 逐条明细)
+  + Step 2G-6C — soft metadata possible-attribution renderer
+    (called from per-prediction review surface in predict_tab.py)
 """
 from __future__ import annotations
 
 from typing import Any
+
+import streamlit as st
+
+from ui.soft_metadata_renderer import (
+    render_soft_metadata_card_data,
+    render_soft_metadata_markdown,
+)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -107,6 +116,142 @@ _CSS = """
 .rv-score-low    { color:#b42318; font-weight:700; }
 </style>
 """
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Step 2G-6C — soft metadata possible-attribution renderer
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Step 2G-6 §8 — 4 outcome × metadata-trigger combinations:
+#   (wrong   + triggered) → possible_attribution (候选归因，不是确定原因)
+#   (correct + triggered) → triggered_but_not_error (结构幸存)
+#   (wrong   + empty)     → no_attribution (不强行归因)
+#   (correct + empty)     → no_metadata (隐藏)
+#
+# All outputs route through ui.soft_metadata_renderer with context="review"
+# to inherit the 16 forbidden-word lock + safety_note + visibility matrix.
+# This module ADDS only the attribution band; it does NOT rewrite renderer
+# copy and does NOT modify any contract / review_log required field.
+
+_REVIEW_ATTRIBUTION_LABEL = {
+    "possible_attribution": "可能归因维度（候选，不是确定原因）",
+    "triggered_but_not_error": "metadata 已触发但本次预测正确（结构幸存）",
+    "no_attribution": "未触发 soft metadata（不强行归因）",
+    "no_metadata": "无 metadata 显示",
+}
+
+_REVIEW_ATTRIBUTION_EXPLANATION = {
+    "possible_attribution": (
+        "本次预测错误，且结构性偏多 metadata 已触发。该 metadata 是"
+        "可能的归因维度之一，**不是确定原因**；不改变主推演方向，也"
+        "不构成交易指令。"
+    ),
+    "triggered_but_not_error": (
+        "结构性偏多 metadata 触发，但本次预测**仍然正确**（属结构幸存）。"
+        "这个信号仅作为风险参考；主推演方向已被实际行情验证。"
+    ),
+    "no_attribution": (
+        "本次预测虽然错误，但未触发 soft metadata。**不强行归因**到"
+        "metadata；请结合其他错误维度（方向 / 路径 / 五态）分析。"
+    ),
+    "no_metadata": "",
+}
+
+
+def _classify_review_attribution(
+    soft_metadata: Any,
+    *,
+    prediction_correct: bool | None,
+) -> str:
+    """Pick the attribution kind for a (soft_metadata, prediction_correct)
+    pair. Pure function; never raises.
+
+    - signals non-empty + wrong → possible_attribution
+    - signals non-empty + correct → triggered_but_not_error
+    - signals non-empty + outcome unknown → triggered_but_not_error
+      (defensive: pending outcomes still benefit from a card; but the
+      review tab usually has direction_correct set by the time it shows)
+    - signals empty + wrong → no_attribution
+    - signals empty + correct → no_metadata
+    - signals empty + outcome unknown → no_metadata
+    """
+    signals = []
+    if isinstance(soft_metadata, dict):
+        raw = soft_metadata.get("signals")
+        if isinstance(raw, list):
+            signals = raw
+    has_signals = bool(signals)
+
+    if has_signals and prediction_correct is False:
+        return "possible_attribution"
+    if has_signals:
+        return "triggered_but_not_error"
+    if prediction_correct is False:
+        return "no_attribution"
+    return "no_metadata"
+
+
+def build_review_soft_metadata_card_data(
+    soft_metadata: dict | None,
+    *,
+    prediction_correct: bool | None = None,
+) -> dict:
+    """Pure function: render renderer card_data + add attribution band.
+
+    Always returns a dict; never raises. Uses the renderer with
+    ``context="review"``; never re-implements the renderer's safety
+    rules (Step 2G-6 §11 / §3.1).
+    """
+    payload = soft_metadata if isinstance(soft_metadata, dict) else {}
+    card_data = render_soft_metadata_card_data(payload, context="review")
+
+    kind = _classify_review_attribution(
+        soft_metadata, prediction_correct=prediction_correct,
+    )
+    card_data["review_attribution"] = {
+        "kind": kind,
+        "label": _REVIEW_ATTRIBUTION_LABEL.get(kind, "metadata"),
+        "explanation": _REVIEW_ATTRIBUTION_EXPLANATION.get(kind, ""),
+        "prediction_correct": prediction_correct,
+    }
+    # When the only reason to show the card is the attribution band
+    # (signals=[], outcome wrong), force visible so the user sees
+    # "no_attribution" guidance — without this the renderer hides the
+    # whole section per its predict-context default.
+    if kind == "no_attribution" and not card_data.get("visible"):
+        card_data["visible"] = True
+        if not card_data.get("subtitle"):
+            card_data["subtitle"] = (
+                _REVIEW_ATTRIBUTION_LABEL["no_attribution"]
+            )
+    return card_data
+
+
+def render_review_soft_metadata_section(
+    soft_metadata: dict | None,
+    *,
+    prediction_correct: bool | None = None,
+) -> dict:
+    """Render the review-context soft metadata + attribution band.
+
+    Thin wrapper around the renderer + ``st.markdown``. Returns
+    ``card_data`` for testability. Never raises; callers (predict_tab
+    review surface) wrap in try/except for double safety.
+    """
+    card_data = build_review_soft_metadata_card_data(
+        soft_metadata, prediction_correct=prediction_correct,
+    )
+    if not card_data.get("visible"):
+        return card_data
+    markdown = render_soft_metadata_markdown(card_data)
+    if markdown:
+        st.markdown(markdown)
+    attribution = card_data.get("review_attribution") or {}
+    label = attribution.get("label") or ""
+    explanation = attribution.get("explanation") or ""
+    if label or explanation:
+        st.markdown(f"_{label}_  \n{explanation}".strip())
+    return card_data
 
 
 # ─────────────────────────────────────────────────────────────────────────────

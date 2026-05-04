@@ -991,6 +991,31 @@ def _render_review_result(review_result: dict) -> None:
     c1.metric("方向判断", dir_label)
     c2.metric("错误分类", error_category.replace("_", " "))
 
+    # Step 2G-6C — soft metadata possible-attribution band.
+    # Read soft_metadata from the canonical extras slot (populated by
+    # the Step 2G-6B.3 enrichment helper earlier in the page render).
+    # The review-context renderer applies its own visibility matrix
+    # (Step 2G-6 §8) and the attribution band; we wrap in try/except as
+    # double-safety so a buggy metadata path can never crash review.
+    try:
+        from ui.review_tab import render_review_soft_metadata_section
+        prediction_correct: bool | None = None
+        if direction_match in (0, 1):
+            prediction_correct = bool(direction_match)
+        soft_metadata = (
+            review_result.get("soft_metadata")
+            if isinstance(review_result, dict) else None
+        )
+        if soft_metadata is None:
+            cached_pr = st.session_state.get("review_predict_result_for_metadata")
+            if isinstance(cached_pr, dict):
+                soft_metadata = _extract_soft_metadata(cached_pr)
+        render_review_soft_metadata_section(
+            soft_metadata, prediction_correct=prediction_correct,
+        )
+    except Exception:  # noqa: BLE001 — review must never crash on metadata
+        pass
+
 
 def _render_layer4_operations(
     predict_result: dict,
@@ -1401,6 +1426,13 @@ def render_predict_tab(scan_result: dict | None, research_result: dict | None) -
     except Exception:  # noqa: BLE001 — UI must never crash on metadata
         _enriched_for_display = predict_result
     render_soft_metadata_section(_extract_soft_metadata(_enriched_for_display))
+    # Step 2G-6C — stash enriched payload so the review-result panel
+    # (rendered later in layer 4) can read the same canonical
+    # extras.soft_metadata without re-running enrichment. We only set
+    # the key when the enriched copy is a dict (defensive); we never
+    # write any other session_state key from the metadata path.
+    if isinstance(_enriched_for_display, dict):
+        st.session_state["review_predict_result_for_metadata"] = _enriched_for_display
 
     st.divider()
 

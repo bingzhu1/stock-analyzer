@@ -2059,3 +2059,188 @@ render_soft_metadata_section(_extract_soft_metadata(_enriched_for_display))
   断言页面文本含 "32.4%"、不含 "n/a"、不含 16 个 forbidden words
 - ✅ **2420 / 0 failed / 10 skipped**；现有 2393 基线零回归
 
+## 30. Soft Metadata Review Display（Step 2G-6C）
+
+### 30.1 为什么做
+
+Step 2G-6B.6/6B.7 已经把 Predict 侧 production 链路打通，Predict 页面
+能在 R4 condition 满足时显示完整 R4 metadata card。Step 2G-6 §8 设计
+文档要求 **Review 页面也要消费 metadata**，作为 4 种 outcome × metadata
+触发组合的**候选归因维度**（possible attribution，不是 definitive
+cause）。本步在 Review 页面（`_render_review_result` 在 `predict_tab.py`
+内的复盘结果面板）接入 soft_metadata，并新增独立 `tests/test_review_tab_soft_metadata_display.py`
+覆盖 4 种组合 + 16 forbidden words + isolation。
+
+### 30.2 改动文件
+
+| 文件 | 类型 | 说明 |
+|---|---|---|
+| `ui/review_tab.py` | 修改（+~140 行）| 新增 `_classify_review_attribution` / `build_review_soft_metadata_card_data` / `render_review_soft_metadata_section` 三个 review-context helper；module-top `import streamlit as st`；4 outcome × metadata 组合的中文 label / explanation 常量 |
+| `ui/predict_tab.py` | 修改（+~25 行）| `_render_review_result` 在已有方向 / 错误分类 metric 之后调 `render_review_soft_metadata_section`；从 session_state 读取 enriched predict_result（在 layer-2 主结论显示时一次性 stash）|
+| `tests/test_review_tab_soft_metadata_display.py` | 新增 | 28 个 unittest（含 3 个 AppTest）|
+| `tasks/step_1_contract_pipeline_summary.md` | 修改 | 新增本 §30 |
+
+未改：`predict.py` / `run_predict` / `scanner.py` / `prediction_store.py` /
+`projection_output_adapter.py` / `projection_output_contract.py` /
+`regime_diagnostics_dashboard.py` / `soft_metadata_simulator.py` /
+`soft_metadata_renderer.py` / `soft_metadata_injection.py` /
+`regime_features_builder.py` / `soft_metadata_baseline_cache.py` /
+任何 builder / DB schema / 04 / 05 / 07 任何 required 字段 /
+`review_log` 任何 required 字段 / `review_orchestrator` /
+`review_agent` / 任何其他 `ui/*` 模块。
+
+### 30.3 Review 接入位置
+
+`_render_review_result(review_result)` 在 `ui/predict_tab.py` 内，是
+**per-prediction** 复盘结果面板（用户点击"运行确定性复盘"后的输出）。
+现在结构：
+
+```
+_render_review_result:
+    复盘得分 N/M（XX%）
+    主要问题 / 三项判断均正确
+    维度对比表（开盘 / 路径 / 收盘）
+    错误分析详情（折叠）
+    完整复盘摘要（折叠）
+    方向判断 / 错误分类（两栏 metric）
+    ✦ Step 2G-6C — soft metadata possible-attribution 区块（新增）
+```
+
+接入逻辑：
+1. 从 `comparison.direction_match`（0/1/None）派生 `prediction_correct: bool | None`
+2. 从 `review_result.soft_metadata`（如果未来 review_result 自带）或
+   `session_state["review_predict_result_for_metadata"]`（layer-2
+   显示时 stash 的 enriched predict_result）提取 `soft_metadata`
+3. 调 `render_review_soft_metadata_section(soft_metadata, prediction_correct=...)`
+4. 整段 try/except 包裹 —— review 永远不会因 metadata 路径崩溃
+
+`render_predict_tab` 在 layer-2 显示 hook 之后增加 1 行：将
+`_enriched_for_display`（已含 canonical extras.soft_metadata）stash
+到 `st.session_state["review_predict_result_for_metadata"]`，让后续
+review 面板复用同一份 metadata，**不**重新计算 enrichment。
+
+### 30.4 归因规则（4 outcome × metadata）
+
+按 Step 2G-6 §8 4-quadrant：
+
+| outcome | metadata 触发 | `kind` | label | explanation |
+|---|---|---|---|---|
+| **wrong** | ✅ R4 / residual 触发 | `possible_attribution` | "可能归因维度（候选，不是确定原因）" | "本次预测错误，且结构性偏多 metadata 已触发。该 metadata 是可能的归因维度之一，**不是确定原因**；不改变主推演方向，也不构成交易指令。" |
+| **correct** | ✅ R4 / residual 触发 | `triggered_but_not_error` | "metadata 已触发但本次预测正确（结构幸存）" | "结构性偏多 metadata 触发，但本次预测**仍然正确**（属结构幸存）。这个信号仅作为风险参考；主推演方向已被实际行情验证。" |
+| **wrong** | ❌ 无 metadata | `no_attribution` | "未触发 soft metadata（不强行归因）" | "本次预测虽然错误，但未触发 soft metadata。**不强行归因**到 metadata；请结合其他错误维度（方向 / 路径 / 五态）分析。" |
+| **correct** | ❌ 无 metadata | `no_metadata` | "无 metadata 显示" | "" |
+| pending（None） | ✅ | `triggered_but_not_error` | 同上 | 防御性 fallback：未到 outcome 时仍给一个安全 band |
+| pending（None） | ❌ | `no_metadata` | 同上 | empty state |
+
+强约束：
+- ❌ **不**写 `review_log` 任何 required 字段（`error_category` /
+  `root_cause` / `confidence_note` / `watch_for_next_time` / etc.）
+- ❌ **不**写 `prediction_log` 任何字段
+- ❌ **不**写 DB
+- ❌ 归因 **只**作为 UI 文本 / `card_data["review_attribution"]` 字段
+- ❌ 归因**永远**带"候选 / 不是确定原因 / 不强行归因"措辞，避免被
+  消费者误读为确定性结论
+- ❌ 不出现 16 个 forbidden words（`ForbiddenCopyTests` 5 个场景
+  grep 锁定）
+
+### 30.5 helper API
+
+```python
+def _classify_review_attribution(
+    soft_metadata: Any, *, prediction_correct: bool | None,
+) -> str:
+    """Pure. Returns one of {possible_attribution, triggered_but_not_error,
+    no_attribution, no_metadata}."""
+
+def build_review_soft_metadata_card_data(
+    soft_metadata: dict | None, *, prediction_correct: bool | None = None,
+) -> dict:
+    """Pure. Returns renderer card_data with appended ``review_attribution``
+    block. Forces visible=True for no_attribution case so user sees
+    explicit guidance. Never raises."""
+
+def render_review_soft_metadata_section(
+    soft_metadata: dict | None, *, prediction_correct: bool | None = None,
+) -> dict:
+    """Thin wrapper: builds card_data + emits st.markdown. Returns
+    card_data for testability. Never raises."""
+```
+
+不变量（`tests/test_review_tab_soft_metadata_display.py` 28 个测试锁定）：
+
+- ✅ **input dict 不被原地修改**（`BuildReviewCardDataTests::test_input_dict_is_not_mutated`）
+- ✅ **review-context renderer 复用**：`render_soft_metadata_card_data(payload, context="review")` —— 不重新实现 visibility / 文案
+- ✅ **`no_attribution` 强制 visible**：even when renderer would hide
+  empty signals in some contexts, the helper forces visible+subtitle so
+  the user sees explicit "不强行归因" guidance
+- ❌ 模块**不** import `services.soft_metadata_simulator` /
+  `services.soft_metadata_injection` / `prediction_store` /
+  `yfinance` / `requests` / 网络 / trading（`ast.walk` 锁定）
+- ❌ render 路径**不**调 simulator / baseline build / DB
+  （`patch` + `assert_not_called` 锁定）
+- ❌ 16 forbidden words 在所有 5 个场景输出都不出现（包括
+  `final_test_range_refusal`）
+
+### 30.6 测试覆盖
+
+| 命令 | 结果 |
+|---|---|
+| `pytest tests/test_review_tab_soft_metadata_display.py -q` | **28 passed in 0.27s** |
+| `pytest tests/test_soft_metadata_renderer.py tests/test_predict_tab_soft_metadata_display.py tests/test_review_tab_soft_metadata_display.py -q` | **95 passed in 1.11s** |
+| `pytest tests/test_soft_metadata_injection.py tests/test_soft_metadata_simulator.py -q` | **74 passed in 0.20s** |
+| `pytest -q`（全量） | **2448 passed, 10 skipped, 26 warnings, 65 subtests passed in 10.74s** |
+
+测试覆盖（共 28 个新增）：
+
+| 测试类 | 数量 | 内容 |
+|---|---|---|
+| `ClassifyReviewAttributionTests` | 7 | 4 outcome × metadata 4 组合 + pending 2 组合 + 非 dict 输入 |
+| `BuildReviewCardDataTests` | 6 | review_attribution 块存在 / review-context title / no_attribution forced visible / no_metadata correct review visible / input 不变 / None 输入不 crash |
+| `RenderReviewSectionTests` | 3 | visible 调 markdown / no_metadata correct 仍调 markdown / garbage 不 raise |
+| `ReviewForbiddenCopyTests` | 5 | 4 outcome × metadata 组合 + final_test_refusal 全 grep 16 forbidden words |
+| `FinalTestRefusalReviewTests` | 1 | refusal warning 强制可见 + subtitle 含 "final test 保留区间" |
+| `UnknownSignalReviewTests` | 1 | unknown signal 渲染 generic + attribution kind=possible_attribution |
+| `ReviewTabIsolationTests` | 2 | patch 锁定 simulator / baseline / prediction_store 不被调；`ast.walk` 锁定 import |
+| `ReviewSoftMetadataAppTests`（Streamlit AppTest） | 3 | wrong+R4 / correct+R4 / wrong+empty 三个集成场景 |
+
+测试基线累积：**Step 2G-6C 起点 2420 → 2448**（+28 净增）；
+0 failed；10 skipped 不变。
+
+### 30.7 AppTest 覆盖
+
+`ReviewSoftMetadataAppTests`（3 个 Streamlit AppTest）：
+
+| # | 测试 | 期望 |
+|---|---|---|
+| 30.7.1 | wrong + R4 → 页面文本含"可能归因维度" + "不是确定原因" + "高位跑赢同行后的偏多过热"；不含 16 forbidden words |
+| 30.7.2 | correct + R4 → 页面文本含"结构幸存"；不含 16 forbidden words |
+| 30.7.3 | wrong + empty signals → 页面文本含"不强行归因"；不含 16 forbidden words |
+
+### 30.8 边界事实
+
+- ❌ **没**改 `predict.py` / `run_predict` / `scanner.py` /
+  `prediction_store.py` / 任何 builder
+- ❌ **没**改 04 / 05 / 07 任何 required 字段
+- ❌ **没**改 `review_log` 任何 required 字段（`error_category` /
+  `root_cause` / `confidence_note` / `watch_for_next_time` 全部不写）
+- ❌ **没**改 `final_projection` / `simulated_trade` /
+  `confidence_system` 任何字段
+- ❌ **没**写 DB
+- ❌ **没**改 `review_orchestrator` / `review_agent` /
+  `review_store` / `review_analyzer` / `review_center`
+- ❌ **没**接 `yfinance` / `requests` / 任何网络
+- ❌ **没**接 trading API / `longbridge` / `broker` / `paper_trade`
+- ❌ **没**启用 `hard` / `forced_exclusion` / `anti_false_exclusion_triggered`
+- ❌ **没**让 review 页面调用 simulator / baseline build / DB
+  （patch 锁定 not_called；`ast.walk` 锁定 import）
+- ❌ **没**让 16 forbidden words 出现在 `st.markdown` 实际调用参数中
+  （unit + AppTest 双重 grep 锁定）
+- ❌ **没**触碰 2026-01-01 之后 final test range（cutoff 透传 +
+  refusal warning visibility 锁定）
+- ✅ Review 页面（per-prediction 复盘面板）现在显示 4 种 outcome ×
+  metadata 组合的安全 attribution 区块
+- ✅ Review 不重新计算 enrichment：从 session_state 复用 layer-2
+  显示时 stash 的 enriched payload —— 单点生成，多点消费
+- ✅ Step 2G-6 §8 设计文档的 4-quadrant 归因规则**已在 UI 真实落地**
+- ✅ **2448 / 0 failed / 10 skipped**；现有 2420 基线零回归
+
