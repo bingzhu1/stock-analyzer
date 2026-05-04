@@ -1112,3 +1112,123 @@ for pair in candidate_pairs:
 3. 真写：上一条命令加 `--write`；duplicate guard 会自动跳过已存在的 30 条，新写 100 条
 4. 校验：`prediction_log` 总数从 33 → 133；`replay_AVGO_%` 从 30 → 130
 5. 跑 `summarize_confidence_calibration_inputs --limit 200 --symbol AVGO`，确认 `paired ≥ 90` + `calibration_ready=true`（或仅缺 Step 2G 评估）
+
+## 24. Regime Diagnostics Dashboard（Step 3D-1，read-only）
+
+### 24.1 为什么做
+
+Step 3B 把 `pos20 × peer_diff` 4×4 lookup 当作 calibration 主路径推到 Step 3B-1
+holdout（见 `tasks/step_3b1_holdout_simulation.md`），结果 holdout 上 lookup 反而
+比 baseline 差（FAIL）。Step 3 calibration 系列因此暂停（`pos20` 作为 regime
+feature 仍被确认有用，但 4×4 lookup 不稳定，3B-2 / 3C 冻结）。
+
+下一步的 Step 2G exclusion 复审 / dashboard 展示 / calibration 复盘都需要把
+"哪些 regime slice 在过度看多 / 在哪个月份 bias 突增 / R4 这种强动量看多组合
+的真实命中率" 这件事工具化。本步只做 **read-only 诊断工具**，不写 DB、不实现
+calibration、不升级 04/05/07 顶层字段、不接 trading。
+
+### 24.2 改动文件
+
+| 文件 | 角色 | 说明 |
+|---|---|---|
+| `services/regime_diagnostics_dashboard.py` | 新增 service | `summarize_regime_diagnostics_dashboard(db_path, symbol, limit, *, coded_data_dir)` |
+| `scripts/regime_diagnostics_dashboard.py` | 新增 CLI | argparse 包装 service，stdout JSON `ensure_ascii=False, indent=2` |
+| `tests/test_regime_diagnostics_dashboard.py` | 新增测试 | 21 个 unittest，全部 tmp_path 隔离 DB + tmp 隔离 coded_data |
+
+未改：`predict.py` / `run_predict` / `scanner.py` / `prediction_store.py` / DB schema /
+04 / 05 / 07 顶层字段 / `confidence_engine.py` / exclusion 硬软规则。
+
+### 24.3 service 输出结构
+
+```
+{
+  status: "ok" | "no_records" | "error",
+  symbol, records_scanned, valid_payloads,
+  paired_outcomes, pending_outcomes, calibration_ready,
+  time_range: { analysis_date_min, analysis_date_max },
+  pos20_quartile_bias: [
+    { bucket, boundary, samples, paired, correct, wrong, pending,
+      accuracy, predicted_bullish_rate, actual_up_rate, bias_gap }
+    × 4   # Q1..Q4
+  ],
+  r4_signature: {
+    samples, paired, correct, wrong, pending, accuracy,
+    predicted_bullish_rate, actual_up_rate, bias_gap,
+    high_confidence_count, downgrade_candidate_count,
+    thresholds: { avgo_minus_soxx_20d, pos20 }
+  },
+  confidence_by_regime: {
+    overall: { high|medium|low: {samples, paired, correct, wrong,
+                                  pending, accuracy} },
+    by_pos20_quartile: { high|medium|low: { Q1..Q4: {...} } },
+    explicit_slices: { pos20_gt_0_62_high, pos20_gt_0_75_high }
+  },
+  peer_adjustment_summary: {
+    by_peer_adjustment: { upgrade|hold|downgrade: {samples,...} },
+    by_peer_confirm_count: { "0"|"1"|"2"|"3": {samples,...} }
+  },
+  soft_signal_summary: { none|high_path_risk|peer_weaken: {samples,...} },
+  monthly_accuracy: [
+    { month: "YYYY-MM", samples, paired, correct, wrong, pending,
+      accuracy, predicted_bullish_rate, actual_up_rate, bias_gap }
+  ],
+  high_confidence_failure_slices: [
+    { slice: name, samples, paired, correct, wrong, pending, accuracy,
+      predicted_bullish_rate, actual_up_rate, bias_gap }
+    × 5   # confidence_high / pos20_q3_and_high / pos20_q4_and_high
+          # / r4_signature / bullish_high_pos20_gt_0_62
+  ],
+  warnings: [str, ...]
+}
+```
+
+### 24.4 不变量 / 边界
+
+- ❌ 不写任何 DB（`SELECT` only；`init_db` 不调用；`INSERT` / `UPDATE` / `DELETE` 全无）
+- ❌ 不写任何文件（CLI 仅 stdout）
+- ❌ 不 import `yfinance` / `requests` / `longbridge` / `broker` / `paper_trade`（test 17 grep 锁定）
+- ❌ 不实现 calibration 公式；不修改 `confidence_system` 4 个 0.0 score 字段
+- ❌ 不升级 04 / 05 / 07 contract（payload 只读）
+- ❌ 不改 exclusion hard/soft 逻辑
+- ✅ 只看 `snapshot_id LIKE "replay_<SYMBOL>_%"`（live 预测不会被算进来）
+- ✅ 只读 `coded_data/<SYMBOL>_coded.csv`；缺 CSV 时 pos20 / R4 段降级 + warning
+- ✅ status / 错误全部经 dict 表面化；`db_path` 不可读 → `status=error`，从不 raise
+- ✅ pending outcome 计入 `pending_outcomes` + slice 的 `pending` 字段，但**不计入 accuracy 分母**
+- ✅ pos20 < 4 个有效样本时 `pos20_quartile_bias = []` + warning，不爆 `statistics.quantiles`
+
+### 24.5 CLI 用法
+
+```
+python3 scripts/regime_diagnostics_dashboard.py
+python3 scripts/regime_diagnostics_dashboard.py --symbol AVGO --limit 450
+python3 scripts/regime_diagnostics_dashboard.py --db avgo_agent.db --symbol AVGO --limit 450
+python3 scripts/regime_diagnostics_dashboard.py --coded-data-dir /custom/coded_data
+```
+
+### 24.6 真数据基线（main DB，`replay_AVGO_%` = 380）
+
+| 指标 | 值 |
+|---|---|
+| `paired_outcomes` | 286 |
+| `pending_outcomes` | 94 |
+| `calibration_ready` | true |
+| `time_range` | 2023-01-03 → 2024-08-02 |
+| Q1 pos20 (`<= 0.4275`) `bias_gap` | **−0.36**（系统在低位过度看空） |
+| Q4 pos20 (`> 0.8198`) `bias_gap` | **+0.51**（系统在高位过度看多） |
+| R4 signature `samples` / `accuracy` | 36 / **32.4%** |
+| R4 `bias_gap` | **+0.68**（每条 R4 都 `偏多`，但只有 1/3 真涨） |
+| R4 `downgrade_candidate_count` | 22（high-conf 且 wrong 的 R4 命中数） |
+
+这个 baseline 直接给 Step 2G exclusion 复审定锚：R4 / Q4-high-confidence 是
+最大的 over-bullish 来源。
+
+### 24.7 测试基线
+
+`tests/test_regime_diagnostics_dashboard.py` 新增 21 个测试，覆盖：
+no_records / invalid JSON / pending / pos20 数值 / 4 桶 shape / R4 命中 /
+confidence_by_regime overall + cross + explicit / peer summary（label + confirm count）/
+soft signal 三类 / monthly YYYY-MM / 5 个固定 high-confidence-failure slice /
+read-only DB 行计数不变 / DB error / 空 DB 不 crash / CLI smoke /
+no network import / `_MIN_RECOMMENDED_PAIRS = 90` 锁定 / symbol filter（`replay_<SYMBOL>_%` 严格隔离 NVDA）
+
+测试基线：**2233 → 2254**（+21 净增）；0 failed；10 skipped 不变。
