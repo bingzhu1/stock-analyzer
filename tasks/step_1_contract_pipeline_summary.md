@@ -2639,3 +2639,191 @@ stdout JSON `ensure_ascii=False, indent=2`。退出码：argparse 失败时
   在 v1 永远是 fail（hard-coded 直到 Step 2G-8+ 真接入保护层）
 - ✅ **2521 / 0 failed / 10 skipped**；现有 2486 基线零回归
 
+## 33. Protection Layer Diagnostics Helper（Step 2G-8A.1，read-only sidecar）
+
+### 33.1 目标
+
+落地 Step 2G-8A protection-layer connection design（commit `b4c1919`）
++ checkpoint（`8c56696`）的 helper 层：实现 `protection_layer_diagnostics.v1`
+sidecar，把 baseline 中的 `holdout_status` / `net_benefit` 显式接到
+**两个轻量 guard**（`holdout_stability_guard` + `net_benefit_guard`），
+让 Predict / Review / dashboard **将来**可在 anti-false expander 之下
+显示 "保护层诊断详情"。
+
+**强约束**（与 Step 2G-8A 设计一致）：
+- 只新增 helper（`services/protection_layer_diagnostics.py`）+ tests +
+  doc；**不**改 `predict.py` / `run_predict` / `scanner.py` /
+  `prediction_store.py` / `app.py` / 任何 builder / DB schema
+- **不**写 DB；helper 是纯函数；caller-injected 输入
+- **不**升级 04 / 05 / 07 required 字段
+- **不**让 Step 2G-7C dashboard `hard_gate_status.protection_layer_connected`
+  自动 pass（仍 fail；Gate 5 只能由 Step 2G-8+ launch review 通过）
+
+### 33.2 sidecar schema（已实现）
+
+```json
+{
+  "schema_version": "protection_layer_diagnostics.v1",
+  "diagnostic_connected": true,
+  "hard_gate_connected": false,
+  "required_field_connected": false,
+  "protection_layer_connected_for_gate": false,
+  "guards": [
+    {
+      "name": "holdout_stability_guard",
+      "status": "blocking",
+      "reason": "holdout_status_FAIL",
+      "evidence": {"holdout_status": "FAIL"},
+      "message": "跨窗口验证未通过，当前只允许复盘提示。"
+    },
+    {
+      "name": "net_benefit_guard",
+      "status": "blocking",
+      "reason": "net_benefit_below_gate",
+      "evidence": {"net_benefit": 0.0219, "threshold": 0.05},
+      "message": "净收益不足，当前只允许复盘提示。"
+    }
+  ],
+  "summary": {
+    "hard_upgrade_blocked": true,
+    "display_only": true,
+    "blocking_guard_count": 2,
+    "required_next_step": "narrower_candidate_research"
+  },
+  "warnings": []
+}
+```
+
+### 33.3 公共 API
+
+```python
+build_protection_layer_diagnostics(
+    anti_false_exclusion_summary: dict | None = None,
+    *,
+    soft_metadata: dict | None = None,
+) -> dict
+```
+
+- `anti_false_exclusion_summary`：可选；`summarize_anti_false_exclusion_dashboard`
+  的输出（`soft_metadata_summary.r4_overextension` 提供 `holdout_status`
+  / `net_benefit`）
+- `soft_metadata`：可选；`soft_metadata.v1` payload（signals[] 提供
+  R4 `holdout_status` 与 `historical_metrics_in_sample.net_benefit`
+  作为 fallback）
+- 两者都没传或字段缺失时 → `guards=[]`，`warnings` 含
+  `"missing_metrics"`，4 个 connection flag 仍按 v1 不变量返回
+
+```python
+build_protection_layer_diagnostics_from_dashboard(summary: dict) -> dict
+```
+
+是上面函数的 thin wrapper：从 dashboard summary 直接构造，**不**重新
+查询 DB、**不**调 dashboard service。
+
+### 33.4 两个 guard 行为
+
+| guard | 触发条件 | reason | evidence |
+|---|---|---|---|
+| `holdout_stability_guard` | candidate 或 R4 `holdout_status == "FAIL"` | `holdout_status_FAIL` | `{holdout_status: "FAIL"}` |
+| `net_benefit_guard` | R4 `net_benefit < 0.05` | `net_benefit_below_gate` | `{net_benefit, threshold: 0.05}` |
+
+- `holdout_status` 仅在字面量为 `"FAIL"` 时才触发 holdout guard；
+  `UNKNOWN` / `""` / `None` **不**触发（避免缺数据时虚假 blocking）
+- `net_benefit == 0.05` **不**触发（与 hard-gate 阈值 `>=` 边界一致）
+- 两个 guard 的 `message` 与 Step 2G-7A AFX renderer 共用 19 token
+  forbidden-copy 标准（不出现 `禁止交易` / `hard exclusion` /
+  `force close` / 等）
+
+### 33.5 四个 connection flag（v1 强不变量）
+
+| flag | 取值 | 含义 |
+|---|---|---|
+| `diagnostic_connected` | **总是 `true`** | sidecar 输出本身存在；UI 可读取此节点 |
+| `hard_gate_connected` | **总是 `false`** | 没有进入 hard decision pipeline；run_predict / scanner 不读 |
+| `required_field_connected` | **总是 `false`** | 没有写 04 required 字段；schema 无升级 |
+| `protection_layer_connected_for_gate` | **总是 `false`** | Step 2G-7C dashboard Gate 5 仍 fail |
+
+**反误读**：`diagnostic_connected=true` ≠ "Gate 5 pass"，仅代表
+"诊断信息可在 UI 展示"。这一约束被 schema-level 测试锁定。
+
+### 33.6 summary 不变量
+
+- `summary.hard_upgrade_blocked`：v1 **永远 `true`**（即使两个 guard
+  都 pass，`protection_layer_connected_for_gate` 仍 false → 仍 blocked）
+- `summary.display_only`：v1 **永远 `true`**
+- `summary.blocking_guard_count`：与 `guards` 列表中
+  `status=="blocking"` 的数量一致
+- `summary.required_next_step`：v1 总是 `"narrower_candidate_research"`
+  （指向 Step 2G-8B）
+
+### 33.7 与现有结构的关系
+
+- `protection_layer_diagnostics.v1` 是 `anti_false_exclusion_display.v1`
+  的**补充**，不是替代 —— 两者**同时**显示让用户看到完整保护证据链：
+  per-prediction 5 项 protective findings + baseline-level 2 项
+  blocking guard
+- helper **不**调 `services.anti_false_exclusion_dashboard` / `services.soft_metadata_simulator`
+  / `services.prediction_store` / `regime_diagnostics_dashboard` —— 调用方
+  自己决定喂什么；所有读取由调用方完成（保持 helper 纯函数）
+- 测试用 `ast.walk` 锁定模块未 import：`yfinance` / `requests` /
+  `longbridge` / `broker` / `paper_trade` / `sqlite3` /
+  `services.prediction_store` / `services.confidence_engine` /
+  `services.contradiction_engine` / `services.risk_model` /
+  `services.soft_metadata_simulator` /
+  `services.anti_false_exclusion_dashboard` / `predict` / `scanner`
+
+### 33.8 测试矩阵（`tests/test_protection_layer_diagnostics.py`）
+
+| 测试类 | 数量 | 内容 |
+|---|---|---|
+| `OutputSchemaTests` | 4 | 顶层字段 / schema_version / summary 必备字段 / guard 字段 |
+| `HoldoutStabilityGuardTests` | 4 | FAIL 触发 / PASS 不触发 / UNKNOWN/None/空字符串不触发 / soft_metadata 路径触发 |
+| `NetBenefitGuardTests` | 4 | <0.05 触发 / ==0.05 不触发 / >0.05 不触发 / soft_metadata 路径触发 |
+| `MissingMetricsTests` | 5 | 无输入 → warning / 空 dashboard → warning / 无 R4 → warning / 垃圾 payload graceful / 缺数据下 connection flag 仍锁定 |
+| `ConnectionFlagInvariantTests` | 4 | 6 个 scenario × 4 个 flag → 各自常量锁定（diagnostic=true；其余三项=false）|
+| `SummaryInvariantTests` | 4 | hard_upgrade_blocked / display_only / blocking_guard_count / required_next_step 锁定 |
+| `InputImmutabilityTests` | 3 | dashboard / soft_metadata / 双输入路径下 input dict 不被原地修改 |
+| `FromDashboardTests` | 3 | 默认提取 / 全 pass 路径 guards=[] / 垃圾输入 graceful |
+| `FinalTestRangeWarningTests` | 3 | dashboard warnings / soft_metadata summary warnings 透传 / 去重 |
+| `CrossSourceTests` | 2 | dashboard 字段优先 / 缺字段时 soft_metadata fallback |
+| `IsolationTests` | 1 | `ast.walk` 锁定禁 import |
+| `ForbiddenCopyTests` | 2 | 默认路径 / soft_metadata 路径下 message 字符串不含 19 forbidden token |
+
+### 33.9 验证
+
+| 命令 | 结果 |
+|---|---|
+| `pytest tests/test_protection_layer_diagnostics.py -q` | **39 passed in 0.04s（+24 subtests）** |
+| `pytest tests/test_anti_false_exclusion_dashboard.py tests/test_anti_false_exclusion_display.py -q` | **70 passed in 0.16s** |
+| `pytest -q`（全量） | **2560 passed, 10 skipped, 26 warnings, 89 subtests passed in 12.28s** |
+
+测试基线累积：**Step 2G-7C 起点 2521 → Step 2G-8A.1 终点 2560**
+（+39 净增）；0 failed；10 skipped 不变。
+
+### 33.10 边界事实
+
+- ❌ **没**改 `predict.py` / `run_predict` / `scanner.py` /
+  `prediction_store.py` / `app.py` / 任何 builder / DB schema
+- ❌ **没**改 04 / 05 / 07 任何 required 字段
+- ❌ **没**改 `final_projection` / `final_direction` / `simulated_trade`
+  / `no_trade` / `confidence_system` 任何字段
+- ❌ **没**写 DB；helper 是纯函数，caller-injected 输入
+- ❌ **没**改 `services.anti_false_exclusion_dashboard` /
+  `ui/anti_false_exclusion_display.py` / `services.soft_metadata_simulator`
+  / 任何已有 service / ui 模块
+- ❌ **没**让 Step 2G-7C dashboard `hard_gate_status.protection_layer_connected`
+  自动 pass（仍 fail；Gate 5 仍 fail）
+- ❌ **没**启用 `hard` / `forced_exclusion` /
+  `anti_false_exclusion_triggered`
+- ❌ **没**接 `yfinance` / `requests` / 任何网络
+- ❌ **没**接 trading API / `longbridge` / `broker` / `paper_trade`
+- ❌ **没**触碰 2026-01-01 之后 final test range
+- ❌ **没** import `services.prediction_store` / `regime_diagnostics_dashboard`
+  / `confidence_engine` / `contradiction_engine` / `risk_model` / `predict`
+  / `scanner` / `sqlite3`（`ast.walk` 锁定）
+- ✅ `diagnostic_connected = True` / 其余三 flag 永远 `False`（schema-level
+  invariants 测试锁定）
+- ✅ `summary.hard_upgrade_blocked` / `summary.display_only` 永远
+  `True`（v1 spec 强约束）
+- ✅ **2560 / 0 failed / 10 skipped**；现有 2521 基线零回归
+
