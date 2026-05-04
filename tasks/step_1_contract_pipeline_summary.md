@@ -1717,3 +1717,169 @@ def render_soft_metadata_section(soft_metadata: dict | None) -> dict:
   隐藏**（不改变现有页面视觉）
 - ✅ **2360 / 0 failed / 10 skipped**；现有 2338 基线零回归
 
+## 28. Soft Metadata Enrichment Hook（Step 2G-6B.2 / 6B.3，read-only）
+
+### 28.1 为什么做
+
+Step 2G-6B Predict display hook（commit `33733d3`）就位之后，
+`canonical` 位置 `predict_result["contract_payload"]["exclusion_system"]["extras"]["soft_metadata"]`
+**几乎从不被填充** —— `run_predict` 主链未改，没有任何代码路径自动
+生成 `soft_metadata`，所以 Predict 页面 99% 时间下隐藏整个区块。
+Step 2G-6B.1 injection path design（commit `92441e0`）把候选方案
+A-E 比较后推荐方案 B（post-run sidecar enrichment helper）。Step
+2G-6B.2 实现这个 helper；Step 2G-6B.3 在 Predict 页面接入；同 step
+完成可避免"helper 写完没接 UI / 接了 UI 没测"的拆分浪费。
+
+### 28.2 改动文件
+
+| 文件 | 类型 | 说明 |
+|---|---|---|
+| `services/soft_metadata_injection.py` | 新增 service | `enrich_predict_result_with_soft_metadata(predict_result, *, scan_result, research_result, baseline, regime_features, analysis_date, force, final_test_cutoff)` 纯函数 + `_extract_regime_features` 4-级 fallback helper |
+| `ui/predict_tab.py` | 修改（+13 行）| 新增 `from services.soft_metadata_injection import enrich_predict_result_with_soft_metadata`；在 `render_predict_tab` 显示 hook 前 try/except 包裹调用，把 enriched payload 传给已有 `_extract_soft_metadata` + `render_soft_metadata_section` |
+| `tests/test_soft_metadata_injection.py` | 新增 | 26 个 unittest |
+| `tests/test_predict_tab_soft_metadata_display.py` | 修改 | +7 个测试（5 个 unit `EnrichmentIntegrationTests` + 2 个 AppTest `EnrichmentAppTests`），从 22 → 29 |
+| `tasks/step_1_contract_pipeline_summary.md` | 修改 | 新增本 §28 |
+
+未改：`predict.py` / `run_predict` / `scanner.py` / `prediction_store.py` /
+`projection_output_adapter.py` / `projection_output_contract.py` /
+`regime_diagnostics_dashboard.py` / `soft_metadata_simulator.py` /
+`soft_metadata_renderer.py` / 任何 builder / DB schema / 04 / 05 / 07
+任何 required 字段 / `simulated_trade.no_trade` 策略边界 / 任何其他
+`ui/*` 模块。
+
+### 28.3 enrichment helper 行为
+
+```python
+def enrich_predict_result_with_soft_metadata(
+    predict_result: dict,
+    *,
+    scan_result: dict | None = None,
+    research_result: dict | None = None,  # accepted for API stability; not used in v1
+    baseline: dict | None = None,
+    regime_features: dict | None = None,
+    analysis_date: str | None = None,
+    force: bool = False,
+    final_test_cutoff: str = "2026-01-01",
+) -> dict:
+    """Pure function. Returns shallow copy with canonical
+    exclusion_system.extras.soft_metadata filled. Never raises.
+    Never reads DB / CSV / network. Never calls
+    build_soft_metadata_baseline."""
+```
+
+不变量（测试锁定）：
+
+- ❌ **input dict 不被原地修改**（`InputImmutabilityTests` deep-copy
+  snapshot 锁定）
+- ❌ **不写 DB**（`IsolationTests` patch `prediction_store.save_prediction`
+  / `_get_conn` 锁定 not_called）
+- ❌ **不调** `build_soft_metadata_baseline`（patch 锁定 not_called）
+- ❌ 模块不 import `prediction_store` / `regime_diagnostics_dashboard` /
+  `yfinance` / `requests` / `longbridge` / `broker` / `paper_trade` /
+  v1 stub trio（`ast.walk` parse 锁定）
+- ✅ **canonical 位置被填充**：
+  `out["contract_payload"]["exclusion_system"]["extras"]["soft_metadata"]`
+  写入 simulator 输出
+- ✅ **already-set wins by default**：canonical 已有 dict 时返回 input
+  shallow copy，不覆盖；显式 `force=True` 才覆盖
+- ✅ **04 / 05 / 07 required 字段 byte-stable**：
+  `RequiredFieldsByteStableTests` 用结构化 subset 比较 `exclusion_required`
+  / `confidence_scores` / `simulated_trade` / `final_projection`
+  before vs after
+- ✅ **缺 contract_payload / extras 层级时安全创建**（不污染 input；
+  `CanonicalWriteTests::test_missing_contract_payload_creates_layers_safely`
+  / `test_missing_extras_creates_extras_dict` 锁定）
+- ✅ **2026 cutoff 透传**：`analysis_date` 默认从
+  `contract_payload.current_structure.analysis_date` 提取；显式
+  override 优先；`>= "2026-01-01"` 触发 simulator refusal +
+  `final_test_range_refusal` warning
+
+`_extract_regime_features` 4 级 fallback：
+1. `predict_result["regime_features"]`
+2. `predict_result["contract_payload"]["exclusion_system"]["extras"]["regime_features"]`
+3. `scan_result["regime_features"]`
+4. `scan_result["extras"]["regime_features"]`
+
+显式 `regime_features=` kwarg **优先**（在 helper 主入口处理；不进
+fallback 链）。任何一级都没有 → simulator 收到 `None` → emit
+`signals=[]` + `missing_regime_features` warning（不 crash）。
+
+### 28.4 Predict 接入方式
+
+`render_predict_tab` Layer 2 主结论之后插入：
+
+```python
+try:
+    _enriched_for_display = enrich_predict_result_with_soft_metadata(
+        predict_result, scan_result=scan_result,
+        research_result=research_result,
+        baseline=st.session_state.get("soft_metadata_baseline"),
+    )
+except Exception:  # noqa: BLE001 — UI must never crash on metadata
+    _enriched_for_display = predict_result
+render_soft_metadata_section(_extract_soft_metadata(_enriched_for_display))
+```
+
+设计要点：
+- **try/except** 包裹：helper 是纯函数 + 不 raise（合约保证），但 UI
+  防御性兜底，不让 metadata 路径影响主流程
+- **`baseline=st.session_state.get("soft_metadata_baseline")`**：调用方
+  可在 `app.py` 启动时预先 build baseline 缓存到 session_state；
+  当前未做缓存，传 None → simulator 仍 emit signals + `missing_baseline`
+  warning（renderer visibility 矩阵显示 dev hint）
+- **不重写 renderer 文案**：直接调
+  `render_soft_metadata_section(_extract_soft_metadata(...))`；
+  display hook + renderer 已锁定文案安全 + visibility 规则
+- **不写 DB / 不写 session_state**（除了 caller 预设的 baseline 缓存
+  位置；helper 自身不写）
+- **不 modify `predict_result`**：enriched 仅用于 display；不回写
+  `prediction_log` / `outcome_log` / `review_log`
+
+### 28.5 测试基线
+
+| 命令 | 结果 |
+|---|---|
+| `pytest tests/test_soft_metadata_injection.py -q` | **26 passed in 0.03s** |
+| `pytest tests/test_predict_tab_soft_metadata_display.py tests/test_soft_metadata_renderer.py -q` | **65 passed in 0.90s** |
+| `pytest tests/test_soft_metadata_simulator.py tests/test_regime_diagnostics_dashboard.py -q` | **69 passed in 0.39s** |
+| `pytest -q`（全量） | **2393 passed, 10 skipped, 26 warnings, 65 subtests passed in 10.18s** |
+
+测试覆盖矩阵（共 33 个新增）：
+
+| 测试类（文件） | 数量 | 内容 |
+|---|---|---|
+| `InputImmutabilityTests` (`test_soft_metadata_injection.py`) | 3 | input deepcopy snapshot 不变 / 返回 dict 与 input 不同对象 / 非 dict 输入 → `{}` |
+| `CanonicalWriteTests` | 5 | canonical 填充 / already-set 不覆盖 / `force=True` 覆盖 / 缺 contract_payload 安全创建 / 缺 extras 安全创建 |
+| `RequiredFieldsByteStableTests` | 3 | 04 required / 05 confidence + scores / 06 final_projection / 07 simulated_trade 全 byte-stable；`force=True` 也不动 required |
+| `SimulatorPassthroughTests` | 5 | baseline / analysis_date / override 优先 / 2026 refusal / final_test_cutoff 五项透传 |
+| `RegimeFeaturesExtractionTests` | 7 | explicit kwarg 优先 / predict_result top-level / contract extras / scan_result / scan extras / no features → empty + warning / `_extract_regime_features` 直接单元测试 |
+| `IsolationTests` | 3 | 不调 `build_soft_metadata_baseline` / 不调 `prediction_store` / `ast.walk` import 锁定 |
+| `EnrichmentIntegrationTests` (`test_predict_tab_soft_metadata_display.py`) | 5 | helper 从 predict_tab 可 import / canonical 被填充触发 R4 显示 / fallback 不崩 / no forbidden words / 2026 refusal subtitle 可见 |
+| `EnrichmentAppTests` (Streamlit) | 2 | with features → 页面真实显示 R4 card；without features → dev hint 可见但 R4 card 不出现 |
+
+测试基线累积：**Step 2G-6B.2/6B.3 起点 2360 → 2393**（+33 净增）；
+0 failed；10 skipped 不变。
+
+### 28.6 边界事实
+
+- ❌ **没**改 `predict.py` / `run_predict` / `scanner.py` /
+  `prediction_store.py` / 任何 builder
+- ❌ **没**改 04 / 05 / 07 任何 required 字段
+- ❌ **没**改 `final_projection` / `simulated_trade` / `confidence_system`
+  任何字段（snapshot 测试锁定 byte-stable）
+- ❌ **没**写 DB（service 不接 sqlite / `prediction_store`；UI hook 不
+  写 session_state / DB）
+- ❌ **没**接 `yfinance` / `requests` / 任何网络
+- ❌ **没**接 trading API / `longbridge` / `broker` / `paper_trade`
+- ❌ **没**启用 `hard` / `forced_exclusion` / `anti_false_exclusion_triggered`
+- ❌ **没**触碰 2026-01-01 之后 final test range（cutoff 透传 +
+  refusal warning visibility 锁定）
+- ❌ **没**调 `build_soft_metadata_baseline`（service 与 UI 都不主动
+  读 DB；baseline 由 caller 经 session_state 注入）
+- ✅ Predict 页面 canonical 位置**首次被自动填充** —— 当上游
+  pipeline 提供 `regime_features` 时，R4 / residual 立即可见
+- ✅ 当前 baseline 未缓存：production app 中每次预测都会有
+  `missing_baseline` warning + renderer 显示 dev hint；后续可加
+  baseline 缓存优化（不属于 6B.3 范围）
+- ✅ **2393 / 0 failed / 10 skipped**；现有 2360 基线零回归
+
