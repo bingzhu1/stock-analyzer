@@ -1232,3 +1232,183 @@ read-only DB 行计数不变 / DB error / 空 DB 不 crash / CLI smoke /
 no network import / `_MIN_RECOMMENDED_PAIRS = 90` 锁定 / symbol filter（`replay_<SYMBOL>_%` 严格隔离 NVDA）
 
 测试基线：**2233 → 2254**（+21 净增）；0 failed；10 skipped 不变。
+
+## 25. Soft Metadata Simulator（Step 2G-5，read-only sidecar）
+
+### 25.1 为什么做
+
+Step 2G-3 数据再审用 380 replay 反驳了旧 `soft_signal` 假设
+（`peer_weaken` / `high_path_risk` 的 accuracy 反而高于 baseline），
+同时定位 R4 为唯一通过证据门槛的 over-bullish metadata 候选。Step
+2G-4 把这套结论冻结为 design doc，Step 2G-4.5 schema review 把 8 条
+schema-level blocker 固化成 `soft_metadata.v1` 的最终形状。Step 2G-5
+是这套设计链路的第一段实现：read-only sidecar simulator，输出
+`exclusion_system.extras.soft_metadata` 子结构，让 dashboard / review /
+未来 sidecar 消费者**有可消费的 JSON**，但**不**触碰 04 / 05 / 07
+required 字段、**不**启用 hard / forced、**不**接 trading。
+
+### 25.2 改动文件
+
+| 文件 | 角色 | 说明 |
+|---|---|---|
+| `services/soft_metadata_simulator.py` | 新增 service | `simulate_soft_metadata(payload, *, regime_features, baseline, analysis_date, final_test_cutoff)` 纯函数 + `build_soft_metadata_baseline(db_path, symbol, limit, *, coded_data_dir)` SELECT-only DB reader |
+| `scripts/soft_metadata_simulator.py` | 新增 CLI | argparse 包装；`--payload-json` / `--payload-file` / `--db` / `--symbol` / `--limit` / `--coded-data-dir` / `--no-baseline` / `--analysis-date` / `--final-test-cutoff` |
+| `tests/test_soft_metadata_simulator.py` | 新增测试 | 48 个 unittest，全部 tmp_path 隔离 DB + tmp 隔离 coded_data |
+
+未改：`predict.py` / `run_predict` / `scanner.py` / `prediction_store.py` /
+`projection_output_adapter.py` / `projection_output_contract.py` / DB
+schema / 04 / 05 / 07 任何 required 字段 / `confidence_engine.py` /
+`contradiction_engine.py` / `risk_model.py` / 任何 builder。
+
+### 25.3 schema 锁定（soft_metadata.v1）
+
+按 Step 2G-4.5 §5：
+
+```
+{
+  schema_version: "soft_metadata.v1",
+  metrics_source: "regime_diagnostics_dashboard_v1",
+  metrics_window: { analysis_date_min, analysis_date_max,
+                    paired_total, db_snapshot_id },
+  metrics_computed_at,
+  signals: [
+    {
+      name: "r4_overextension" | "bullish_high_pos20_residual",
+      display_label, severity: "low" | "medium",
+      dedup_group: "bullish_overextension",
+      raw_features, trigger_context,
+      historical_metrics_in_sample, holdout_status: "FAIL",
+      recommended_action: "review_only",
+      hard_forbidden_primary_reason, hard_forbidden_breakdown,
+    }
+  ],
+  summary: {
+    has_overextension_signal, max_severity: "none"|"low"|"medium",
+    hard_exclusion_allowed: false, signal_count, primary_signal,
+    warnings,
+  },
+}
+```
+
+**Active candidates** (Step 2G-4.5 Blocker 6 / 7)：
+- `r4_overextension`
+- `bullish_high_pos20_residual`
+
+**Removed top-level candidates**：
+- `bullish_peer_upgrade_overextension` → R4 `trigger_context.peer_subtype`
+- `peer_weaken_metadata_only` / `high_path_risk_metadata_only` /
+  `peer_path_lower_bullish` → 完全删除（dashboard 改读 raw `extras`
+  字段）
+
+**Severity enum** (Step 2G-4.5 Blocker 8)：仅 `{"low", "medium"}`；
+`"high"` / `"hard"` **不存在**于 enum。`hard_exclusion_allowed`
+**永远** `False`。
+
+### 25.4 不变量 / 边界
+
+- ❌ `simulate_soft_metadata` 是**纯函数** —— 不读 DB / 不读 CSV /
+  不接网络（regime_features + baseline 由 caller 注入）
+- ❌ `build_soft_metadata_baseline` 是 SELECT-only —— 不调用 `init_db` /
+  不 `INSERT` / 不 `UPDATE` / 不 `DELETE` / 不写文件
+- ❌ 不 import `yfinance` / `requests` / `longbridge` / `broker` /
+  `paper_trade`（test `NoForbiddenImportsTests` 用 `ast` parse 锁定，
+  仅检查实际 import 语句而非 docstring 文本）
+- ❌ 不 import 三个 v1 stub trio（`confidence_engine` /
+  `contradiction_engine` / `risk_model`）
+- ❌ R4 阈值 (`5.0` / `0.62`) **必须**从 `services.regime_diagnostics_dashboard`
+  import；测试 `ThresholdConstantSourceTests` 用 `assertIs(...)` 锁定
+  同源 + grep 源码确认无字面量 `5.0` / `0.62` 在 R4 判断逻辑中
+- ❌ 不改 04 / 05 / 07 任何 required 字段；现有
+  `tests/test_exclusion_system_contract_fields.py` /
+  `tests/test_confidence_system_contract_fields.py` /
+  `tests/test_simulated_trade_contract_fields.py` 全部 pass
+- ❌ 不启用 `hard` / `forced_exclusion` / `anti_false_exclusion_triggered`
+- ❌ `analysis_date >= "2026-01-01"`（默认 cutoff）→ refuse signals +
+  `summary.warnings.final_test_range_refusal`；防止 final-test
+  contamination（Step 2G-4.5 §13）
+- ❌ 不接 4 个 anti-false-exclusion 离线模块到主链
+
+### 25.5 CLI 用法
+
+```
+# Build baseline only (no payload to simulate):
+python3 scripts/soft_metadata_simulator.py --symbol AVGO --limit 450
+
+# Simulate a single payload from inline JSON:
+python3 scripts/soft_metadata_simulator.py --payload-json '<json>'
+
+# Simulate a single payload from file:
+python3 scripts/soft_metadata_simulator.py --payload-file /path/to/payload.json
+
+# Override DB / coded_data location / cutoff:
+python3 scripts/soft_metadata_simulator.py --db avgo_agent.db \
+    --coded-data-dir ./coded_data --final-test-cutoff 2026-01-01
+
+# Skip baseline build (simulator runs with baseline=None + warning):
+python3 scripts/soft_metadata_simulator.py --payload-file p.json --no-baseline
+```
+
+### 25.6 真数据基线（main DB）
+
+CLI baseline-only smoke (`--symbol AVGO --limit 450`):
+
+| 字段 | 值 |
+|---|---|
+| `metrics_window.analysis_date_min` / `analysis_date_max` | 2023-01-03 / 2024-08-02 |
+| `metrics_window.paired_total` | 286 |
+| `r4_overextension.samples / paired / accuracy / bias_gap` | 36 / 34 / **0.324** / **+0.676** |
+| `r4_overextension.false_exclusion_rate` | **0.3235** |
+| `r4_overextension.net_benefit` | **+0.0219** |
+| `bullish_high_pos20_residual.samples / paired / accuracy / bias_gap` | 47 / 47 / **0.489** / **+0.511** |
+| `bullish_high_pos20_residual.false_exclusion_rate` | **0.489** |
+| `bullish_high_pos20_residual.net_benefit` | **−0.0007** |
+| `holdout_status` | `"FAIL"` |
+
+R4 数字与 Step 2G-3 deep-dive / Step 3D-1 dashboard 完全一致（同 DB /
+同 limit）。Residual 数字首次定量化：accuracy 0.489 / gap +0.511，
+**比 R4 弱但仍是 over-bullish** —— 适合作 v1 第二候选；net_benefit
+−0.0007 进一步证实"残差切片不能 hard"（按 Step 2G 设计文档 §8 /
+Step 2G-3 §10 / Step 2G-4.5 §10.1.6 hard gate 全失败）。
+
+### 25.7 测试基线
+
+`tests/test_soft_metadata_simulator.py` 新增 **48 个测试**，覆盖
+（按 Step 2G-4.5 §10 9 大类）：
+
+| 类 | 数量 | 内容 |
+|---|---|---|
+| `SchemaShapeTests` | 6 | 空 payload / schema_version / signal_count == len(signals) / severity 仅 low/medium / 最多 3 条 / hard_exclusion_allowed 永远 False |
+| `R4TriggerTests` | 10 | R4 触发 / pos20 阈值 / SOXX diff 阈值 / final_direction / 三种 OR-branch (`confidence_high` / `primary_score_raw_gt_2` / `both`) / peer_subtype 三档 + unknown / hard_forbidden 字段 |
+| `ResidualTriggerTests` | 3 | residual 触发 / R4 触发时 residual 不重复 / residual baseline 缺失 warning |
+| `RemovedCandidateEnforcementTests` | 4 | peer_weaken / high_path_risk / peer_upgrade 单独 / signal name 仅 active enum 两值 |
+| `SeverityClassificationTests` | 6 | 严格 `<` / `>` 边界 (acc=0.45 / gap=0.50 → low) / 实测 R4 → medium / 缺 metrics → medium |
+| `BaselineHandlingTests` | 2 | baseline=None warning / metrics_window 透传 |
+| `ThresholdConstantSourceTests` | 3 | `assertIs` R4 阈值与 dashboard 同源 + grep 源码无字面量 |
+| `FinalTestCutoffTests` | 5 | analysis_date == cutoff refuse / > cutoff refuse / < cutoff 通过 / override 优先 / 默认常量锁定 `2026-01-01` |
+| `MissingRegimeFeaturesTests` | 2 | 全缺 / pos20-only |
+| `ReadOnlyTests` | 1 | tmp DB 行计数前后不变 |
+| `NoForbiddenImportsTests` | 1 | `ast.walk` parse 实际 import，禁 yfinance / requests / longbridge / broker / paper_trade / v1 stub trio |
+| `BuildBaselineTests` | 3 | 空 DB → empty baseline + warning / 缺 CSV → no residual / holdout_status 锁定 `"FAIL"` |
+| `CliSmokeTests` | 2 | baseline-only stdout / payload-json + --no-baseline |
+
+测试基线：**2254 → 2302**（+48 净增）；0 failed；10 skipped 不变。
+
+### 25.8 边界事实
+
+- ❌ `simulate_soft_metadata` 不接 DB / CSV / 网络；caller 通过
+  `regime_features` 注入 pos20 + `avgo_minus_soxx_20d`
+- ❌ `build_soft_metadata_baseline` 调用 `summarize_regime_diagnostics_dashboard`
+  + 一次小 SELECT 计算 residual；reuse dashboard 的 `_read_coded_csv` /
+  `_compute_pos20` / `_compute_nday_return` 私有 helper 保证一致性
+- ❌ R4 阈值常量从 `services.regime_diagnostics_dashboard` import；
+  Blocker 4 锁定
+- ❌ severity 自动从 `historical_metrics_in_sample.{accuracy, bias_gap}`
+  派生（`_classify_severity` 纯函数），不写死
+- ❌ 04 / 05 / 07 required 字段全部不变（不在 simulator 写入路径上）
+- ❌ `summary.hard_exclusion_allowed` 永远 `False`（任何输入下；测试
+  `SchemaShapeTests::test_hard_exclusion_allowed_invariant_on_arbitrary_input`）
+- ❌ Step 3 calibration 仍冻结；本步只是 sidecar metadata，不解除
+  Step 3B-1 holdout FAIL 状态
+- ✅ 所有 48 个新增测试 pass；2302 / 0 failed / 10 skipped；现有 2254
+  基线零回归
+
