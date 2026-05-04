@@ -2460,3 +2460,182 @@ if isinstance(soft_metadata, dict) and soft_metadata.get("signals"):
   + UI 显示位置都**已在真实代码落地**
 - ✅ **2486 / 0 failed / 10 skipped**；现有 2448 基线零回归
 
+## 32. Anti-False-Exclusion Dashboard Diagnostics（Step 2G-7C，read-only aggregate）
+
+### 32.1 为什么做
+
+Step 2G-7A/7B 已在 Predict / Review per-prediction surface 显示
+"为什么这里只做提示" 折叠区，但**dashboard 视图**还缺累计统计：
+用户只能在每条 prediction 单独看到 finding，**看不到** R4 / residual
+累计 survival rate、4 项 hard gate fail 的全局趋势。Step 2G-7C
+新增 read-only aggregate 服务 + CLI，把 baseline 数字 + survival cases
++ 6 项 hard gate pass/fail 一次性聚合，供 dashboard tab / 命令行
+诊断使用。
+
+### 32.2 改动文件
+
+| 文件 | 类型 | 说明 |
+|---|---|---|
+| `services/anti_false_exclusion_dashboard.py` | 新增 service | `summarize_anti_false_exclusion_dashboard(db_path, *, symbol, limit) -> dict` 纯聚合函数；委托 `build_soft_metadata_baseline` 取 R4/residual 历史指标，叠加 6-gate 状态 + survival 派生 + primary_blocker 选取 |
+| `scripts/anti_false_exclusion_dashboard.py` | 新增 CLI | argparse 包装；`--db` / `--symbol` / `--limit`；stdout JSON `ensure_ascii=False, indent=2` |
+| `tests/test_anti_false_exclusion_dashboard.py` | 新增 | 35 个 unittest（含 1 个 subprocess CLI smoke）|
+| `tasks/step_1_contract_pipeline_summary.md` | 修改 | 新增本 §32 |
+
+未改：`predict.py` / `run_predict` / `scanner.py` / `prediction_store.py` /
+`projection_output_adapter.py` / `projection_output_contract.py` /
+`regime_diagnostics_dashboard.py` / `soft_metadata_simulator.py` /
+`soft_metadata_renderer.py` / `soft_metadata_injection.py` /
+`regime_features_builder.py` / `soft_metadata_baseline_cache.py` /
+`anti_false_exclusion_display.py` / `predict_tab.py` /
+`review_tab.py` / 任何 builder / DB schema / 04 / 05 / 07 任何 required
+字段 / `simulated_trade.no_trade` 策略边界 / 任何其他 `ui/*` 模块。
+
+### 32.3 输出结构
+
+```python
+{
+    "status": "ok" | "no_records" | "error",
+    "symbol": "AVGO",
+    "records_scanned": int,
+    "paired_outcomes": int,
+    "calibration_ready": bool,                          # paired_total >= 90
+    "metrics_window": {analysis_date_min, analysis_date_max,
+                       paired_total, db_snapshot_id},
+    "metrics_computed_at": str,                          # ISO timestamp
+    "soft_metadata_summary": {
+        "r4_overextension": {
+            "samples", "paired",
+            "correct_when_triggered",                    # round(accuracy × paired)
+            "wrong_when_triggered",
+            "accuracy", "false_exclusion_rate",
+            "net_benefit", "bias_gap", "holdout_status",
+        } | None,
+        "bullish_high_pos20_residual": {...} | None,
+    },
+    "survival_cases": {
+        "r4_survival_count": int,                        # = correct_when_triggered
+        "r4_survival_rate": float,                       # = accuracy
+    },
+    "hard_gate_status": {                                # 6 项 pass/fail
+        "total_paired_ge_90": "pass",
+        "candidate_paired_ge_30": "pass",
+        "false_exclusion_rate_lte_0_10": "fail",
+        "net_benefit_gte_0_05": "fail",
+        "protection_layer_connected": "fail",            # v1 永远 fail
+        "cross_window_holdout_pass": "fail",
+    },
+    "hard_exclusion_allowed": False,                     # 永远 False（v1）
+    "primary_blocker": "false_exclusion_rate_too_high",  # 优先级派生
+    "warnings": [...],
+}
+```
+
+### 32.4 hard gate 6 项决策表
+
+| # | gate | 当前真实状态（main DB）| 通过条件 |
+|---|---|---|---|
+| 1 | `total_paired_ge_90` | **pass**（286）| `metrics_window.paired_total >= 90` |
+| 2 | `candidate_paired_ge_30` | **pass**（R4=34）| `r4_overextension.paired >= 30` |
+| 3 | `false_exclusion_rate_lte_0_10` | **fail**（0.3235）| R4 `false_exclusion_rate <= 0.10` |
+| 4 | `net_benefit_gte_0_05` | **fail**（+0.0219）| R4 `net_benefit >= 0.05` |
+| 5 | `protection_layer_connected` | **fail**（v1 永远 fail）| 至少 1 个 anti-false-exclusion 模块接入主链（4 个候选全离线）|
+| 6 | `cross_window_holdout_pass` | **fail**（FAIL）| `holdout_status == "PASS"`（Step 3A-4 / 3B-1 已 FAIL）|
+
+`hard_exclusion_allowed = all(v == "pass" for v in gate_status.values())` —
+当前 4 项 fail → **False**。
+
+`primary_blocker` 选取顺序：
+1. `false_exclusion_rate_too_high`（gate #3 fail 时）
+2. `net_benefit_insufficient`（gate #4 fail）
+3. `soft_metadata_holdout_fail`（gate #6 fail）
+4. `insufficient_total_paired` / `insufficient_candidate_paired`
+5. `missing_protection_layer`（gate #5 fail，always）
+6. None（every gate passes）
+
+### 32.5 真数据基线（main DB / `--symbol AVGO --limit 450`）
+
+| 字段 | 值 |
+|---|---|
+| `paired_outcomes` | **286** |
+| `calibration_ready` | true |
+| `metrics_window.analysis_date_min` / `max` | 2023-01-03 / 2024-08-02 |
+| R4 `samples` / `paired` / `correct_when_triggered` | 36 / 34 / **11** |
+| R4 `accuracy` / `bias_gap` | **0.324** / **+0.676** |
+| R4 `false_exclusion_rate` / `net_benefit` | **0.3235** / **+0.022** |
+| R4 `holdout_status` | **`"FAIL"`** |
+| Residual `paired` / `correct_when_triggered` | 47 / **23** |
+| Residual `accuracy` / `bias_gap` | **0.489** / **+0.511** |
+| Residual `net_benefit` | **−0.001**（hard 排除会让整体 accuracy 下降）|
+| `survival_cases.r4_survival_count` | 11 |
+| `survival_cases.r4_survival_rate` | 0.324 |
+| `hard_gate_status` | 2 pass / 4 fail |
+| `hard_exclusion_allowed` | **false** |
+| `primary_blocker` | **`"false_exclusion_rate_too_high"`** |
+
+数字与 Step 2G-3 / 2G-5 / 2G-7A baseline 完全一致。
+
+### 32.6 CLI 用法
+
+```
+python3 scripts/anti_false_exclusion_dashboard.py
+python3 scripts/anti_false_exclusion_dashboard.py --symbol AVGO --limit 450
+python3 scripts/anti_false_exclusion_dashboard.py --db avgo_agent.db --symbol AVGO --limit 450
+```
+
+stdout JSON `ensure_ascii=False, indent=2`。退出码：argparse 失败时
+非 0；service 内部错误经 `status=error` + `warnings` 表面化，退出码
+仍为 0（与其他 read-only 诊断 CLI 一致）。
+
+### 32.7 测试基线
+
+| 命令 | 结果 |
+|---|---|
+| `pytest tests/test_anti_false_exclusion_dashboard.py -q` | **35 passed in 0.10s** |
+| `pytest tests/test_anti_false_exclusion_display.py tests/test_regime_diagnostics_dashboard.py -q` | **56 passed in 0.24s** |
+| `pytest -q`（全量） | **2521 passed, 10 skipped, 26 warnings, 65 subtests passed in 10.71s** |
+
+测试覆盖矩阵：
+
+| 测试类 | 数量 | 内容 |
+|---|---|---|
+| `OutputSchemaTests` | 4 | 顶层字段 / status=ok / calibration_ready / 阈值切换 |
+| `CandidateExtractionTests` | 4 | R4 字段直透 / correct_when_triggered 派生 / residual / holdout 继承 baseline 顶层 |
+| `HardGateTests` | 8 | 默认 4 fail / 5 个边界条件（paired / fer / nb / holdout PASS / FAIL）/ protection_layer 永远 fail |
+| `HardExclusionAllowedTests` | 3 | 默认 False / 空 baseline False / 即使 5 项 pass 而 protection 仍 fail → 整体 False |
+| `PrimaryBlockerTests` | 4 | 优先级 fer → nb → holdout → protection_layer |
+| `SurvivalCasesTests` | 2 | survival_count == correct_when_triggered；survival_rate == accuracy |
+| `EmptyBaselineTests` | 5 | empty → status=no_records / soft_metadata_summary None / warnings 透传 / hard 仍 False / builder 异常 → status=error |
+| `InputPassthroughTests` | 1 | db_path / symbol / limit 透传 |
+| `InputImmutabilityTests` | 1 | baseline dict 不被原地修改 |
+| `IsolationTests` | 2 | `ast.walk` 锁定禁 import / patch 锁定 prediction_store 不调 |
+| `CliSmokeTests` | 1 | subprocess CLI smoke：JSON 解析 + 顶层 invariants |
+
+测试基线累积：**Step 2G-7C 起点 2486 → 2521**（+35 净增）；
+0 failed；10 skipped 不变。
+
+### 32.8 边界事实
+
+- ❌ **没**改 `predict.py` / `run_predict` / `scanner.py` /
+  `prediction_store.py` / 任何 builder
+- ❌ **没**改 04 / 05 / 07 任何 required 字段
+- ❌ **没**改 `final_projection` / `simulated_trade` /
+  `confidence_system` 任何字段
+- ❌ **没**写 DB（service 委托 `build_soft_metadata_baseline`，后者
+  也是 SELECT-only；CLI 仅 stdout）
+- ❌ **没**改 `anti_false_exclusion_display.py` /
+  `soft_metadata_simulator.py` / 任何已有 service 或 ui 模块
+- ❌ **没**接 `yfinance` / `requests` / 任何网络
+- ❌ **没**接 trading API / `longbridge` / `broker` / `paper_trade`
+- ❌ **没**启用 `hard` / `forced_exclusion` /
+  `anti_false_exclusion_triggered`
+- ❌ **没**触碰 2026-01-01 之后 final test range（baseline 路径已锁定
+  cutoff）
+- ❌ **没** import `services.prediction_store` / `regime_diagnostics_dashboard`
+  /  `confidence_engine` / `contradiction_engine` / `risk_model`
+  / `sqlite3` / `streamlit`（`ast.walk` 锁定）
+- ✅ 真数据 smoke：所有数字与 Step 2G-3 / 2G-5 / 2G-7A 基线**完全一致**
+- ✅ `hard_exclusion_allowed` 在所有测试场景下都是 **False** —— 即使
+  人为构造 5 项 gate pass 也不会变 True，因为 `protection_layer_connected`
+  在 v1 永远是 fail（hard-coded 直到 Step 2G-8+ 真接入保护层）
+- ✅ **2521 / 0 failed / 10 skipped**；现有 2486 基线零回归
+
