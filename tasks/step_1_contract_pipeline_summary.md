@@ -1574,3 +1574,146 @@ Residual (`bullish_high_pos20_residual`)：
   + `render_soft_metadata_markdown`，**不需要**重新决策文案 / dedup /
   visibility 规则
 
+## 27. Soft Metadata Predict Display Hook（Step 2G-6B + 6D）
+
+### 27.1 为什么做
+
+Step 2G-6A renderer（commit `373f358`）就位之后，soft_metadata.v1 的
+JSON 已能由 `render_soft_metadata_card_data` + `render_soft_metadata_markdown`
+转成安全展示数据。Step 2G-6B 把这条 renderer 钩接到 Predict 页面，
+让用户**第一次**能在 UI 上看到 metadata sidecar；同步做的 Step 2G-6D
+新增 22 个 unit + AppTest 集成测试，覆盖 Step 2G-6 §11 全部 12 项 UI
+safety checks。**完全不**改预测逻辑、**不**改 04 / 05 / 07 required
+字段、**不**接 simulator / DB / trading。
+
+### 27.2 改动文件
+
+| 文件 | 类型 | 说明 |
+|---|---|---|
+| `ui/predict_tab.py` | 修改（+~80 行）| 新增 `from ui.soft_metadata_renderer import ...`、`_extract_soft_metadata(predict_result)` 帮助函数、`render_soft_metadata_section(soft_metadata)` 显示函数；在 `render_predict_tab` 第二层主结论与第三层证据区之间插入一行调用（Step 2G-6 §4.1 位置）|
+| `tests/test_predict_tab_soft_metadata_display.py` | 新增 | 22 个 unittest（含 4 个 AppTest 集成）|
+| `tasks/step_1_contract_pipeline_summary.md` | 修改 | 新增本 §27 |
+
+未改：`predict.py` / `run_predict` / `scanner.py` / `prediction_store.py` /
+`projection_output_adapter.py` / `projection_output_contract.py` /
+`regime_diagnostics_dashboard.py` / `soft_metadata_simulator.py` /
+`soft_metadata_renderer.py` / 任何 builder / DB schema / 04 / 05 / 07
+任何 required 字段 / `simulated_trade.no_trade` 策略边界 / 任何其他
+`ui/*` 模块。
+
+### 27.3 接入位置
+
+```
+render_predict_tab(scan_result, research_result):
+    ① 当前上下文        _render_layer1_context
+    -------------------- divider
+    ② 主结论            _render_layer2_conclusion
+    ✦ Step 2G-6B hook   render_soft_metadata_section(_extract_soft_metadata(...))
+    -------------------- divider
+    ③ 证据区            _render_layer3_evidence
+    -------------------- divider
+    ④ 闭环操作区        _render_layer4_operations
+```
+
+位置在 layer 2（含 final_projection）之后、第一个 divider 之前 ——
+与 Step 2G-6 §4.1 一致："在 final_projection 之后、simulated_trade
+之前；让 metadata 与策略边界视觉相邻"。本项目永不显示 `simulated_trade`
+独立区块（07 段策略边界 pinned），因此选择放在主结论与证据区之间。
+
+### 27.4 soft_metadata 来源（Step 2G-6B §2 最小安全策略）
+
+`_extract_soft_metadata(predict_result)` 按以下顺序查找；**任何位置
+都没有 → 返回 `None`，renderer 在 predict context 下隐藏整个区块**：
+
+1. `predict_result['contract_payload']['exclusion_system']['extras']['soft_metadata']`
+   —— canonical 位置；未来 pipeline 或 adapter 写入时使用
+2. `predict_result['soft_metadata']` —— caller 直接注入到 predict_result
+3. `st.session_state['soft_metadata_for_predict']` —— 测试 / 开发注入
+
+**关键不变量**：
+- ❌ 本轮**不**改 `run_predict` 主链；**不**让主链产生 soft_metadata
+- ❌ 显示函数**不**调用 `services.soft_metadata_simulator`（测试
+  `IsolationTests::test_section_does_not_call_simulator` 锁定）
+- ❌ 显示函数**不**读 DB / CSV / 网络（测试
+  `IsolationTests::test_section_does_not_call_prediction_store` 锁定）
+- ❌ `ui/predict_tab.py` 模块**不** import `soft_metadata_simulator`
+  （`ast.walk` 锁定）—— 让"未来在哪里注入 soft_metadata"成为独立
+  待解决问题，不被本步绑定
+
+### 27.5 显示函数（thin wrapper）
+
+```python
+def render_soft_metadata_section(soft_metadata: dict | None) -> dict:
+    """Render via the pure renderer + st.markdown.
+    Returns card_data dict for testability; never raises."""
+    payload = soft_metadata if isinstance(soft_metadata, dict) else {}
+    card_data = render_soft_metadata_card_data(payload, context="predict")
+    if not card_data.get("visible"):
+        return card_data
+    markdown = render_soft_metadata_markdown(card_data)
+    if markdown:
+        st.markdown(markdown)
+    return card_data
+```
+
+- **不**自己拼安全文案（renderer 已生成 markdown 文本）
+- **不**重新解释 severity / badge_tone（Step 2G-6A 已锁定）
+- **不**显示 forbidden words（renderer 保证 + 本步 22 个测试 grep 锁定）
+- 调用 `render_soft_metadata_card_data` + `render_soft_metadata_markdown`
+  以外的 `ui.soft_metadata_renderer` 公开 API：无（消费者只用这两个
+  函数）
+
+### 27.6 Step 2G-6D UI safety tests
+
+`tests/test_predict_tab_soft_metadata_display.py` 共 22 个测试：
+
+| 测试类 | 数量 | 内容 |
+|---|---|---|
+| `ExtractSoftMetadataTests` | 6 | None / 非 dict / canonical 路径 / 顶层 fallback / canonical 优先 / malformed extras / Streamlit context 缺失 graceful |
+| `RenderSectionUnitTests` | 6 | None 不调 markdown / 空 signals 不调 / 非 dict 不调 / R4 调 markdown 含安全文案 / final_test_refusal 调 markdown 含 subtitle / 6 场景 grep 16 个禁止词 |
+| `IsolationTests` | 3 | 不调 simulator (`simulate_soft_metadata` / `build_soft_metadata_baseline`) / 不调 `prediction_store.save_prediction` / `_get_conn` / 模块 import 不含 simulator |
+| `HardExclusionSafetyTests` | 2 | hard_exclusion_allowed=false 不渲染 hard / forced / no_trade 词 / unknown signal graceful + 仍出现 "未识别" 文案 |
+| `PredictTabAppTests` (AppTest) | 4 | R4 → 页面文本含 "高位跑赢同行后的偏多过热" + "32.4%" + 不含 16 个禁止词 / 空 signals → 标题不出现 / final_test_refusal → 页面文本含 "final test 保留区间" / None → 渲染 nothing |
+
+**AppTest 已就位**：本轮直接通过 `streamlit.testing.v1.AppTest` 验证
+集成行为（不需要等到独立的 Step 2G-6D-2）。AppTest 用 `from_string`
+构造最小脚本，注入 fixture soft_metadata，跑 `at.run()`，断言
+`at.markdown` 集合包含 / 不含期望文本。
+
+### 27.7 测试基线
+
+| 命令 | 结果 |
+|---|---|
+| `pytest tests/test_predict_tab_soft_metadata_display.py -q` | **22 passed in 1.08s** |
+| `pytest tests/test_soft_metadata_renderer.py tests/test_predict_tab_soft_metadata_display.py -q` | **58 passed in 0.88s** |
+| `pytest tests/test_soft_metadata_simulator.py tests/test_regime_diagnostics_dashboard.py -q` | **69 passed in 0.38s** |
+| `pytest -q`（全量）| **2360 passed, 10 skipped, 26 warnings, 65 subtests passed in 9.95s** |
+
+测试基线累积：**Step 2G-6B 起点 2338 → 2360**（+22 净增）；0 failed；
+10 skipped 不变。
+
+### 27.8 边界事实
+
+- ❌ **没**改 `predict.py` / `run_predict` / `scanner.py` /
+  `prediction_store.py` / 任何 builder
+- ❌ **没**改 04 / 05 / 07 任何 required 字段
+- ❌ **没**改 `final_projection` / `simulated_trade` / `confidence_system`
+  任何字段（Predict 页面其他渲染路径完全不变）
+- ❌ **没**让 Predict 页面调用 `services.soft_metadata_simulator`
+  （`ast` 锁定模块未 import；`patch` 锁定函数未调用）
+- ❌ **没**让 Predict 页面读 DB（`patch` 锁定 `prediction_store` 未调用）
+- ❌ **没**接 `yfinance` / `requests` / 任何网络
+- ❌ **没**接 trading API / `longbridge` / `broker` / `paper_trade`
+- ❌ **没**启用 `hard` / `forced_exclusion` / `anti_false_exclusion_triggered`
+- ❌ **没**重写 renderer 文案（safety_note / display_label / metrics 全部
+  来自 renderer，不在 predict_tab 重新拼装）
+- ❌ **没**让 forbidden words（16 个）出现在 `st.markdown` 实际调用
+  参数中（unit + AppTest 双重 grep 锁定）
+- ❌ **没**触碰 2026-01-01 之后 final test range（renderer 内部
+  `final_test_range_refusal` 强制 visible 已在 Step 2G-6A 锁定，
+  本步通过 fixture 测试此行为在 Predict 页面也保持）
+- ✅ Predict 页面的 layer 2 主结论与 layer 3 证据区之间插入一行
+  display hook；当 `predict_result` 不含 soft_metadata 时**完全
+  隐藏**（不改变现有页面视觉）
+- ✅ **2360 / 0 failed / 10 skipped**；现有 2338 基线零回归
+

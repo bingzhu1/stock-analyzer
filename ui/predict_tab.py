@@ -28,6 +28,10 @@ from services.big_up_contradiction_card import (
 )
 from ui.big_up_contradiction_card import render_contradiction_card
 from ui.exclusion_reliability_review import render_exclusion_reliability_review_for_row
+from ui.soft_metadata_renderer import (
+    render_soft_metadata_card_data,
+    render_soft_metadata_markdown,
+)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1249,6 +1253,67 @@ def _render_contradiction_card(predict_result: dict | None) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Step 2G-6B — soft metadata display hook
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _extract_soft_metadata(predict_result: dict | None) -> dict | None:
+    """Pull ``soft_metadata`` dict out of predict_result / contract_payload /
+    session_state. Defensive: returns None when nothing is found.
+
+    Search order (Step 2G-6B):
+      1. ``predict_result['contract_payload']['exclusion_system']['extras']['soft_metadata']``
+         (canonical location once a future pipeline writes it)
+      2. ``predict_result['soft_metadata']`` (caller-injected on predict_result)
+      3. ``st.session_state['soft_metadata_for_predict']`` (test/dev injection)
+
+    The hook does NOT call the simulator on the fly and does NOT read DB
+    (Step 2G-6B §2). When no source has ``soft_metadata``, returns None
+    and the renderer's predict-context visibility rules will hide the card.
+    """
+    if isinstance(predict_result, dict):
+        cp = predict_result.get("contract_payload")
+        if isinstance(cp, dict):
+            es = cp.get("exclusion_system")
+            if isinstance(es, dict):
+                extras = es.get("extras")
+                if isinstance(extras, dict):
+                    candidate = extras.get("soft_metadata")
+                    if isinstance(candidate, dict):
+                        return candidate
+        candidate = predict_result.get("soft_metadata")
+        if isinstance(candidate, dict):
+            return candidate
+    try:
+        candidate = st.session_state.get("soft_metadata_for_predict")
+    except Exception:
+        candidate = None
+    return candidate if isinstance(candidate, dict) else None
+
+
+def render_soft_metadata_section(soft_metadata: dict | None) -> dict:
+    """Render the soft_metadata sidecar via the pure-function renderer.
+
+    Returns the card_data dict for testability — the page itself only
+    cares about the side effect (st.markdown). The function:
+    - never imports / calls the simulator
+    - never reads DB / CSV / network
+    - never writes any contract field
+    - never produces forbidden copy (renderer guarantees; tests grep)
+
+    When ``soft_metadata`` is None / not a dict, the renderer treats it
+    as empty and (in predict context) hides the card.
+    """
+    payload = soft_metadata if isinstance(soft_metadata, dict) else {}
+    card_data = render_soft_metadata_card_data(payload, context="predict")
+    if not card_data.get("visible"):
+        return card_data
+    markdown = render_soft_metadata_markdown(card_data)
+    if markdown:
+        st.markdown(markdown)
+    return card_data
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Main entry point
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -1303,6 +1368,12 @@ def render_predict_tab(scan_result: dict | None, research_result: dict | None) -
     # 第二层：主结论卡
     st.markdown("**② 主结论**")
     _render_layer2_conclusion(predict_result, scan_result)
+
+    # Step 2G-6B — soft metadata sidecar (read-only display hook).
+    # Sits between 主结论 and 证据区: structurally adjacent to
+    # final_projection but BEFORE the evidence detail layer, matching
+    # Step 2G-6 §4.1. Hidden when no soft_metadata is present.
+    render_soft_metadata_section(_extract_soft_metadata(predict_result))
 
     st.divider()
 
