@@ -3023,3 +3023,171 @@ renderer-side forbidden 列表锁定了 `hard` / `forced` 子串，所以 UI
 - ✅ Predict + Review 页面 try/except 包裹接入点 —— UI 永不 crash
 - ✅ **2591 / 0 failed / 10 skipped**；现有 2560 基线零回归
 
+## 35. Protection Layer Diagnostics Dashboard Guard Counts（Step 2G-8A.3）
+
+### 35.1 目标
+
+把 Step 2G-8A.1 helper（commit `cdbb13a`）的 sidecar 输出**聚合到**
+Step 2G-7C anti-false-exclusion dashboard（`summarize_anti_false_exclusion_dashboard`）
+的 aggregate JSON 中：新增 `protection_layer_diagnostics` 字段，含
+4 个 connection flag、`guard_summary`（counts + blocking reasons +
+guard names）、`hard_upgrade_blocked` / `display_only`。
+
+**强约束**（继承 Step 2G-8A 设计 §11 / 8A.1 / 8A.2 checkpoint）：
+- 只改 `services/anti_false_exclusion_dashboard.py` + tests + doc；
+  **不**改 helper / renderer / `predict.py` / `run_predict` /
+  `scanner.py` / `prediction_store.py` / `app.py` / 任何 builder /
+  DB schema
+- **不**写 DB；helper 仍是纯函数；不重新查询 DB（aggregate 复用本来
+  就构造好的 `soft_metadata_summary`）
+- **不**升级 04 / 05 / 07 required 字段
+- **不**让 Step 2G-7C dashboard `hard_gate_status.protection_layer_connected`
+  自动 pass —— `_PROTECTION_LAYER_CONNECTED = False` 常量未变
+- **不**改 `hard_exclusion_allowed` 派生逻辑（仍依赖 6 项 gate 全 pass）
+
+### 35.2 新字段 schema
+
+```json
+{
+  "protection_layer_diagnostics": {
+    "schema_version": "protection_layer_diagnostics.v1",
+    "diagnostic_connected": true,
+    "hard_gate_connected": false,
+    "required_field_connected": false,
+    "protection_layer_connected_for_gate": false,
+    "guard_summary": {
+      "total_guard_count": 2,
+      "blocking_guard_count": 2,
+      "blocking_reasons": {
+        "holdout_status_FAIL": 1,
+        "net_benefit_below_gate": 1
+      },
+      "guard_names": [
+        "holdout_stability_guard",
+        "net_benefit_guard"
+      ]
+    },
+    "hard_upgrade_blocked": true,
+    "display_only": true
+  }
+}
+```
+
+shape 不变量（schema-level 测试锁定）：
+- `schema_version` 总是 `"protection_layer_diagnostics.v1"`（与 helper
+  一致）
+- 4 个 connection flag 取值与 helper schema 完全对应：
+  `diagnostic_connected = true` / 其余三 false
+- `guard_summary.total_guard_count` 与 `guard_names` 长度一致
+- `guard_summary.blocking_guard_count` 与 `blocking_reasons` 计数总和
+  一致
+- `hard_upgrade_blocked` / `display_only` 永远 `true`（v1）
+
+### 35.3 实现
+
+#### 35.3.1 dashboard service 改动
+
+`services/anti_false_exclusion_dashboard.py`：
+1. 新增 import：`from services.protection_layer_diagnostics import build_protection_layer_diagnostics_from_dashboard`
+2. 新增私有函数：`_aggregate_protection_layer_diagnostics(diagnostics)` —
+   纯函数，把 helper 的 `guards[]` / `summary{}` 转成 aggregate-friendly
+   shape（counts / blocking reasons / guard names 提到 `guard_summary`；
+   `hard_upgrade_blocked` / `display_only` 提到顶层）
+3. happy path 末尾把 helper 输出（喂 `soft_metadata_summary` + `warnings`）
+   transform 后写入 `protection_layer_diagnostics` 字段
+4. error path（baseline load 异常）也写入空 aggregate（`total_guard_count=0`
+   + 4 个 connection flag 仍按 v1 不变量）—— 让 downstream 读者无需
+   `dict.get(..., {})` 兜底
+
+#### 35.3.2 不变的部分
+
+- `_PROTECTION_LAYER_CONNECTED = False`（Step 2G-7C 起的 hard-coded
+  常量）**未改**
+- `_build_hard_gate_status` 派生 `protection_layer_connected = "fail"`
+  逻辑**未改**
+- `_pick_primary_blocker` 返回值**未改**
+- `hard_exclusion_allowed` 派生（`all(v == "pass" for v in gate_status.values())`）
+  **未改**
+- 现有 35 个 `test_anti_false_exclusion_dashboard.py` 用例全部直接
+  通过，零回归
+
+### 35.4 guard count 逻辑
+
+从 helper 的 `guards[]` 派生：
+
+| 字段 | 派生 |
+|---|---|
+| `total_guard_count` | `len(guard_names)` |
+| `blocking_guard_count` | `count(g["status"] == "blocking")` |
+| `blocking_reasons` | `Counter(g["reason"] for g in guards if g["status"] == "blocking")` |
+| `guard_names` | `[g["name"] for g in guards]`（按 helper 输出顺序） |
+
+边界：
+- `guards = []`（缺数据 / 全 pass）→ counts 全部 0、`blocking_reasons={}`、
+  `guard_names=[]`，`hard_upgrade_blocked=true` / `display_only=true`
+  仍锁定
+- 非 dict 元素被 silently skip（不 raise）
+- 缺 `name` 字段的 guard 不会进入 `guard_names`
+
+### 35.5 与现有 dashboard 字段的关系
+
+`summarize_anti_false_exclusion_dashboard` 的 13 个顶层字段（Step
+2G-7C 起）→ 新增 1 个变成 14 个：
+
+| 现有字段（13） | 新字段（1） |
+|---|---|
+| `status` / `symbol` / `records_scanned` / `paired_outcomes` / `calibration_ready` / `metrics_window` / `metrics_computed_at` / `soft_metadata_summary` / `survival_cases` / `hard_gate_status` / `hard_exclusion_allowed` / `primary_blocker` / `warnings` | `protection_layer_diagnostics`（**read-only sidecar**）|
+
+新字段**只读 sidecar**：
+- 不参与 `hard_gate_status` 任何 gate 的判断
+- 不参与 `hard_exclusion_allowed` 派生
+- 不参与 `primary_blocker` 选择
+- 不写 DB / 不写 contract / 不写 required
+
+### 35.6 测试矩阵（新增）
+
+`tests/test_anti_false_exclusion_dashboard.py`（+13 cases）：
+
+| 测试类 | 数量 | 覆盖点 |
+|---|---|---|
+| `ProtectionLayerDiagnosticsAggregateTests` | 11 | 字段存在 / 4 flag 锁定 / 默认 baseline 两 guard 计数 / blocking reasons 完整 / `hard_upgrade_blocked` / `display_only` / Gate 5 仍 fail / `hard_exclusion_allowed` 仍 false / holdout PASS 仅 net_benefit guard / 全 pass 0 guard 但不变量保持 / no_records 安全 0 计数 / error path 安全字段 / `_PROTECTION_LAYER_CONNECTED` 常量未改 |
+| `ProtectionLayerDiagnosticsAggregateIsolationTests` | 1 | `ast.walk` 锁定 dashboard 模块未 import 禁用模块（含新增的 `predict` / `scanner` / `ui.protection_layer_diagnostics_renderer`） |
+
+### 35.7 验证
+
+| 命令 | 结果 |
+|---|---|
+| `pytest tests/test_anti_false_exclusion_dashboard.py -q` | **48 passed**（35 baseline + 13 新增） |
+| `pytest tests/test_protection_layer_diagnostics.py -q` | **39 passed**（+24 subtests） |
+| `pytest -q`（全量） | **2604 passed / 10 skipped / 0 failed / 26 warnings / 94 subtests** |
+
+测试基线累积：**Step 2G-8A.2 终点 2591 → Step 2G-8A.3 终点 2604**
+（+13 净增；现有 2591 基线零回归）。
+
+### 35.8 边界事实
+
+- ❌ **没**改 `predict.py` / `run_predict` / `scanner.py` /
+  `prediction_store.py` / `app.py` / 任何 builder / DB schema
+- ❌ **没**改 04 / 05 / 07 任何 required 字段
+- ❌ **没**改 `final_projection` / `final_direction` /
+  `simulated_trade` / `no_trade` / `confidence_system` 任何字段
+- ❌ **没**写 DB；新字段是 helper 输出的纯 dict transform，不持久化
+- ❌ **没**改 helper（`services/protection_layer_diagnostics.py`）/
+  renderer（`ui/protection_layer_diagnostics_renderer.py`）/
+  `services/soft_metadata_simulator.py` / 任何 ui 模块
+- ❌ **没**让 `hard_gate_status.protection_layer_connected` 自动 pass
+  （仍 fail；常量 `_PROTECTION_LAYER_CONNECTED = False` 未改）
+- ❌ **没**改 `hard_exclusion_allowed` 派生（仍依赖 6 gate 全 pass）
+- ❌ **没**改 `primary_blocker` 选择优先级
+- ❌ **没**启用 `hard` / `forced_exclusion` /
+  `anti_false_exclusion_triggered`
+- ❌ **没**接 `yfinance` / `requests` / 任何网络
+- ❌ **没**接 trading API / `longbridge` / `broker` / `paper_trade`
+- ❌ **没**触碰 2026-01-01 之后 final test range
+- ❌ **没** import `streamlit` / `prediction_store` / `confidence_engine` /
+  `contradiction_engine` / `risk_model` / `predict` / `scanner` /
+  `ui.protection_layer_diagnostics_renderer`（`ast.walk` 锁定）
+- ✅ 4 个 connection flag 在 happy / no_records / error / 全 pass /
+  缺数据 5 个 scenario 下都按 v1 spec 锁定
+- ✅ **2604 / 0 failed / 10 skipped**；现有 2591 基线零回归
+

@@ -27,6 +27,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from services.protection_layer_diagnostics import (
+    build_protection_layer_diagnostics_from_dashboard,
+)
 from services.soft_metadata_simulator import build_soft_metadata_baseline
 
 
@@ -170,6 +173,62 @@ def _pick_primary_blocker(gate_status: dict[str, str]) -> str | None:
     return None
 
 
+# ── protection layer diagnostics aggregate shape (Step 2G-8A.3) ─────────
+
+def _aggregate_protection_layer_diagnostics(
+    diagnostics: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Transform a ``protection_layer_diagnostics.v1`` helper output into
+    the aggregate-friendly shape: counts + blocking reasons + guard
+    names lifted into ``guard_summary``, and ``hard_upgrade_blocked`` /
+    ``display_only`` lifted to top level for dashboard convenience.
+
+    Pure function. The four connection flags are mirrored 1:1 from the
+    helper (v1 spec strong invariants); we never override
+    ``diagnostic_connected = True`` or any of the three ``False`` flags.
+    """
+    d = diagnostics if isinstance(diagnostics, dict) else {}
+    guards = _safe_list(d.get("guards"))
+    summary = _safe_dict(d.get("summary"))
+
+    blocking_reasons: dict[str, int] = {}
+    guard_names: list[str] = []
+    blocking_count = 0
+    for g in guards:
+        if not isinstance(g, dict):
+            continue
+        name = g.get("name")
+        if isinstance(name, str):
+            guard_names.append(name)
+        if g.get("status") == "blocking":
+            blocking_count += 1
+            reason = g.get("reason")
+            if isinstance(reason, str):
+                blocking_reasons[reason] = blocking_reasons.get(reason, 0) + 1
+
+    return {
+        "schema_version": d.get(
+            "schema_version", "protection_layer_diagnostics.v1",
+        ),
+        "diagnostic_connected": bool(d.get("diagnostic_connected", True)),
+        "hard_gate_connected": bool(d.get("hard_gate_connected", False)),
+        "required_field_connected": bool(
+            d.get("required_field_connected", False)
+        ),
+        "protection_layer_connected_for_gate": bool(
+            d.get("protection_layer_connected_for_gate", False)
+        ),
+        "guard_summary": {
+            "total_guard_count": len(guard_names),
+            "blocking_guard_count": blocking_count,
+            "blocking_reasons": blocking_reasons,
+            "guard_names": guard_names,
+        },
+        "hard_upgrade_blocked": bool(summary.get("hard_upgrade_blocked", True)),
+        "display_only": bool(summary.get("display_only", True)),
+    }
+
+
 # ── public API ──────────────────────────────────────────────────────────
 
 def summarize_anti_false_exclusion_dashboard(
@@ -195,6 +254,13 @@ def summarize_anti_false_exclusion_dashboard(
             "symbol": symbol,
             "warnings": [f"baseline_load_failed: {exc}"],
             "hard_exclusion_allowed": False,
+            # Step 2G-8A.3 — surface the sidecar shape even on error so
+            # downstream readers can rely on the field being present.
+            # No metrics available → guard_summary counts are zero and
+            # warnings contain ``missing_metrics`` (helper passthrough).
+            "protection_layer_diagnostics": _aggregate_protection_layer_diagnostics(
+                build_protection_layer_diagnostics_from_dashboard({}),
+            ),
         }
 
     baseline = _safe_dict(baseline)
@@ -256,6 +322,19 @@ def summarize_anti_false_exclusion_dashboard(
     if r4_summary is None:
         status = "no_records"
 
+    # Step 2G-8A.3 — sidecar diagnostics aggregate. Read-only: feeds
+    # the helper the soft_metadata_summary we just built (no extra DB
+    # round-trip), then transforms the helper output into the dashboard
+    # shape (guard counts + blocking reasons + connection flags). Never
+    # changes ``hard_gate_status`` / ``hard_exclusion_allowed`` /
+    # ``_PROTECTION_LAYER_CONNECTED``.
+    protection_layer_diagnostics = _aggregate_protection_layer_diagnostics(
+        build_protection_layer_diagnostics_from_dashboard({
+            "soft_metadata_summary": soft_metadata_summary,
+            "warnings": warnings,
+        }),
+    )
+
     return {
         "status": status,
         "symbol": symbol,
@@ -271,5 +350,6 @@ def summarize_anti_false_exclusion_dashboard(
         "hard_gate_status": gate_status,
         "hard_exclusion_allowed": hard_exclusion_allowed,
         "primary_blocker": primary_blocker,
+        "protection_layer_diagnostics": protection_layer_diagnostics,
         "warnings": warnings,
     }

@@ -435,5 +435,178 @@ class CliSmokeTests(unittest.TestCase):
         self.assertIn("hard_gate_status", result)
 
 
+# ── Step 2G-8A.3 — protection_layer_diagnostics aggregate field ────────
+
+class ProtectionLayerDiagnosticsAggregateTests(unittest.TestCase):
+    """Step 2G-8A.3: dashboard summary now embeds the
+    ``protection_layer_diagnostics`` aggregate. The field exposes the
+    helper's spec-locked four connection flags plus a ``guard_summary``
+    block (counts + blocking reasons + guard names). It must NOT
+    change ``hard_gate_status`` / ``hard_exclusion_allowed`` /
+    ``_PROTECTION_LAYER_CONNECTED``."""
+
+    def _summary(self, baseline=None):
+        baseline = baseline if baseline is not None else _baseline()
+        with patch(
+            "services.anti_false_exclusion_dashboard.build_soft_metadata_baseline",
+            return_value=baseline,
+        ):
+            return summarize_anti_false_exclusion_dashboard()
+
+    def test_field_present_in_default_summary(self) -> None:
+        out = self._summary()
+        self.assertIn("protection_layer_diagnostics", out)
+        pld = out["protection_layer_diagnostics"]
+        self.assertEqual(
+            pld["schema_version"], "protection_layer_diagnostics.v1",
+        )
+
+    def test_four_connection_flags_locked(self) -> None:
+        pld = self._summary()["protection_layer_diagnostics"]
+        self.assertTrue(pld["diagnostic_connected"])
+        self.assertFalse(pld["hard_gate_connected"])
+        self.assertFalse(pld["required_field_connected"])
+        self.assertFalse(pld["protection_layer_connected_for_gate"])
+
+    def test_guard_summary_counts_two_guards_for_default_baseline(self) -> None:
+        # Default baseline: holdout=FAIL + net_benefit=+0.0219 → both
+        # guards trigger.
+        pld = self._summary()["protection_layer_diagnostics"]
+        gs = pld["guard_summary"]
+        self.assertEqual(gs["total_guard_count"], 2)
+        self.assertEqual(gs["blocking_guard_count"], 2)
+        self.assertCountEqual(
+            gs["guard_names"],
+            ["holdout_stability_guard", "net_benefit_guard"],
+        )
+
+    def test_blocking_reasons_contain_both_default_reasons(self) -> None:
+        pld = self._summary()["protection_layer_diagnostics"]
+        reasons = pld["guard_summary"]["blocking_reasons"]
+        self.assertEqual(reasons.get("holdout_status_FAIL"), 1)
+        self.assertEqual(reasons.get("net_benefit_below_gate"), 1)
+
+    def test_summary_top_level_invariants(self) -> None:
+        pld = self._summary()["protection_layer_diagnostics"]
+        self.assertTrue(pld["hard_upgrade_blocked"])
+        self.assertTrue(pld["display_only"])
+
+    def test_hard_gate_status_still_fail(self) -> None:
+        # The new sidecar field MUST NOT flip Gate 5 to pass.
+        out = self._summary()
+        self.assertEqual(
+            out["hard_gate_status"]["protection_layer_connected"], "fail",
+        )
+
+    def test_hard_exclusion_allowed_still_false(self) -> None:
+        out = self._summary()
+        self.assertFalse(out["hard_exclusion_allowed"])
+
+    def test_holdout_pass_only_net_benefit_guard(self) -> None:
+        out = self._summary(_baseline(holdout_status="PASS"))
+        pld = out["protection_layer_diagnostics"]
+        gs = pld["guard_summary"]
+        self.assertEqual(gs["guard_names"], ["net_benefit_guard"])
+        self.assertEqual(gs["blocking_guard_count"], 1)
+        self.assertEqual(
+            gs["blocking_reasons"], {"net_benefit_below_gate": 1},
+        )
+        # Even with both R4 metrics theoretically passing, four-flag
+        # invariants stay locked.
+        self.assertTrue(pld["diagnostic_connected"])
+        self.assertFalse(pld["protection_layer_connected_for_gate"])
+
+    def test_both_r4_pass_zero_guards_but_invariants_intact(self) -> None:
+        out = self._summary(_baseline(
+            holdout_status="PASS", r4_nb=0.10,
+        ))
+        pld = out["protection_layer_diagnostics"]
+        gs = pld["guard_summary"]
+        self.assertEqual(gs["total_guard_count"], 0)
+        self.assertEqual(gs["blocking_guard_count"], 0)
+        self.assertEqual(gs["blocking_reasons"], {})
+        self.assertEqual(gs["guard_names"], [])
+        self.assertTrue(pld["hard_upgrade_blocked"])
+        self.assertTrue(pld["display_only"])
+        self.assertTrue(pld["diagnostic_connected"])
+        self.assertFalse(pld["protection_layer_connected_for_gate"])
+        # Gate 5 still fail at the dashboard level even when both
+        # baseline metrics pass.
+        self.assertEqual(
+            out["hard_gate_status"]["protection_layer_connected"], "fail",
+        )
+
+    def test_no_records_path_safe_zero_counts(self) -> None:
+        out = self._summary(_empty_baseline())
+        pld = out.get("protection_layer_diagnostics")
+        self.assertIsInstance(pld, dict)
+        gs = pld["guard_summary"]
+        self.assertEqual(gs["total_guard_count"], 0)
+        self.assertEqual(gs["blocking_guard_count"], 0)
+        self.assertTrue(pld["diagnostic_connected"])
+        self.assertFalse(pld["hard_gate_connected"])
+        self.assertFalse(pld["required_field_connected"])
+        self.assertFalse(pld["protection_layer_connected_for_gate"])
+        self.assertTrue(pld["hard_upgrade_blocked"])
+        self.assertTrue(pld["display_only"])
+
+    def test_baseline_load_error_path_includes_safe_field(self) -> None:
+        # Even when baseline load throws, the field must be present
+        # with safe defaults so downstream readers can rely on it.
+        with patch(
+            "services.anti_false_exclusion_dashboard.build_soft_metadata_baseline",
+            side_effect=RuntimeError("db unreadable"),
+        ):
+            out = summarize_anti_false_exclusion_dashboard()
+        self.assertEqual(out["status"], "error")
+        self.assertFalse(out["hard_exclusion_allowed"])
+        self.assertIn("protection_layer_diagnostics", out)
+        pld = out["protection_layer_diagnostics"]
+        self.assertEqual(pld["guard_summary"]["total_guard_count"], 0)
+        self.assertTrue(pld["diagnostic_connected"])
+        self.assertFalse(pld["hard_gate_connected"])
+        self.assertFalse(pld["required_field_connected"])
+        self.assertFalse(pld["protection_layer_connected_for_gate"])
+
+    def test_module_constant_unchanged(self) -> None:
+        # Spec invariant: Step 2G-8A.3 must NOT flip the module-level
+        # _PROTECTION_LAYER_CONNECTED from False to True. This assertion
+        # locks it explicitly.
+        from services.anti_false_exclusion_dashboard import (
+            _PROTECTION_LAYER_CONNECTED,
+        )
+        self.assertFalse(_PROTECTION_LAYER_CONNECTED)
+
+
+class ProtectionLayerDiagnosticsAggregateIsolationTests(unittest.TestCase):
+    """Step 2G-8A.3 must not introduce DB / network / trading imports.
+    Helper module is allowed; everything else stays forbidden."""
+
+    def test_module_imports_helper_only(self) -> None:
+        import ast
+        import services.anti_false_exclusion_dashboard as mod
+        tree = ast.parse(Path(mod.__file__).read_text(encoding="utf-8"))
+        forbidden_modules = {
+            "yfinance", "requests",
+            "longbridge", "broker", "paper_trade",
+            "sqlite3",
+            "services.prediction_store",
+            "services.confidence_engine",
+            "services.contradiction_engine",
+            "services.risk_model",
+            "confidence_engine", "contradiction_engine", "risk_model",
+            # Step 2G-8A.3 spec: dashboard must not pull in UI / predict
+            # paths (helpers stay pure).
+            "predict", "scanner",
+            "ui.protection_layer_diagnostics_renderer",
+        }
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    self.assertNotIn(alias.name, forbidden_modules)
+            elif isinstance(node, ast.ImportFrom):
+                self.assertNotIn(node.module, forbidden_modules)
+
+
 if __name__ == "__main__":
     unittest.main()
