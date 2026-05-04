@@ -492,5 +492,122 @@ class ReviewSoftMetadataAppTests(unittest.TestCase):
             self.assertNotIn(token, text)
 
 
+# ─────────────────────────────────────────────────────────────────────────
+# Step 2G-8A.2 — protection layer diagnostics integration in Review
+# ─────────────────────────────────────────────────────────────────────────
+
+@unittest.skipIf(AppTest is None,
+                 "streamlit AppTest is not installed in this environment")
+class ProtectionLayerDiagnosticsReviewAppTests(unittest.TestCase):
+    """Drive the protection_layer_diagnostics.v1 sub-section by mirror
+    of the Review path inside ``_render_review_result`` — same wiring
+    pattern as the existing AFX Review AppTests in this module."""
+
+    @staticmethod
+    def _script(soft_repr: str, predict_correct_repr: str) -> str:
+        return textwrap.dedent(
+            f"""
+            import sys
+            sys.path.insert(0, {str(ROOT)!r})
+
+            import streamlit as st
+            from ui.review_tab import render_review_soft_metadata_section
+            from ui.anti_false_exclusion_display import (
+                build_anti_false_exclusion_display,
+                render_anti_false_exclusion_markdown,
+            )
+            from services.protection_layer_diagnostics import (
+                build_protection_layer_diagnostics,
+            )
+            from ui.protection_layer_diagnostics_renderer import (
+                build_protection_layer_diagnostics_card_data,
+                render_protection_layer_diagnostics_markdown,
+            )
+
+            sm = {soft_repr}
+            render_review_soft_metadata_section(
+                sm, prediction_correct={predict_correct_repr},
+            )
+            if isinstance(sm, dict) and sm.get('signals'):
+                _afx = build_anti_false_exclusion_display(
+                    sm, prediction_correct={predict_correct_repr},
+                )
+                if _afx.get('visible'):
+                    with st.expander('保护层诊断', expanded=False):
+                        st.markdown(render_anti_false_exclusion_markdown(_afx))
+                        _pld = build_protection_layer_diagnostics(soft_metadata=sm)
+                        _pld_card = build_protection_layer_diagnostics_card_data(_pld)
+                        if _pld_card.get('visible'):
+                            st.markdown(
+                                render_protection_layer_diagnostics_markdown(_pld_card)
+                            )
+            """
+        )
+
+    def _all_markdown(self, at) -> str:
+        return "\n".join(str(m.value) for m in at.markdown)
+
+    def _expander_labels(self, at) -> str:
+        return " ".join(
+            getattr(el, "label", "") or "" for el in getattr(at, "expander", [])
+        )
+
+    def test_apptest_review_correct_with_r4_includes_diagnostics(self) -> None:
+        from ui.protection_layer_diagnostics_renderer import (
+            FORBIDDEN_COPY_TOKENS as PLD_FORBIDDEN,
+        )
+        sm = _shell(signals=[_r4_signal()])
+        at = AppTest.from_string(self._script(repr(sm), "True")).run()
+        text = self._all_markdown(at)
+        labels = self._expander_labels(at)
+        self.assertIn("保护层诊断", labels)
+        self.assertIn("保护层诊断详情", text)
+        self.assertIn("跨窗口稳定性 guard", text)
+        self.assertIn("净收益 guard", text)
+        self.assertIn("诊断已接入 · 是", text)
+        self.assertIn("决策链未接入 · 否", text)
+        # Stricter renderer-side forbidden lockdown
+        for token in PLD_FORBIDDEN:
+            self.assertNotIn(token, text)
+        # And the page-level renderer 16 tokens still hold
+        for token in FORBIDDEN_COPY_TOKENS:
+            self.assertNotIn(token, text)
+
+    def test_apptest_review_wrong_with_r4_includes_diagnostics(self) -> None:
+        from ui.protection_layer_diagnostics_renderer import (
+            FORBIDDEN_COPY_TOKENS as PLD_FORBIDDEN,
+        )
+        sm = _shell(signals=[_r4_signal()])
+        at = AppTest.from_string(self._script(repr(sm), "False")).run()
+        text = self._all_markdown(at)
+        # wrong + R4 → AFX still emits the gate-fail findings; protection
+        # diagnostics block should be present alongside.
+        self.assertIn("保护层诊断详情", text)
+        self.assertIn("跨窗口稳定性 guard", text)
+        for token in PLD_FORBIDDEN:
+            self.assertNotIn(token, text)
+
+    def test_apptest_review_no_signals_renders_no_protection_block(self) -> None:
+        sm = _shell(signals=[])
+        at = AppTest.from_string(self._script(repr(sm), "False")).run()
+        text = self._all_markdown(at)
+        # AFX expander itself does not appear when signals are empty,
+        # so the protection sub-section also stays hidden.
+        self.assertNotIn("保护层诊断详情", text)
+
+    def test_apptest_review_diagnostics_does_not_advertise_pass(self) -> None:
+        # Even when both metrics happen to be ok, four-flag invariants
+        # stay locked. We check that the rendered text never advertises
+        # an upgrade-allowed state.
+        signal = _r4_signal()
+        signal["holdout_status"] = "PASS"
+        signal["historical_metrics_in_sample"]["net_benefit"] = 0.10
+        sm = _shell(signals=[signal])
+        at = AppTest.from_string(self._script(repr(sm), "True")).run()
+        text = self._all_markdown(at)
+        # No guards triggered → protection diagnostics card stays hidden
+        self.assertNotIn("保护层诊断详情", text)
+
+
 if __name__ == "__main__":
     unittest.main()

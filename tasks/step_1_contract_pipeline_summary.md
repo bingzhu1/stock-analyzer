@@ -2827,3 +2827,199 @@ build_protection_layer_diagnostics_from_dashboard(summary: dict) -> dict
   `True`（v1 spec 强约束）
 - ✅ **2560 / 0 failed / 10 skipped**；现有 2521 基线零回归
 
+## 34. Protection Layer Diagnostics UI Integration（Step 2G-8A.2，display-only）
+
+### 34.1 目标
+
+把 Step 2G-8A.1 的 `protection_layer_diagnostics.v1` helper（commit
+`cdbb13a`）以 **display-only sub-section** 方式接入 Predict / Review
+UI，让用户在已有 anti-false expander 内同时看到：
+- per-prediction 5 项 protective findings（Step 2G-7A AFX）
+- baseline-level 2 项 blocking guard（本步骤；`holdout_stability_guard`
+  + `net_benefit_guard`）
+
+**强约束**（继承 Step 2G-8A 设计 §11 / 8A.1 checkpoint §12）：
+- 只新增 UI renderer + tests + doc；**不**改 `predict.py` /
+  `run_predict` / `scanner.py` / `prediction_store.py` / `app.py` /
+  任何 builder / DB schema
+- **不**写 DB；renderer 是纯函数；caller-injected 输入
+- **不**升级 04 / 05 / 07 required 字段
+- **不**让 Step 2G-7C dashboard `hard_gate_status.protection_layer_connected`
+  自动 pass（仍 fail；Gate 5 仍 fail）
+- **不**让 helper 输出 4 个 connection flag 的任意一个变为 `True`
+  之外的预期值（`diagnostic_connected = True` / 其余三 flag = False
+  全程不变）
+
+### 34.2 新增模块
+
+| 路径 | 类型 | 说明 |
+|---|---|---|
+| `ui/protection_layer_diagnostics_renderer.py` | 新增 | pure card_data + markdown renderer |
+| `tests/test_protection_layer_diagnostics_renderer.py` | 新增 | 23 focused tests + 5 subtests |
+| `ui/predict_tab.py` | 修改 | Predict + Review expander 各加 1 段 sub-section |
+| `tests/test_predict_tab_soft_metadata_display.py` | 修改 | 新增 `ProtectionLayerDiagnosticsPredictAppTests` + wiring smoke |
+| `tests/test_review_tab_soft_metadata_display.py` | 修改 | 新增 `ProtectionLayerDiagnosticsReviewAppTests` |
+
+### 34.3 公共 API（renderer）
+
+```python
+build_protection_layer_diagnostics_card_data(
+    diagnostics: dict | None,
+) -> dict
+```
+
+- 输入：`protection_layer_diagnostics.v1` helper 输出（或 None）
+- 输出：`protection_layer_diagnostics_card.v1`（含 visible / 4
+  connection flags / guards / summary / warnings）
+- 当 helper 输出 `guards=[]` 且 `warnings=[]` 时 `visible=False`，
+  Predict / Review UI 不渲染空盒
+- `warnings` 含 `missing_metrics` 或 `final_test_range_refusal` 时
+  `visible=True`，让用户看到状态提示
+
+```python
+render_protection_layer_diagnostics_markdown(card_data: dict) -> str
+```
+
+- 输入：上面 builder 的输出
+- 输出：safe markdown 字符串（`visible=False` → `""`）
+- 永远不出现 8 个 forbidden token（见 §34.6）
+
+### 34.4 UI 接入位置
+
+**Predict 页面**（`render_predict_tab` → 接 `_extract_soft_metadata`
+之后的 anti-false 块）：
+
+```python
+with st.expander("为什么这里只做提示", expanded=False):
+    st.markdown(render_anti_false_exclusion_markdown(_afx_display))
+    # Step 2G-8A.2 — protection layer diagnostics sub-section
+    try:
+        _pld = build_protection_layer_diagnostics(soft_metadata=_afx_soft)
+        _pld_card = build_protection_layer_diagnostics_card_data(_pld)
+        if _pld_card.get("visible"):
+            st.markdown(render_protection_layer_diagnostics_markdown(_pld_card))
+    except Exception:
+        pass
+```
+
+**Review 页面**（`_render_review_result` → 已有 `保护层诊断` expander）：
+同一 try / except + 同一 helper 调用，把 protection diagnostics
+markdown 接到 AFX markdown 之下。
+
+**两处接入都满足**：
+- 输入仅来自现有 soft_metadata（不读 DB / 不调 dashboard service）
+- 失败被 try/except 包裹，**不**会让 Predict / Review 页面 crash
+- 不写任何 contract / required / DB
+
+### 34.5 markdown 输出形态
+
+```
+**保护层诊断详情**
+诊断信息已接入，但不等于自动升级；当前仍只允许复盘提示，
+不改变主推演方向，不构成交易指令。
+
+**保护层 guard 列表**
+- **跨窗口稳定性 guard**（blocking）：跨窗口验证未通过，当前只允许复盘提示。
+  · reason=`holdout_status_FAIL` · _evidence:_ holdout_status=FAIL
+- **净收益 guard**（blocking）：净收益不足，当前只允许复盘提示。
+  · reason=`net_benefit_below_gate` · _evidence:_ net_benefit=2.2% · threshold=5.0%
+
+**接入状态（sidecar diagnostics 边界）**
+- 诊断已接入 · 是
+- 决策链未接入 · 否
+- 04 字段未升级 · 否
+- 评估闸门暂未接入 · 否
+
+· 升级条件未满足 · 当前仅作展示 · blocking guards：2
+
+_待补条件：_ `narrower_candidate_research`（在此之前仍只允许复盘提示）
+```
+
+**注意**：四个 connection flag 的 UI 标签**故意**不打印原始 flag 名
+`hard_gate_connected` / `protection_layer_connected_for_gate` —— 因为
+renderer-side forbidden 列表锁定了 `hard` / `forced` 子串，所以 UI
+用中文 `决策链未接入` / `评估闸门暂未接入` 对应表达。这一点与
+8A 设计 §9 文案规范完全一致。
+
+### 34.6 forbidden copy（renderer 锁定）
+
+| token | 锁定理由 |
+|---|---|
+| `禁止交易` | 交易指令禁用 |
+| `强制否定` | 强制语义禁用 |
+| `hard`（子串） | 不让 UI 暗示 hard 升级被允许 |
+| `forced`（子串） | 同上 |
+| `no_trade` | 仓位指令禁用 |
+| `卖出信号` / `做空信号` | 方向指令禁用 |
+| `自动拦截` | 决策语义禁用 |
+
+`tests/test_protection_layer_diagnostics_renderer.py::ForbiddenCopyTests`
+对 5 个 scenario × 8 个 token 用 `assertNotIn` 锁定。两个 AppTest
+（Predict + Review）也对 page-level markdown 同时 grep。
+
+### 34.7 测试矩阵
+
+`tests/test_protection_layer_diagnostics_renderer.py`（23 tests +
+5 subtests）：
+
+| 测试类 | 数量 | 覆盖点 |
+|---|---|---|
+| `CardDataMissingHiddenTests` | 4 | None / non-dict / 缺 schema_version / 无 guards 无 warnings → invisible |
+| `CardDataGuardsTests` | 3 | 两 guard / blocking_guard_count 一致 / 单 guard |
+| `CardDataConnectionFlagTests` | 3 | `diagnostic_connected=True` / 三 false / 多 scenario 锁定 |
+| `MarkdownStructureTests` | 3 | 默认可见短语 / invisible → `""` / missing_metrics warning 走 visible |
+| `ForbiddenCopyTests` | 1 (5 subtests) | 5 scenario × 8 forbidden token |
+| `InputImmutabilityTests` | 2 | builder / renderer 不修改 input |
+| `UnknownGuardTests` | 2 | unknown guard name 渲染 / 非 dict guard 跳过 |
+| `FinalTestRangeWarningTests` | 1 | `final_test_range_refusal` 透传 |
+| `IsolationTests` | 2 | `ast.walk` 禁 `streamlit` / DB / 网络 / trading / dashboard import；schema_version 锁定 |
+| `SummaryStateLineTests` | 2 | 状态短语 / `required_next_step` |
+
+`tests/test_predict_tab_soft_metadata_display.py`（+4 cases）：
+- `ProtectionLayerDiagnosticsPredictAppTests` × 3：诊断 sub-section
+  渲染 / no-pass 短语 / no-signal 不渲染
+- `ProtectionLayerWiringSmokeTests` × 1：`ui.predict_tab` 已 import
+  3 个 helper
+
+`tests/test_review_tab_soft_metadata_display.py`（+4 cases）：
+- `ProtectionLayerDiagnosticsReviewAppTests` × 4：correct + R4 / wrong
+  + R4 / no-signal / pass-path 不广告 upgrade
+
+### 34.8 验证
+
+| 命令 | 结果 |
+|---|---|
+| `pytest tests/test_protection_layer_diagnostics_renderer.py -q` | **23 passed**（+5 subtests） |
+| `pytest tests/test_predict_tab_soft_metadata_display.py tests/test_review_tab_soft_metadata_display.py -q` | **70 passed** |
+| `pytest tests/test_protection_layer_diagnostics.py tests/test_anti_false_exclusion_display.py -q` | **80 passed** |
+| `pytest -q`（全量） | **2591 passed / 10 skipped / 0 failed / 26 warnings / 94 subtests** |
+
+测试基线累积：**Step 2G-8A.1 终点 2560 → Step 2G-8A.2 终点 2591**
+（+31 净增；现有 2560 基线零回归）。
+
+### 34.9 边界事实
+
+- ❌ **没**改 `predict.py` / `run_predict` / `scanner.py` /
+  `prediction_store.py` / `app.py` / 任何 builder / DB schema
+- ❌ **没**改 04 / 05 / 07 任何 required 字段
+- ❌ **没**改 `final_projection` / `final_direction` /
+  `simulated_trade` / `no_trade` / `confidence_system` 任何字段
+- ❌ **没**写 DB；renderer 是纯函数，caller-injected 输入
+- ❌ **没**改 `services/protection_layer_diagnostics.py` /
+  `services/anti_false_exclusion_dashboard.py` /
+  `ui/anti_false_exclusion_display.py` / `services/soft_metadata_simulator.py`
+  / 任何已有 service / 其它 ui 模块
+- ❌ **没**让 Step 2G-7C dashboard `protection_layer_connected`
+  自动 pass（仍 fail；Gate 5 仍 fail）
+- ❌ **没**启用 `hard` / `forced_exclusion` /
+  `anti_false_exclusion_triggered`
+- ❌ **没**接 `yfinance` / `requests` / 任何网络
+- ❌ **没**接 trading API / `longbridge` / `broker` / `paper_trade`
+- ❌ **没**触碰 2026-01-01 之后 final test range
+- ❌ **没** import `streamlit` / `services.prediction_store` /
+  `dashboard service` / `simulator`（renderer 用 `ast.walk` 锁定）
+- ❌ **没**让 4 个 connection flag 任一变成预期之外（schema-level
+  test 锁定）
+- ✅ Predict + Review 页面 try/except 包裹接入点 —— UI 永不 crash
+- ✅ **2591 / 0 failed / 10 skipped**；现有 2560 基线零回归
+

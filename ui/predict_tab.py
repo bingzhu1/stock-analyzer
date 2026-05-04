@@ -39,6 +39,13 @@ from ui.anti_false_exclusion_display import (
     build_anti_false_exclusion_display,
     render_anti_false_exclusion_markdown,
 )
+from services.protection_layer_diagnostics import (
+    build_protection_layer_diagnostics,
+)
+from ui.protection_layer_diagnostics_renderer import (
+    build_protection_layer_diagnostics_card_data,
+    render_protection_layer_diagnostics_markdown,
+)
 from services.soft_metadata_injection import (
     enrich_predict_result_with_soft_metadata,
 )
@@ -1030,6 +1037,23 @@ def _render_review_result(review_result: dict) -> None:
                     st.markdown(
                         render_anti_false_exclusion_markdown(_afx_display)
                     )
+                    # Step 2G-8A.2 — protection layer diagnostics sub-
+                    # section in Review context (read-only sidecar).
+                    # Same pure helpers as the Predict surface; review
+                    # never writes review_log required fields.
+                    try:
+                        _pld = build_protection_layer_diagnostics(
+                            soft_metadata=soft_metadata,
+                        )
+                        _pld_card = build_protection_layer_diagnostics_card_data(_pld)
+                        if _pld_card.get("visible"):
+                            st.markdown(
+                                render_protection_layer_diagnostics_markdown(
+                                    _pld_card,
+                                )
+                            )
+                    except Exception:  # noqa: BLE001
+                        pass
     except Exception:  # noqa: BLE001 — review must never crash on metadata
         pass
 
@@ -1456,6 +1480,24 @@ def render_predict_tab(scan_result: dict | None, research_result: dict | None) -
             if _afx_display.get("visible"):
                 with st.expander("为什么这里只做提示", expanded=False):
                     st.markdown(render_anti_false_exclusion_markdown(_afx_display))
+                    # Step 2G-8A.2 — protection layer diagnostics sub-
+                    # section (read-only sidecar). Pure helpers; never
+                    # writes DB / required fields. Wrapped in its own
+                    # try/except so a diagnostics-side bug cannot
+                    # bubble up and crash the AFX expander.
+                    try:
+                        _pld = build_protection_layer_diagnostics(
+                            soft_metadata=_afx_soft,
+                        )
+                        _pld_card = build_protection_layer_diagnostics_card_data(_pld)
+                        if _pld_card.get("visible"):
+                            st.markdown(
+                                render_protection_layer_diagnostics_markdown(
+                                    _pld_card,
+                                )
+                            )
+                    except Exception:  # noqa: BLE001
+                        pass
     except Exception:  # noqa: BLE001 — UI must never crash on metadata
         pass
     # Step 2G-6C — stash enriched payload so the review-result panel
