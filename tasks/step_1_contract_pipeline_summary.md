@@ -3378,3 +3378,115 @@ build_regime_labels(
   正常 / refusal 三条路径都稳定输出
 - ✅ **2642 / 0 failed / 10 skipped**；现有 2604 基线零回归
 
+## 37. Replay Script W4 Guards（Step 2G-8D.1A，scripts-only patch）
+
+### 37.1 范围
+
+把 `scripts/run_1005_three_system_replay.py` **就地**升级出 W4
+cross-window validation 所需的 5 项 hard guard + manifest writer，
+为 Step 2G-8D.2 tiny smoke 解锁 conditional GO。**不**改 `services/*`、
+**不**改 DB schema、**不**写 main DB、**不**接 trading API、**不**触
+碰 2026 final test range；本步骤**不**实际运行 W4 / smoke replay。
+
+### 37.2 改动文件
+
+| 路径 | 类型 | 说明 |
+|---|---|---|
+| `scripts/run_1005_three_system_replay.py` | 修改 | +6 module 常量 / +7 helper / argparse 5 新参数 / `run_audit` 5 keyword-only 参数 / `main` 增加 `_apply_tiny_smoke_defaults` + `_validate_w4_args` 起点检查 + manifest emission；改动面 ~ 230 行 |
+| `tests/test_run_1005_three_system_replay_w4_guards.py` | 新增 | 47 focused tests（argparse / tiny-smoke / 5 guards / 2 filter helpers / manifest builder + writer / main exit codes / 2 静态 import 锁定） |
+| `tasks/step_1_contract_pipeline_summary.md` | 修改 | 新增 §37（本节） |
+
+`services/*` 全部未触碰；DB schema 未改；no `services.prediction_store` /
+`longbridge` / `broker` / `paper_trade` 引入（`ast.walk` 静态测试锁定）。
+
+### 37.3 新增 CLI 参数
+
+| 参数 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `--start-date` | str (ISO) | None | 显式起点；与 `--num-cases` tail 行为互斥 |
+| `--end-date` | str (ISO) | None | 显式终点；必须 `< --final-test-cutoff` |
+| `--final-test-cutoff` | str (ISO) | `"2026-01-01"` | hard cutoff；起点 + T+1 双重过滤 |
+| `--tiny-smoke` | flag | `False` | 起 smoke 模式（默认 `2024-08-05 → 2024-08-09`），强制 `save-records=False` + `write-manifest=True`；output_dir 默认切到 smoke 目录 |
+| `--write-manifest` | flag | `False` | 写 `validation_ready_manifest.json`（`w4_replay_manifest.v1`） |
+| `--manifest-path` | Path | None | 显式 manifest 路径；默认 `output_dir/validation_ready_manifest.json` |
+| `--allow-overwrite` | flag | `False` | 允许写入非空 output_dir（仅 W4 mode）；防覆盖 1005 baseline |
+
+legacy `--num-cases` / `--symbol` / `--lookback-days` / `--output-dir` /
+`--save-records` / `--db-path` 行为不变。
+
+### 37.4 5 项 hard guard
+
+| 编号 | guard | 触发位置 | 行为 |
+|---|---|---|---|
+| **G1** | range hard stop | `_validate_w4_args` 启动；`_filter_trading_days_by_range` + `_filter_pairs_by_cutoff` 数据层 | `start_date / end_date >= final_test_cutoff` → `ValueError` + main exit 2；trading_days 起点过滤 `< cutoff` |
+| **G2** | T+1 boundary skip | `_filter_pairs_by_cutoff` (`_resolve_date_pairs` 内) | `prediction_for_date >= cutoff` 或 `as_of_date >= cutoff` → 跳过该 pair + warning |
+| **G3** | save-records guard | `_validate_w4_args` | W4 mode（explicit start/end OR `--tiny-smoke`）+ `--save-records=True` → `ValueError` |
+| **G4** | output-dir guard | `_validate_w4_args` | W4 mode + output_dir == 1005 baseline → `ValueError`；W4 mode + 非空 output_dir + 无 `--allow-overwrite` → `ValueError` |
+| **G5** | manifest writer | `run_audit` 输出阶段 | `--write-manifest` 时写 `w4_replay_manifest.v1`（含 `final_test_touched` defense-in-depth） |
+
+W4 mode 判定：`_is_w4_mode(args)` = `tiny_smoke ∨ start_date is not None ∨ end_date is not None`。
+legacy 1005 调用（无任何 W4 标记）**完全不**经过 G3 / G4 检查，向后兼容。
+
+### 37.5 manifest schema：`w4_replay_manifest.v1`
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `schema_version` | string | 总是 `"w4_replay_manifest.v1"` |
+| `replay_window.start` | string \| null | 与 `--start-date` 一致（W4 mode） |
+| `replay_window.end` | string \| null | 与 `--end-date` 一致 |
+| `final_test_cutoff` | string | 与 `--final-test-cutoff` 一致；硬不变量 |
+| `final_test_touched` | bool | defense-in-depth：在 `replay_results` 中检查任何 `as_of_date / prediction_for_date >= cutoff`；`true` → 整份报告作废 |
+| `records_generated` | int \| null | 实际 pair 数（G1 + G2 过滤后） |
+| `paired_outcomes` | int \| null | `replay_result.ready ∧ actual_outcome.actual_close is not None` 的数量 |
+| `status` | enum | `"ok"` \| `"error"` \| `"planned"` |
+| `warnings` | list[str] | 累积的 G2 boundary skip + 其它运行时 warnings |
+
+### 37.6 测试覆盖
+
+47 focused tests 全部通过：
+
+| 测试类 | 数量 | 覆盖点 |
+|---|---|---|
+| `ParseArgsTests` | 8 | 5 新 flag + cutoff 默认 `2026-01-01` + 自定义 cutoff + manifest_path 默认 None + legacy 兼容 |
+| `TinySmokeDefaultsTests` | 6 | tiny-smoke 默认范围 / 强制 save_records=False / 强制 write_manifest=True / 默认 output_dir / 显式范围保留 / 非 smoke 无副作用 |
+| `ValidateW4ArgsTests` | 11 | G1 / G3 / G4 全部触发路径 + 默认 1005 通过 + legacy save_records 通过 + tiny_smoke 互斥 + start>end |
+| `FilterTradingDaysByRangeTests` | 3 | range + cutoff / 仅 cutoff / 仅 start |
+| `FilterPairsByCutoffTests` | 3 | T+1 边界 skip / 安全范围 / as_of 自身越界 |
+| `ResolveDatePairsTests` | 2 | explicit range / legacy num_cases 都施加 cutoff |
+| `BuildManifestTests` | 5 | schema_version 强制 / 完整 shape / final_test_touched 默认 false / planned status / warnings 空 list |
+| `WriteManifestTests` | 1 | 写盘 round-trip |
+| `MainExitCodeTests` | 4 | end>=2026 / start>=2026 / save-records-with-W4 / output-dir-1005 全部 nonzero |
+| `RunAuditManifestE2ETests` | 2 | smoke window stub e2e（manifest schema + 4 paired + final_test_touched=false）+ T+1 边界 stub e2e |
+| `NoNewServiceImportsTests` | 1 | `ast.walk` 锁定 services/* 子集 = audit 4 项 baseline |
+| `NoDBOrPredictionStoreImportTests` | 1 | `ast.walk` 锁定无 `services.prediction_store` / `longbridge` / `broker` / `paper_trade` |
+
+### 37.7 测试结果
+
+| 命令 | 结果 |
+|---|---|
+| `pytest tests/test_run_1005_three_system_replay_w4_guards.py -q` | **47 passed** |
+| `pytest -q`（全量） | **2689 passed / 10 skipped / 0 failed / 26 warnings / 94 subtests** |
+
+测试基线累积：**Step 3R-2 终点 2642 → Step 2G-8D.1A 终点 2689**
+（+47 净增；现有 2642 基线零回归）。
+
+### 37.8 边界事实
+
+- ❌ **没**改 `services/*`（含 `services/historical_replay_training.py` /
+  `services/outcome_capture.py` / `services/replay_record_wiring.py` /
+  `services/three_system_replay_audit.py` /
+  `services/projection_three_systems_renderer.py` 等所有 service 模块）
+- ❌ **没**改 `predict.py` / `run_predict` / `scanner.py` /
+  `prediction_store.py` / `app.py` / DB schema
+- ❌ **没**写 main DB（`avgo_agent.db` / `data/market_data.db`）
+- ❌ **没**升级 04 / 05 / 07 任何 required 字段
+- ❌ **没**启用 `hard` / `forced_exclusion` /
+  `anti_false_exclusion_triggered`
+- ❌ **没**接 trading API / `longbridge` / `broker` / `paper_trade`（静态测试锁定）
+- ❌ **没** import 新的 `services/*` 模块（静态测试锁定 = audit 4 项 baseline）
+- ❌ **没**改 `_PROTECTION_LAYER_CONNECTED` / `hard_gate_status.protection_layer_connected`
+- ❌ **没**触碰 2026-01-01 之后 final test range（G1 + G2 双重 hard stop）
+- ❌ **没**实际运行 W4 / smoke / full replay；仅参数 / guard / manifest 测试
+- ✅ `w4_replay_manifest.v1` schema + 5 项 guard + tiny-smoke 默认全部 stub e2e 验证
+- ✅ legacy 1005 调用零回归；W4 调用 conditional GO 解锁
+
