@@ -4329,3 +4329,149 @@ DB filter（一次 SQL）：
 - ❌ **没** add 任何 W4 / smoke / `logs/regime_validation/` / `logs/prediction_log.jsonl` / DB backup / `agent_loop.py` / `.claude/worktrees/`
 - ✅ `real_validation_input_bundle.v1` schema + DB read-only loader + W4 jsonl loader + W4 manifest loader + DB guard + static label provider + dry-run CLI 全部 acceptance 锁定
 - ✅ **2857 / 0 failed / 10 skipped**；现有 2825 基线零回归
+
+---
+
+## 43. Real Regime Label Provider（Step 3R-3.3C-C-B，local CSV read-only）
+
+### 43.1 范围
+
+把 Step 3R-3.3C real validation execution design（commit `9720e0a`）+ checkpoint（`b1d82ee`）+ Step 3R-3.3C-C-A market data source audit checkpoint（`4282058`）落到一个 read-only label provider 模块：
+
+- 一次性加载 4 个本地 OHLC csv（`data/AVGO.csv` / `data/NVDA.csv` / `data/SOXX.csv` / `data/QQQ.csv`），全部 USABLE（audit 已锁）。
+- 调 `services.regime_labels_builder.build_regime_labels(...)` 计算 `regime_labels.v1`。
+- provider 的 `row` 参数**完全忽略**（仅 `as_of_date` 流入 builder）—— 防止 outcome / W4 jsonl future-leak 字段反喂 candidate。
+- builder 内置 anti-lookahead（`Date <= as_of_date`）+ final-test cutoff（`as_of_date >= "2026-01-01"` → `final_test_refusal=True`）。
+- 真实 W1-W4 validation **execution 仍未启动**；本节只 ship label provider building block。
+- 不调网络 / 不写 DB / 不 import dry-run orchestrator / 不 import wrapper。
+
+### 43.2 改动文件
+
+| 路径 | 类型 | 说明 |
+|---|---|---|
+| `services/real_regime_label_provider.py` | 新增 | factory + private csv loader |
+| `tests/test_real_regime_label_provider.py` | 新增 | 20 focused tests（4 类） |
+| `tasks/step_1_contract_pipeline_summary.md` | 修改 | 新增 §43（本节） |
+
+### 43.3 公共 API
+
+```python
+build_real_regime_label_provider(
+    *,
+    avgo_csv_path: str = "data/AVGO.csv",
+    nvda_csv_path: str = "data/NVDA.csv",
+    soxx_csv_path: str = "data/SOXX.csv",
+    qqq_csv_path: str = "data/QQQ.csv",
+    final_test_cutoff: str = "2026-01-01",
+) -> Callable[..., dict]
+```
+
+返回 callable：
+
+```python
+provider(as_of_date: str, row: dict | None = None) -> dict
+```
+
+`row` 参数仅为接口兼容（与 wrapper / orchestrator 既有签名对齐），provider 内部 `del row` 立即丢弃，不参与任何特征计算。
+
+### 43.4 CSV loader behavior
+
+私有 helper `_load_market_csv(path, *, symbol)`：
+
+| 行为 | 状态 |
+|---|---|
+| 文件缺失 → `FileNotFoundError`（含 symbol + path 信息） | ✅ |
+| 缺 `Date` / `Open` / `High` / `Low` / `Close` 任一 → `ValueError`（列出缺失列） | ✅ |
+| `pd.read_csv` + `pd.to_datetime(df["Date"])` | ✅ |
+| `sort_values("Date").reset_index(drop=True)` | ✅ |
+| duplicate `Date` → `ValueError`（fail-fast，不静默 dedupe） | ✅ |
+| **不**预先过滤 2026 行（由 builder anti-lookahead + cutoff 控制） | ✅ |
+| **不** mutate caller input（df 在 closure 内私有） | ✅ |
+
+### 43.5 build_regime_labels wiring
+
+| builder 参数 | provider 提供 |
+|---|---|
+| `avgo_df` | `data/AVGO.csv` 加载结果 |
+| `peer_dfs` | `{"NVDA": nvda_df, "SOXX": soxx_df, "QQQ": qqq_df}` |
+| `market_dfs` | `{"QQQ": qqq_df, "SOXX": soxx_df}` |
+| `as_of_date` | provider 调用方传入 |
+| `final_test_cutoff` | provider factory 配置（默认 `"2026-01-01"`） |
+
+builder 已锁定的 anti-lookahead + refusal 行为完全保留；provider 不重复实现、不旁路。
+
+### 43.6 final-test behavior
+
+| 测试 | 行为 |
+|---|---|
+| `provider("2025-12-31")` | `final_test_refusal=False`（pre-cutoff） |
+| `provider("2026-01-01")` | `final_test_refusal=True` + warning `final_test_range_refusal` |
+| post-2026 csv 行存在但**不**被消费 | builder `Date <= as_of_date` + cutoff 双重保险 |
+
+测试覆盖 `provider("2025-12-31")` / `provider("2026-01-01")` 两端；warning 字符串经 string-contains 校验。
+
+### 43.7 isolation / forbidden imports
+
+provider 模块禁止 import（test_no_forbidden_imports 锁定）：
+
+- `yfinance` / `requests` / `urllib` / `urllib3` / `httpx`（任何网络客户端）
+- `longbridge` / `broker` / `paper_trade`（任何 trading API）
+- `sqlite3` / `services.prediction_store` / `services.outcome_capture`（任何 DB 写路径）
+- `services.confidence_engine` / `contradiction_engine` / `risk_model` / `soft_metadata_simulator` / `anti_false_exclusion_dashboard` / `regime_diagnostics_dashboard` / `protection_layer_diagnostics` / `historical_replay_training`
+- `predict` / `scanner` / `streamlit` / `app`
+- `ui.protection_layer_diagnostics_renderer`
+- `scripts.run_continuous_smoothing_validation` / `scripts.run_real_continuous_smoothing_validation`（不 import orchestrator / wrapper）
+
+provider 模块禁止 reference（test_no_w4_outcome_fields_referenced 锁定）：
+
+- `actual_close_change` / `actual_state` / `direction_correct`（W4 outcome）
+- `five_state_projection`（projection future-leak）
+- `predict_result_json` / `research_result_json` / `scan_result_json`（DB raw payload）
+
+provider 模块禁止 reference（test_no_hard_required_or_trading_strings 锁定）：
+
+- `hard_exclusion_allowed` / `forced_exclusion` / `anti_false_exclusion_triggered`
+- `_PROTECTION_LAYER_CONNECTED`
+- `simulated_trade` / `no_trade`
+- 任何 trading 关键词
+
+### 43.8 测试覆盖
+
+20 focused tests 全部通过：
+
+| 测试类 | 数量 | 覆盖点 |
+|---|---|---|
+| `LoadMarketCsvTests` | 5 | success / 缺文件 / 缺列 / dup Date / unsorted 自动 sort |
+| `FactoryRequiredPathsTests` | 4 | 4 个 csv 任一缺失 → `FileNotFoundError`（fail-fast） |
+| `ProviderBehaviorTests` | 6 | regime_labels.v1 schema / as_of_date 透传 / row 内容被忽略（含 outcome / W4 leak fields）/ pre-cutoff 不 refusal / cutoff refusal / DataFrame 不 mutate |
+| `IsolationTests` | 5 | 28 项 forbidden import 锁定 / hard-required-trading 字符串锁定 / threshold-sweep 字符串锁定 / W4 outcome 字段不 reference / cutoff 默认值 sanity |
+
+### 43.9 测试结果
+
+| 命令 | 结果 |
+|---|---|
+| `pytest tests/test_real_regime_label_provider.py -q` | **20 passed** |
+| `pytest tests/test_regime_labels_builder.py tests/test_run_real_continuous_smoothing_validation.py -q` | **70 passed**（零回归） |
+| `pytest -q`（全量） | **2877 passed / 10 skipped / 0 failed / 26 warnings / 94 subtests** |
+
+测试基线累积：Step 3R-3.3C-B 终点 2857 → Step 3R-3.3C-C-B 终点 **2877**（+20 净增；2857 基线零回归）。
+
+### 43.10 边界事实
+
+- ❌ **没**改 `predict.py` / `run_predict` / `scanner.py` / `prediction_store.py` / `app.py` / DB schema
+- ❌ **没**改 04 / 05 / 07 任何 required 字段
+- ❌ **没**改 `services/regime_labels_builder.py` / `services/regime_features_builder.py` / `services/regime_validation_helper.py` / `services/continuous_smoothing_candidate.py` / `services/replay_validation_record_adapter.py` / 任何已有 service / 任何 ui 模块 / 任何 builder
+- ❌ **没**改 `scripts/run_continuous_smoothing_validation.py` / `scripts/run_real_continuous_smoothing_validation.py`
+- ❌ **没**改 `tests/test_run_continuous_smoothing_validation.py` / `tests/test_run_real_continuous_smoothing_validation.py` / `tests/test_regime_labels_builder.py` / `tests/test_replay_validation_record_adapter.py` / `tests/test_regime_validation_helper.py` / `tests/test_continuous_smoothing_candidate.py`
+- ❌ **没**写 DB；provider 不连 sqlite
+- ❌ **没**接网络（`ast.walk` 锁定 28 项 forbidden import）
+- ❌ **没**接 trading API
+- ❌ **没**让 `_PROTECTION_LAYER_CONNECTED` 翻 True
+- ❌ **没**触碰 2026-01-01 之后 final-test range（builder anti-lookahead + cutoff 已锁定；post-2026 行不被消费）
+- ❌ **没**调用 dry-run orchestrator（不 import）；**没**调用 wrapper（不 import）；execution glue 是 Step 3R-3.3C-C-C 的范围
+- ❌ **没**真实运行 W1-W4 validation
+- ❌ **没**扫 / 学 / 反推 candidate_threshold
+- ❌ **没**修改任何 csv 文件
+- ❌ **没** add 任何 W4 / smoke / `logs/regime_validation/` / `logs/prediction_log.jsonl` / DB backup / `agent_loop.py` / `.claude/worktrees/`
+- ✅ provider factory + 4 csv 加载 + builder wiring + final-test propagation + 28 项 isolation 全部 acceptance 锁定
+- ✅ **2877 / 0 failed / 10 skipped**；现有 2857 基线零回归
