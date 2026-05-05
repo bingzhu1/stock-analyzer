@@ -3490,3 +3490,160 @@ legacy 1005 调用（无任何 W4 标记）**完全不**经过 G3 / G4 检查，
 - ✅ `w4_replay_manifest.v1` schema + 5 项 guard + tiny-smoke 默认全部 stub e2e 验证
 - ✅ legacy 1005 调用零回归；W4 调用 conditional GO 解锁
 
+## 38. Regime Validation Helper（Step 3R-4.2，read-only 4-fold report）
+
+### 38.1 范围
+
+新增 `services/regime_validation_helper.py`，按 Step 3R-4 cross-window
+validation protocol（commits `a58aad4` / `abe3ba2`）+ Step 3R-4.1
+4-fold validation helper design / checkpoint（commits `8e27254` /
+`295ccdd`）实施 `regime_validation_report.v1` 评分层 helper。Helper
+是**纯 read-only**：不读 / 不写 DB、不跑 replay、不接网络 / trading、
+不改 input records、不改 protocol thresholds、不触碰 2026 final test
+range。
+
+### 38.2 改动文件
+
+| 路径 | 类型 | 说明 |
+|---|---|---|
+| `services/regime_validation_helper.py` | 新增 | pure read-only helper（~ 470 行）；W4 manifest gate + 6 metric + 7 gate + worst-window + leave-one-window-out 折叠 + `regime_validation_report.v1` 输出 |
+| `tests/test_regime_validation_helper.py` | 新增 | 33 focused tests（schema / manifest gate / metrics / overall_status / worst-window / safety / isolation / acceptance：R4-like fail + pooled-pass-but-worst-fail） |
+| `tasks/step_1_contract_pipeline_summary.md` | 修改 | 新增 §38（本节） |
+
+`predict.py` / `run_predict` / `scanner.py` / `prediction_store.py` /
+`app.py` / `services/regime_labels_builder.py` / 任何 builder / DB
+schema 全部未触碰；no `services.prediction_store` / `longbridge` /
+`broker` / `paper_trade` / `yfinance` / `requests` / `streamlit` 引入
+（`ast.walk` + 字符串静态测试锁定）。
+
+### 38.3 公共 API
+
+```python
+build_regime_validation_report(
+    records,
+    *,
+    candidate_name: str,
+    candidate_kind: str = "label_assignment",
+    windows: dict | None = None,
+    final_test_cutoff: str = "2026-01-01",
+    require_w4_manifest: bool = True,
+    w4_manifest_path: str | None = None,
+) -> dict
+```
+
+| 项 | 值 |
+|---|---|
+| 类型 | **pure read-only helper** |
+| 是否读 / 写 DB | ❌ 否 |
+| 是否跑 replay / 接 yfinance / requests / trading | ❌ 否 |
+| 是否改 input records | ❌ 否（深拷贝测试锁定） |
+| 是否暴露 threshold 参数 | ❌ 否（API 不允许 override 阈值） |
+| 是否触碰 2026 | ❌ 否（manifest gate + record-level cutoff 双重 hard stop） |
+| 是否宣称 production permission | ❌ 否（report `pass` 仅供 design review） |
+
+### 38.4 W4 manifest gate（启动前 8 项）
+
+| # | 检查 | 期望值 | 失败行为 |
+|---|---|---|---|
+| 1 | `schema_version` | `"w4_replay_manifest.v1"` | `overall_status="error"` + `w4_manifest_schema_mismatch` warning |
+| 2 | `final_test_touched` | **`false`** | `overall_status="error"` + `final_test_refusal=true` + `w4_final_test_touched_true_report_void` |
+| 3 | `status` | `"ok"` | `overall_status="error"` + `w4_manifest_status_not_ok` |
+| 4 | `paired_outcomes` | `>= 20` | `overall_status="error"` + `w4_paired_below_minimum` |
+| 5 | `replay_window.start` | `"2024-08-03"` | `w4_replay_window_start_mismatch` |
+| 6 | `replay_window.end` | `"2025-12-31"` | `w4_replay_window_end_mismatch` |
+| 7 | `final_test_cutoff` | `"2026-01-01"` | `w4_final_test_cutoff_mismatch` |
+| 8 | manifest path 必须可读 | 文件存在 + JSON parse 成功 | `w4_manifest_path_missing` / `w4_manifest_file_not_found` / `w4_manifest_read_error:<exc>` |
+
+`require_w4_manifest=False`（仅在 caller 显式接受降级时）→ 跳过 gate +
+emit `w4_manifest_not_required` informational warning。
+
+### 38.5 6 metrics + 7 gates
+
+固定阈值（与 Step 3R-4 §6 / 3R-4 checkpoint §6 完全对齐；helper 不
+暴露阈值参数）：
+
+| metric | 公式 | gate threshold |
+|---|---|---|
+| `minimum_window_sample_size` | `len(blocked_records)` per held-out window | **`>= 20`** |
+| `false_exclusion_rate` | `correct_among_blocked / blocked_total` per held-out window | **`<= 0.10`**（worst-window 决胜） |
+| `net_benefit` | `candidate_adjusted_acc − baseline_acc`（exclusion 移除 blocked records，剩余样本算 candidate-adjusted accuracy） | **`>= +0.05`** |
+| `accuracy_delta_vs_baseline` | 与 `net_benefit` v1 公式相同（保留独立 gate 以便未来语义分化） | **`>= +0.02`** |
+| `cross_window_variance.false_exclusion_rate` | `max(per_window_fer) − min(per_window_fer)` | **`<= 0.10`** |
+| `survival_case_preservation` | `preserved_survival / total_survival_cases`（无 survival → vacuously 1.0） | **`>= 0.80`** |
+| `no_single_window_collapse` | 任一 window `fer >= 0.20` 或 `nb <= 0` | 兜底守卫；任一触发 → fail |
+
+### 38.6 worst-window 决胜 + overall_status
+
+| 优先级 | 选择规则 |
+|---|---|
+| 1 | 任一 window `fer > 0.10` → 该 fer 最大者为 worst |
+| 2 | 任一 window `nb < +0.05` → 该 nb 最小者为 worst |
+| 3 | 任一 window `paired < 20` → 该 paired 最小者为 worst |
+| 4 | 任一 window `survival_preservation < 0.80` → 最低者为 worst |
+| 5 | 否则取 fer 最高者 |
+| 6 | 全无 metric → lexical 第一窗 |
+
+`overall_status` ∈ `{"pass", "fail", "error"}`（**不允许 `"partial"`**）：
+- `"error"` ← W4 manifest gate fail / 任何 record 触碰 2026
+- `"fail"` ← 任一 gate `"fail"`
+- `"pass"` ← 全部 7 gate `"pass"` 且无 manifest / final-test error
+
+### 38.7 输出 schema：`regime_validation_report.v1`
+
+14 必备字段（`schema_version` / `candidate_name` / `candidate_kind` /
+`fold_count` / `windows` / `per_window_metrics` / `pooled_metrics`（仅
+参考，不进 gate） / `worst_window` / `worst_window_metrics` /
+`worst_window_reason` / `cross_window_variance` /
+`leave_one_window_out`（4 fold）/ `gate_status`（7 项）/
+`overall_status` / `final_test_refusal` / `data_cutoff_used`（`<= 2025-12-31`
+硬不变量）/ `warnings`）。
+
+### 38.8 测试覆盖
+
+33 focused tests 全部通过：
+
+| 测试类 | 数量 | 覆盖点 |
+|---|---|---|
+| `OutputSchemaTests` | 4 | 14 字段全 present / 默认 W1-W4 / fold_count=4 / overall_status 三值约束 |
+| `W4ManifestGateTests` | 10 | valid manifest / final_test_touched=true / wrong start / wrong end / paired<20 / status≠ok / schema mismatch / cutoff mismatch / 缺 path / require=False informational |
+| `MetricsFormulaTests` | 6 | FER / NB / survival / variance / collapse / sample size 边界 |
+| `OverallStatusTests` | 4 | gate fail → fail / 全 pass → pass / 无 partial / worst-window=W2 |
+| `SafetyTests` | 5 | 2026 refusal / cutoff boundary / 缺字段 skip+warning / input immutability / `data_cutoff_used` 锁定 |
+| `IsolationTests` | 2 | `ast.walk` 锁定无 yfinance / requests / longbridge / broker / paper_trade / sqlite3 / `services.prediction_store` 等 16 项 forbidden module；字符串锁定无 `hard_exclusion_allowed` / `forced_exclusion` / `_PROTECTION_LAYER_CONNECTED` / `simulated_trade` / `no_trade` / `final_direction` / `final_projection` |
+| `AcceptanceTests` | 2 | **R4-like fixture 必须 fail** + pooled-pass-but-worst-fail 必须 fail |
+
+### 38.9 测试结果
+
+| 命令 | 结果 |
+|---|---|
+| `pytest tests/test_regime_validation_helper.py -q` | **33 passed** |
+| `pytest tests/test_regime_labels_builder.py -q` | **38 passed**（零回归） |
+| `pytest -q`（全量） | **2722 passed / 10 skipped / 0 failed / 26 warnings / 94 subtests** |
+
+测试基线累积：**Step 2G-8D.1A 终点 2689 → Step 3R-4.2 终点 2722**
+（+33 净增；2689 基线零回归）。
+
+### 38.10 边界事实
+
+- ❌ **没**改 `predict.py` / `run_predict` / `scanner.py` /
+  `prediction_store.py` / `app.py` / DB schema
+- ❌ **没**改 04 / 05 / 07 任何 required 字段
+- ❌ **没**改 `final_projection` / `final_direction` /
+  `simulated_trade` / `no_trade` / `confidence_system`（字符串静态测试锁定）
+- ❌ **没**写 DB；helper 是纯函数，输入 records 输出 dict
+- ❌ **没**改 `services/regime_labels_builder.py` / 任何已有 service
+- ❌ **没**让 `_PROTECTION_LAYER_CONNECTED` 翻 True（字符串静态测试锁定）
+- ❌ **没**让 `hard_gate_status.protection_layer_connected` 自动 pass
+- ❌ **没**启用 `hard` / `forced_exclusion` / `anti_false_exclusion_triggered`
+- ❌ **没**接 `yfinance` / `requests` / 任何网络（`ast.walk` 锁定）
+- ❌ **没**接 trading API / `longbridge` / `broker` / `paper_trade`（`ast.walk` 锁定）
+- ❌ **没**触碰 2026-01-01 之后 final test range（manifest gate + record-level cutoff 双重 hard stop）
+- ❌ **没**改 Step 3R-4 protocol thresholds（helper 不暴露 threshold 参数）
+- ❌ **没**优化 / 学习 thresholds
+- ❌ **没**让 helper `overall_status="pass"` 自动启 hard / Gate 5 / Gate 6
+- ❌ **没**宣称 candidate "production permission"；report 仅供 design review
+- ✅ R4-like fixture 在 4-fold 协议下**实测 fail**（acceptance test `test_r4_like_fixture_fails_4fold_validation` 锁定）
+- ✅ pooled-pass-but-worst-window-fail 实测 fail（acceptance test `test_pooled_pass_but_worst_window_fail` 锁定）
+- ✅ `regime_validation_report.v1` 14 必备字段 + 3 值 `overall_status`（`"pass"` / `"fail"` / `"error"`，**无 `"partial"`**） 全 schema 锁定
+- ✅ **2722 / 0 failed / 10 skipped**；现有 2689 基线零回归
+
