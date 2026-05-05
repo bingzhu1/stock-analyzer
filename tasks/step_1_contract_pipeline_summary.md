@@ -4137,6 +4137,195 @@ run_continuous_smoothing_validation(
 - ✅ `continuous_smoothing_validation_run.v1` schema + 8 步 orchestration + write_outputs 4 文件 + 静态 threshold-sweep 锁定 + 18 项 isolation 全部 acceptance 锁定
 - ✅ **2825 / 0 failed / 10 skipped**；现有 2801 基线零回归
 
+---
 
+## 42. Real W1-W4 Validation Input Wrapper（Step 3R-3.3C-B，read-only prepare-only）
 
+### 42.1 范围
 
+把 Step 3R-3.3C real W1-W4 validation run design（commit `226e354`）+ checkpoint（`d2773aa`）+ Step 3R-3.3C-A W1-W3 source audit checkpoint（`1280060`）落到一个 read-only 输入装配脚本：
+
+- 真实 W1-W4 validation **execution 仍未启动**；本节只 ship **input 装配** + DB guard。
+- 默认 CLI 模式必须显式 `--prepare-inputs-only`；缺则 nonzero 退出 + 拒绝消息。
+- 不调用 dry-run orchestrator；不跑 helper / adapter / candidate；不跑 yfinance / 网络；不写 DB。
+- W1/W2/W3 来自 `avgo_agent.db` `prediction_log` ⨝ `outcome_log` 只读 join；W4 来自 jsonl 文件；W4 manifest 来自 JSON 文件。
+- 6 层 final-test cutoff（2026-01-01）在 wrapper / DB SQL / jsonl loader 三处全部生效。
+
+### 42.2 改动文件
+
+| 路径 | 类型 | 说明 |
+|---|---|---|
+| `scripts/run_real_continuous_smoothing_validation.py` | 新增 | wrapper 公开 7 个 helper + CLI |
+| `tests/test_run_real_continuous_smoothing_validation.py` | 新增 | 32 focused tests（7 类） |
+| `tasks/step_1_contract_pipeline_summary.md` | 修改 | 新增 §42（本节） |
+
+### 42.3 公共 API
+
+```python
+get_db_fingerprint(db_path: str) -> dict
+# {"path", "exists", "mtime_ns", "size_bytes"}
+
+assert_db_unchanged(before: dict, after: dict) -> None
+# RuntimeError if mtime_ns or size_bytes changed
+
+load_w1_w3_rows_from_db(
+    db_path: str,
+    *,
+    final_test_cutoff: str = "2026-01-01",
+    symbol: str = "AVGO",
+) -> list[dict]
+# sqlite3 read-only (mode=ro URI); join + filter; returns adapter-shaped rows
+
+load_w4_rows_from_jsonl(
+    jsonl_path: str,
+    *,
+    final_test_cutoff: str = "2026-01-01",
+) -> list[dict]
+# line-by-line read; deepcopy each surviving row + add source="w4_jsonl"
+
+load_w4_manifest(path: str) -> dict
+# read JSON; ValueError if not a JSON object; no schema validation here
+
+build_static_regime_label_provider(
+    *,
+    regime_labels_template: dict,
+) -> Callable[[str, dict], dict]
+# mock-friendly factory; sets as_of_date / data_cutoff_date per row;
+# does NOT compute regime labels — real provider is a Step 3R-3.3C-C concern
+
+build_real_validation_inputs(
+    *,
+    db_path: str,
+    w4_jsonl_path: str,
+    w4_manifest_path: str,
+    final_test_cutoff: str = "2026-01-01",
+    symbol: str = "AVGO",
+) -> dict
+# returns real_validation_input_bundle.v1 dict; does NOT call orchestrator
+
+main(argv: list[str] | None = None) -> int
+# CLI entry; only --prepare-inputs-only mode is supported
+```
+
+### 42.4 W1-W3 DB row schema（adapter-compatible）
+
+| key | source / conversion |
+|---|---|
+| `as_of_date` (str) | `prediction_log.analysis_date`（rename） |
+| `prediction_for_date` (str) | `prediction_log.prediction_for_date`（direct） |
+| `direction_correct` (bool) | `bool(outcome_log.direction_correct)` |
+| `actual_close_change` (float \| None) | `outcome_log.actual_close_change`（direct） |
+| `ready` (bool) | wrapper-side default `True`（join 已过滤 `direction_correct IS NOT NULL`） |
+| `source` (str) | wrapper-side `"avgo_agent.db"` |
+
+DB filter（一次 SQL）：
+
+- `prediction_log.symbol = symbol`（默认 `'AVGO'`）
+- `outcome_log.direction_correct IS NOT NULL`
+- `prediction_log.analysis_date >= '2023-01-03'`
+- `prediction_log.analysis_date <= '2024-08-02'`
+- `prediction_log.analysis_date < final_test_cutoff`
+- `prediction_log.prediction_for_date < final_test_cutoff`
+- `prediction_log.prediction_for_date > prediction_log.analysis_date`（anti-lookahead）
+
+`actual_state` / `final_direction` 不映射；adapter `_actual_direction` 在 `actual_state` 缺失时 fallback 到 `actual_close_change`。
+
+### 42.5 W4 jsonl loader behavior
+
+| 行为 | 状态 |
+|---|---|
+| 逐行 `json.loads` | ✅ |
+| 跳过空行 | ✅ |
+| 非 dict 行跳过 | ✅ |
+| `as_of_date >= cutoff` 跳过 | ✅ |
+| `prediction_for_date >= cutoff` 跳过 | ✅ |
+| 原字段 deepcopy 保留 | ✅（`actual_state` / `final_direction` 等不被 wrapper 触碰） |
+| 添加 `source="w4_jsonl"` | ✅ |
+| 不读 manifest 文件 | ✅（manifest 由 `load_w4_manifest` 单独读） |
+
+### 42.6 DB guard
+
+| 行为 | 状态 |
+|---|---|
+| `get_db_fingerprint` 返回 `{path, exists, mtime_ns, size_bytes}` | ✅ |
+| 文件不存在 → `exists=False` + mtime/size 为 `None` | ✅ |
+| `assert_db_unchanged` 比较 mtime_ns + size_bytes（不比 path） | ✅ |
+| 任一字段变化 → `RuntimeError` | ✅ |
+| `load_w1_w3_rows_from_db` 之后 fingerprint 不变 | ✅（test_does_not_modify_db） |
+| `build_real_validation_inputs` 之后 fingerprint 不变 | ✅ |
+| CLI `--prepare-inputs-only` 之后 fingerprint 不变 | ✅ |
+
+### 42.7 input bundle schema（`real_validation_input_bundle.v1`）
+
+```json
+{
+  "schema_version": "real_validation_input_bundle.v1",
+  "db_path": "...",
+  "db_fingerprint": {"path": "...", "exists": true, "mtime_ns": ..., "size_bytes": ...},
+  "w1_w3_rows": [...],
+  "w4_jsonl_path": "...",
+  "w4_rows": [...],
+  "w4_manifest_path": "...",
+  "w4_manifest": {...},
+  "final_test_cutoff": "2026-01-01",
+  "w4_manifest_status": "ok | error",
+  "warnings": [...]
+}
+```
+
+`w4_manifest_status` 只是 surface check（`status="ok"` 且 `final_test_touched=False`）；权威 gate 留给 adapter / helper（与 3R-4.3A 一致）。
+
+### 42.8 CLI dry guard
+
+| 行为 | 状态 |
+|---|---|
+| 无 `--prepare-inputs-only` → exit code 2 + stderr 提示 | ✅ |
+| 缺 `--db-path` / `--w4-jsonl` / `--w4-manifest` → exit code 2 + stderr 列出缺失 | ✅ |
+| `--prepare-inputs-only` + 三个路径全到位 → exit 0 + stdout JSON summary | ✅ |
+| 没有 `--run-real-validation` flag | ✅；real execution 不在本节范围 |
+| CLI 不创建任何文件（不写 logs / output_dir） | ✅；只 stdout |
+| CLI 不修改 DB | ✅（test_prepare_only_succeeds 二次执行验证 fingerprint 不变） |
+
+### 42.9 测试覆盖
+
+32 focused tests 全部通过：
+
+| 测试类 | 数量 | 覆盖点 |
+|---|---|---|
+| `FingerprintTests` | 2 | 文件不存在 / 文件存在 |
+| `AssertDbUnchangedTests` | 3 | 等指纹 pass / mtime 变化 raise / size 变化 raise |
+| `LoadW1W3RowsFromDbTests` | 6 | 仅 W1-W3 AVGO paired / 字段齐 / int→bool / DB 不变 / 2026 过滤 / lookahead 过滤 |
+| `LoadW4RowsFromJsonlTests` | 4 | 2026 过滤 / source 标签 / 原字段保留 / 空行容忍 |
+| `LoadW4ManifestTests` | 2 | 正常 dict / 非对象 raise |
+| `StaticRegimeLabelProviderTests` | 2 | regime_labels.v1 shape / template 不被 mutate |
+| `BuildRealValidationInputsTests` | 5 | bundle shape / DB+W4 合并 / 不调 orchestrator / DB 不变 / w4_manifest_status warnings |
+| `CliTests` | 3 | 无 flag exit nonzero / 缺 args exit nonzero / prepare-only 成功 + DB 不变 |
+| `IsolationTests` | 5 | 23 项 forbidden import 锁定 / hard/required 字符串锁定 / threshold sweep 字符串锁定 / 不调 orchestrator / sqlite3 仅 read-only 模式 |
+
+### 42.10 测试结果
+
+| 命令 | 结果 |
+|---|---|
+| `pytest tests/test_run_real_continuous_smoothing_validation.py -q` | **32 passed** |
+| `pytest tests/test_run_continuous_smoothing_validation.py tests/test_replay_validation_record_adapter.py -q` | **72 passed**（零回归） |
+| `pytest -q`（全量） | **2857 passed / 10 skipped / 0 failed / 26 warnings / 94 subtests** |
+
+测试基线累积：**Step 3R-3.3A 终点 2825 → Step 3R-3.3C-B 终点 2857**（+32 净增；2825 基线零回归）。
+
+### 42.11 边界事实
+
+- ❌ **没**改 `predict.py` / `run_predict` / `scanner.py` / `prediction_store.py` / `app.py` / DB schema
+- ❌ **没**改 04 / 05 / 07 任何 required 字段
+- ❌ **没**写 DB；wrapper 只用 `sqlite3.connect("file:...?mode=ro", uri=True)`
+- ❌ **没**改 `services/regime_labels_builder.py` / `services/continuous_smoothing_candidate.py` / `services/replay_validation_record_adapter.py` / `services/regime_validation_helper.py` / 任何已有 service
+- ❌ **没**改 `scripts/run_continuous_smoothing_validation.py`（dry-run orchestrator）
+- ❌ **没**让 `_PROTECTION_LAYER_CONNECTED` 翻 True；wrapper 完全不引用该常量
+- ❌ **没**接网络 / 市场数据 / trading API（`ast.walk` 锁定 23 项 forbidden）
+- ❌ **没**触碰 2026-01-01 之后 final test range（DB SQL 双重 cutoff + jsonl 双重 cutoff）
+- ❌ **没**调用 dry-run orchestrator；wrapper 不 import 该模块（`ast.walk` + 字符串锁定）
+- ❌ **没**真实运行 W1-W4 validation；CLI 默认 nonzero 退出
+- ❌ **没**扫 / 学 / 反推 candidate_threshold（静态字符串测试 + design seed 0.60 锁定）
+- ❌ **没**改 Step 3R-3.3 / 3R-3.3A / 3R-3.3B / 3R-3.3C / 3R-3.3C-A 已 merge 文档
+- ❌ **没** add 任何 W4 / smoke / `logs/regime_validation/` / `logs/prediction_log.jsonl` / DB backup / `agent_loop.py` / `.claude/worktrees/`
+- ✅ `real_validation_input_bundle.v1` schema + DB read-only loader + W4 jsonl loader + W4 manifest loader + DB guard + static label provider + dry-run CLI 全部 acceptance 锁定
+- ✅ **2857 / 0 failed / 10 skipped**；现有 2825 基线零回归
