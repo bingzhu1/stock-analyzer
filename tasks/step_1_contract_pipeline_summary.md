@@ -3965,5 +3965,178 @@ informational warning。
 - ✅ `replay_validation_records.v1` schema + W4 jsonl 字段映射 + W4 manifest gate（8 项）+ candidate_threshold required + 6 candidate state + 4 window 分派 + 2026 双重 hard stop 全部锁定
 - ✅ **2801 / 0 failed / 10 skipped**；现有 2753 基线零回归
 
+## 41. Continuous Smoothing Validation Orchestrator（Step 3R-3.3A，dry-run read-only）
+
+### 41.1 范围
+
+新增 `scripts/run_continuous_smoothing_validation.py`，按 Step 3R-3.3
+4-fold validation run design / checkpoint（commits `8a24295` /
+`2535467`）实施 dry-run orchestrator。orchestrator 是**纯 read-only**
+caller：caller 注入 `replay_rows` + `regime_label_provider` callable +
+`w4_manifest` dict；orchestrator 串联 candidate → adapter → helper，
+返回 `continuous_smoothing_validation_run.v1`（含 records / report /
+run_manifest）；可选写 4 个本地文件。**不**读 W4 jsonl 文件、**不**读
+W4 manifest 文件、**不**写 DB、**不**接网络 / trading、**不**扫
+threshold、**不**调 SEED 系数。
+
+### 41.2 改动文件
+
+| 路径 | 类型 | 说明 |
+|---|---|---|
+| `scripts/run_continuous_smoothing_validation.py` | 新增 | dry-run orchestrator（~ 270 行）；`run_continuous_smoothing_validation(...)` + W4 manifest dict 透传 + 4 文件 writer + minimal `__main__` 提示（无 CLI 解析） |
+| `tests/test_run_continuous_smoothing_validation.py` | 新增 | 24 focused tests（schema / flow / immutability / final-test guards / threshold policy / write_outputs / report_status / isolation）；全部用 stub `regime_label_provider` 在内存中跑链路 |
+| `tasks/step_1_contract_pipeline_summary.md` | 修改 | 新增 §41（本节） |
+
+`predict.py` / `run_predict` / `scanner.py` / `prediction_store.py` /
+`app.py` / `services/regime_labels_builder.py` /
+`services/continuous_smoothing_candidate.py` /
+`services/replay_validation_record_adapter.py` /
+`services/regime_validation_helper.py` / 任何 builder / DB schema
+全部未触碰。
+
+### 41.3 公共 API
+
+```python
+run_continuous_smoothing_validation(
+    replay_rows,
+    *,
+    regime_label_provider,      # callable: (as_of_date, row) -> regime_labels.v1 dict
+    w4_manifest,                # dict, caller-injected (no file read)
+    candidate_threshold=0.60,   # design seed; orchestrator does NOT sweep / learn
+    candidate_name="continuous_smoothing_v1",
+    final_test_cutoff="2026-01-01",
+    output_dir=None,
+    write_outputs=False,        # default: in-memory only
+) -> dict
+```
+
+| 项 | 值 |
+|---|---|
+| 类型 | **pure read-only orchestrator** |
+| 是否读 / 写 DB | ❌ 否 |
+| 是否读 W4 jsonl 文件 | ❌ 否（caller 注入 `replay_rows`） |
+| 是否读 W4 manifest 文件 | ❌ 否（caller 注入 `w4_manifest` dict） |
+| 是否写文件 | 默认 ❌；`write_outputs=True` 时写 4 文件到 `output_dir` |
+| 是否接 yfinance / requests / trading | ❌ 否（`ast.walk` 锁定 18 项 forbidden module） |
+| 是否扫 / 学 / 反推 threshold | ❌ 否（静态字符串测试锁定无 `for threshold in` / `optimize_threshold` / `sweep_threshold` 等模式） |
+| 是否调 SEED 系数 | ❌ 否（仅 read-only 调 candidate generator） |
+| 是否触碰 2026 | ❌ 否（orchestrator 起点 row filter + adapter manifest gate + 各层 final_test_refusal 传播） |
+| `__main__` CLI | ❌ 不解析 argparse；仅 print 提示 + `SystemExit(0)` |
+
+### 41.4 输出 schema
+
+`continuous_smoothing_validation_run.v1`：
+
+```json
+{
+  "schema_version": "continuous_smoothing_validation_run.v1",
+  "candidate_name": "continuous_smoothing_v1",
+  "candidate_threshold": 0.60,
+  "records_loaded": 9,
+  "records_adapted": 9,
+  "report_status": "fail",
+  "replay_validation_records": {"...": "replay_validation_records.v1"},
+  "regime_validation_report": {"...": "regime_validation_report.v1"},
+  "run_manifest": {"...": "regime_validation_run_manifest.v1"},
+  "warnings": []
+}
+```
+
+`run_manifest.v1` 12 字段（与 3R-3.3 design §7 一致）：`schema_version`
+/ `candidate_name` / `candidate_threshold` / `fold_count`(=4) /
+`windows`(W1-W4) / `w4_manifest_status`(`ok`/`error`) /
+`final_test_cutoff`(`"2026-01-01"`) / `final_test_touched` /
+`records_loaded` / `records_adapted` / `report_status` / `warnings`。
+
+### 41.5 orchestration flow
+
+| # | 步骤 | 实施 |
+|---|---|---|
+| 1 | 起点 row filter | `as_of_date >= cutoff` → skip + warning + `final_test_touched=true` |
+| 2 | per row | `regime_label_provider(as_of_date, row)` → `regime_labels.v1` dict |
+| 3 | per row | `build_continuous_smoothing_candidate(labels, ...)` → candidate dict |
+| 4 | per row | attach candidate to **deep-copied** row（不 mutate input） |
+| 5 | batch | `build_replay_validation_records(enriched_rows, ..., w4_manifest=manifest)` |
+| 6 | batch | `build_regime_validation_report(records, ..., require_w4_manifest=False)`（adapter 已 gate manifest dict；helper file-gate 跳过避免 file read）|
+| 7 | 计算 `report_status` | `final_test_touched` 或 `w4_manifest_status="error"` → `"error"`；否则 mirror `helper.overall_status` |
+| 8 | optional write | `write_outputs=True` 时写 4 文件到 `output_dir`（已存在 → `FileExistsError`） |
+
+### 41.6 write_outputs behavior
+
+| 行为 | 状态 |
+|---|---|
+| 默认 `write_outputs=False` | ✅ 不写文件；返回 in-memory 结果 |
+| `write_outputs=True` 必须传 `output_dir` | ✅；缺则 `ValueError` |
+| `write_outputs=True` + `output_dir` 已存在 | ✅ `FileExistsError`（v1 不提供 `--allow-overwrite`） |
+| 输出 4 文件 | `replay_validation_records.json` / `regime_validation_report.json` / `regime_validation_summary.md` / `run_manifest.json` |
+| 不写 `output_dir` 之外 | ✅（`test_does_not_write_outside_output_dir` 锁定） |
+| 不写 logs/ 默认目录 | ✅；caller 必须显式 `output_dir` |
+
+### 41.7 threshold policy
+
+| 项 | 状态 |
+|---|---|
+| **default = 0.60**（design seed） | ✅ |
+| caller 可显式覆盖（例 0.5） | ✅ |
+| **不扫 threshold**（无 `for threshold in [...]` / `threshold_grid` / `sweep_threshold` 模式） | ✅（静态字符串测试锁定） |
+| **不学 threshold**（adapter API required，no default reverse） | ✅ |
+| 非法 threshold 透传 adapter 的 `ValueError` | ✅ |
+| 不 override SEED 系数 | ✅；orchestrator 不暴露 SEED 参数 |
+
+### 41.8 测试覆盖
+
+24 focused tests 全部通过：
+
+| 测试类 | 数量 | 覆盖点 |
+|---|---|---|
+| `RunSchemaTests` | 2 | 顶层 10 字段 + run_manifest 12 字段 |
+| `FlowTests` | 3 | candidate 附加到 record / records_adapted 匹配 / helper report 返回 |
+| `ImmutabilityTests` | 2 | 输入 rows + manifest 都不 mutate（深拷贝快照） |
+| `FinalTestGuardTests` | 3 | 2026 row skip / regime_labels final_test_refusal 传播 / W4 manifest final_test_touched |
+| `ThresholdPolicyTests` | 4 | default=0.60 / 自定义传递 / 非法 ValueError / **静态扫 threshold sweep 模式不存在** |
+| `WriteOutputsTests` | 5 | 默认不写 / 必须 output_dir / 写 4 文件 / 已存在 raise / 不写外部路径 |
+| `ReportStatusTests` | 2 | 镜像 helper.overall_status / warnings 传播 |
+| `IsolationTests` | 3 | `ast.walk` 锁定 18 项 forbidden module / 无 W4 路径硬编码 / 无 hard / forced / required 字段名 |
+
+### 41.9 测试结果
+
+| 命令 | 结果 |
+|---|---|
+| `pytest tests/test_run_continuous_smoothing_validation.py -q` | **24 passed** |
+| `pytest tests/test_replay_validation_record_adapter.py -q` | **48 passed**（零回归） |
+| `pytest tests/test_regime_validation_helper.py -q` | **33 passed**（零回归） |
+| `pytest tests/test_continuous_smoothing_candidate.py -q` | **31 passed**（零回归） |
+| `pytest -q`（全量） | **2825 passed / 10 skipped / 0 failed / 26 warnings / 94 subtests** |
+
+测试基线累积：**Step 3R-4.3A 终点 2801 → Step 3R-3.3A 终点 2825**
+（+24 净增；2801 基线零回归）。
+
+### 41.10 边界事实
+
+- ❌ **没**改 `predict.py` / `run_predict` / `scanner.py` /
+  `prediction_store.py` / `app.py` / DB schema
+- ❌ **没**改 04 / 05 / 07 任何 required 字段
+- ❌ **没**改 `final_projection` / `final_direction` /
+  `simulated_trade` / `no_trade` / `confidence_system`（字符串静态测试锁定）
+- ❌ **没**写 DB；orchestrator 是纯函数
+- ❌ **没**改 `services/regime_labels_builder.py` /
+  `services/continuous_smoothing_candidate.py` /
+  `services/replay_validation_record_adapter.py` /
+  `services/regime_validation_helper.py` / 任何已有 service
+- ❌ **没**让 `_PROTECTION_LAYER_CONNECTED` 翻 True（字符串静态测试锁定）
+- ❌ **没**让 `hard_gate_status.protection_layer_connected` 自动 pass
+- ❌ **没**启用 `hard` / `forced_exclusion` / `anti_false_exclusion_triggered`
+- ❌ **没**接 `yfinance` / `requests` / 任何网络（`ast.walk` 锁定）
+- ❌ **没**接 trading API / `longbridge` / `broker` / `paper_trade`（`ast.walk` 锁定）
+- ❌ **没**触碰 2026-01-01 之后 final test range（orchestrator 起点 + 6 层传播）
+- ❌ **没**读真实 W4 jsonl / manifest 文件（caller 注入 dict）
+- ❌ **没**真实运行 W1-W4 validation（dry-run orchestrator + stub provider）
+- ❌ **没**扫 / 学 / 反推 candidate_threshold（静态字符串测试 + design seed 0.60 锁定）
+- ❌ **没**改 Step 3R-3.3 design / checkpoint
+- ❌ **没**改 Step 3R-4 protocol thresholds / 3R-2 helper / 3R-3.1 candidate / 3R-4.2 helper / 3R-4.3A adapter 行为
+- ✅ `continuous_smoothing_validation_run.v1` schema + 8 步 orchestration + write_outputs 4 文件 + 静态 threshold-sweep 锁定 + 18 项 isolation 全部 acceptance 锁定
+- ✅ **2825 / 0 failed / 10 skipped**；现有 2801 基线零回归
+
+
 
 
