@@ -3798,5 +3798,172 @@ claim pass / fail：
 - ✅ `continuous_smoothing_candidate.v1` schema + 5 seed coefficients + market_trend_strength 4 段 + monthly_shock 3 段 + risk_bucket 5 桶 + final_test_refusal 双路径 全部 acceptance 锁定
 - ✅ **2753 / 0 failed / 10 skipped**；现有 2722 基线零回归
 
+## 40. Replay Validation Record Adapter（Step 3R-4.3A，read-only adapter）
+
+### 40.1 范围
+
+新增 `services/replay_validation_record_adapter.py`，按 Step 3R-4.3
+real replay record adapter design / checkpoint（commits `9da5e57` /
+`2ce8230`）实施 `replay_validation_records.v1` 适配层。adapter 是
+**纯 read-only**：不读 / 不写 DB、不读文件、不跑 replay / validation、
+不接网络 / trading、不导入 / 调用 validation 评分层、不改 input rows /
+manifest、不触碰 2026 final test range。adapter 只在内存中把 W4 jsonl
+行（+ W1/W2/W3 同 schema）+ caller-injected candidate dict 组装成
+helper 接受的 record list。
+
+### 40.2 改动文件
+
+| 路径 | 类型 | 说明 |
+|---|---|---|
+| `services/replay_validation_record_adapter.py` | 新增 | pure read-only adapter（~ 290 行）；W4 manifest gate（8 项）+ row → record mapping + 2026 cutoff + window assignment |
+| `tests/test_replay_validation_record_adapter.py` | 新增 | 48 focused tests |
+| `tasks/step_1_contract_pipeline_summary.md` | 修改 | 新增 §40（本节） |
+
+`predict.py` / `run_predict` / `scanner.py` / `prediction_store.py` /
+`app.py` / `services/regime_labels_builder.py` /
+`services/regime_validation_helper.py` /
+`services/continuous_smoothing_candidate.py` / 任何 builder / DB schema
+全部未触碰；no `services.prediction_store` / `services.regime_validation_helper`
+/ `services.regime_labels_builder` / `services.continuous_smoothing_candidate`
+/ `longbridge` / `broker` / `paper_trade` / `yfinance` / `requests` /
+`streamlit` / `json` / `os` / `pathlib` 引入（`ast.walk` 静态测试锁定）。
+
+### 40.3 公共 API
+
+```python
+build_replay_validation_records(
+    replay_rows,
+    *,
+    candidate_threshold,         # REQUIRED, no default
+    candidate_name="continuous_smoothing_v1",
+    final_test_cutoff="2026-01-01",
+    require_w4_manifest=True,
+    w4_manifest=None,
+) -> dict
+```
+
+| 项 | 值 |
+|---|---|
+| 类型 | **pure read-only adapter** |
+| 是否读 / 写 DB | ❌ 否 |
+| 是否读文件 | ❌ 否（manifest 为 caller 注入 dict；无 `open(...)` / 无 `json` / `os` / `pathlib` import） |
+| 是否跑 replay / validation | ❌ 否 |
+| 是否调用 validation 评分层 | ❌ 否（不导入；不引用其函数名） |
+| 是否改 input | ❌ 否（深拷贝测试锁定 rows + manifest） |
+| 是否暴露 threshold default | ❌ 否（caller 必填；None / 非数字 / 范围越界 → `ValueError`） |
+| 是否触碰 2026 | ❌ 否（manifest gate + record-level cutoff 双重 hard stop） |
+
+### 40.4 W4 jsonl mapping
+
+| jsonl 字段 | record 字段 |
+|---|---|
+| `as_of_date` | `analysis_date` |
+| `prediction_for_date` | `prediction_for_date` |
+| `direction_correct` (bool) | `prediction_correct` + (v1) `baseline_correct` |
+| `actual_state`（"大涨"/"小涨"/"震荡"/"小跌"/"大跌"）| 推 `actual_direction` ∈ `{"up","flat","down","unknown"}` |
+| `actual_close_change` | 备用 `actual_direction` 来源（>0 / <0 / =0） |
+| `candidate`（caller 注入） | `candidate`（深拷贝） |
+| `labels`（optional） | `labels`（深拷贝） |
+| `pos20`（percentage） | **不直接用**（与 3R-2 builder decimal 单位不同） |
+| 缺 `direction_correct` / 非 bool | record skip + warning |
+
+### 40.5 candidate_threshold
+
+| 行为 | 状态 |
+|---|---|
+| **caller 必填**，no default | ✅ |
+| `None` → `ValueError` | ✅ |
+| `bool` → `ValueError`（防 `True`/`False` 被当 1/0） | ✅ |
+| `str` → `ValueError`（防 `"0.5"` 被 `float()` 接受） | ✅ |
+| 非 int/float → `ValueError` | ✅ |
+| `< 0.0` 或 `> 1.0` → `ValueError` | ✅ |
+| `NaN` → `ValueError` | ✅ |
+| `0.0` / `1.0` 边界 accepted | ✅ |
+| **adapter 不内置 default**；不优化；不学 | ✅ |
+
+### 40.6 candidate_triggered
+
+| 场景 | 行为 |
+|---|---|
+| `risk_score >= candidate_threshold` | `candidate_triggered = True` |
+| `risk_score < candidate_threshold` | `candidate_triggered = False` |
+| 缺 `row["candidate"]` | `False` + warning `missing_candidate` |
+| `row["candidate"]["risk_score"] is None` | `False` + warning `candidate_unavailable` |
+| `row["candidate"]["final_test_refusal"] is True` | `False` + warning `candidate_final_test_refusal` |
+| `risk_score` 非 int/float | `False` + warning `candidate_unavailable` |
+
+### 40.7 W4 manifest gate（8 项）
+
+| # | 检查 | 期望 |
+|---|---|---|
+| 1 | manifest 必须为 dict（非 None） | `dict` |
+| 2 | `schema_version` | `"w4_replay_manifest.v1"` |
+| 3 | **`final_test_touched`** | **`False`**（任何 `True` → `final_test_refusal=true` + report 作废） |
+| 4 | `status` | `"ok"` |
+| 5 | `paired_outcomes` | `int >= 20` |
+| 6 | `replay_window.start` | `"2024-08-03"` |
+| 7 | `replay_window.end` | `"2025-12-31"` |
+| 8 | `final_test_cutoff` | `"2026-01-01"` |
+
+任一失败：`records=[]` + warnings + `final_test_refusal` 镜像 manifest
+的 `final_test_touched`。
+
+`require_w4_manifest=False` → 跳过 gate + emit `w4_manifest_not_required`
+informational warning。
+
+### 40.8 测试覆盖
+
+48 focused tests 全部通过：
+
+| 测试类 | 数量 | 覆盖点 |
+|---|---|---|
+| `OutputSchemaTests` | 3 | 顶层 8 字段 / 默认 W1-W4 / cutoff 默认 |
+| `ThresholdValidationTests` | 7 | None / 负数 / >1 / 字符串 / bool / 0.0 / 1.0 边界 |
+| `W4ManifestGateTests` | 10 | valid / final_test_touched=true / wrong start / wrong end / paired<20 / status≠ok / schema mismatch / cutoff mismatch / 缺 manifest / require=False informational |
+| `RowMappingTests` | 3 | 日期映射 / direction_correct → prediction+baseline / actual_state 5 段 |
+| `CandidateTriggeredTests` | 6 | >= threshold / < threshold / 边界 = / 缺 candidate / risk_score=None / candidate refusal |
+| `DerivedFieldsTests` | 2 | exclusion=triggered / survival_case 真值表 |
+| `WindowAssignmentTests` | 4 | W1/W2/W3/W4 分窗 |
+| `SafetyTests` | 6 | 2026 refusal / 2026-01-01 边界 / outside windows / invalid date / 缺 direction_correct / rows 不 mutate / manifest 不 mutate |
+| `NoForbiddenOutputTests` | 2 | 顶层 + record 都无 `gate_status` / `validation_passed` / `overall_status` / `hard_*` / `simulated_trade` / `no_trade` / `final_direction` / `final_projection` |
+| `IsolationTests` | 4 | `ast.walk` 锁定 22 项 forbidden module / 不引用 `build_regime_validation_report` / `regime_validation_report.v1` / 不 import json/os/pathlib / 不出现 hard / forced / required 字段名 |
+
+### 40.9 测试结果
+
+| 命令 | 结果 |
+|---|---|
+| `pytest tests/test_replay_validation_record_adapter.py -q` | **48 passed** |
+| `pytest tests/test_continuous_smoothing_candidate.py -q` | **31 passed**（零回归） |
+| `pytest tests/test_regime_validation_helper.py -q` | **33 passed**（零回归） |
+| `pytest -q`（全量） | **2801 passed / 10 skipped / 0 failed / 26 warnings / 94 subtests** |
+
+测试基线累积：**Step 3R-3.1 终点 2753 → Step 3R-4.3A 终点 2801**
+（+48 净增；2753 基线零回归）。
+
+### 40.10 边界事实
+
+- ❌ **没**改 `predict.py` / `run_predict` / `scanner.py` /
+  `prediction_store.py` / `app.py` / DB schema
+- ❌ **没**改 04 / 05 / 07 任何 required 字段
+- ❌ **没**改 `final_projection` / `final_direction` /
+  `simulated_trade` / `no_trade` / `confidence_system`（字符串静态测试锁定）
+- ❌ **没**写 DB；adapter 是纯函数，输入 list 输出 dict
+- ❌ **没**改 `services/regime_labels_builder.py` /
+  `services/regime_validation_helper.py` /
+  `services/continuous_smoothing_candidate.py` / 任何已有 service
+- ❌ **没**让 `_PROTECTION_LAYER_CONNECTED` 翻 True（字符串静态测试锁定）
+- ❌ **没**让 `hard_gate_status.protection_layer_connected` 自动 pass
+- ❌ **没**启用 `hard` / `forced_exclusion` / `anti_false_exclusion_triggered`
+- ❌ **没**接 `yfinance` / `requests` / 任何网络（`ast.walk` 锁定）
+- ❌ **没**接 trading API / `longbridge` / `broker` / `paper_trade`（`ast.walk` 锁定）
+- ❌ **没**触碰 2026-01-01 之后 final test range（manifest gate + record-level cutoff 双重 hard stop）
+- ❌ **没**读 W4 output file（manifest 必须 caller 注入 dict；adapter 无 `open(...)` / 无 `json`/`os`/`pathlib` import）
+- ❌ **没**调用 / 导入 validation 评分层 helper（`ast.walk` 锁定）
+- ❌ **没**宣称 validation pass / fail；输出**无** `gate_status` / `validation_passed` / `overall_status` 等字段
+- ❌ **没**改 Step 3R-4.3 design / checkpoint
+- ❌ **没**改 Step 3R-2 helper / 3R-3.1 candidate / 3R-4 protocol thresholds / 3R-4.2 helper 行为
+- ✅ `replay_validation_records.v1` schema + W4 jsonl 字段映射 + W4 manifest gate（8 项）+ candidate_threshold required + 6 candidate state + 4 window 分派 + 2026 双重 hard stop 全部锁定
+- ✅ **2801 / 0 failed / 10 skipped**；现有 2753 基线零回归
+
 
 
