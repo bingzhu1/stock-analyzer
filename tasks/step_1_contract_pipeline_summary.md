@@ -3647,3 +3647,156 @@ emit `w4_manifest_not_required` informational warning。
 - ✅ `regime_validation_report.v1` 14 必备字段 + 3 值 `overall_status`（`"pass"` / `"fail"` / `"error"`，**无 `"partial"`**） 全 schema 锁定
 - ✅ **2722 / 0 failed / 10 skipped**；现有 2689 基线零回归
 
+## 39. Continuous Smoothing Candidate Generator（Step 3R-3.1，read-only diagnostics）
+
+### 39.1 范围
+
+新增 `services/continuous_smoothing_candidate.py`，按 Step 3R-3
+continuous smoothing candidate design / checkpoint（commits `65fe411`
+/ `596e013`）实施 `continuous_smoothing_candidate.v1` 生成器。Helper
+是**纯 read-only**：不读 / 不写 DB、不跑 replay、不接网络 / trading、
+不读 W4 output、不改 input regime_labels dict、不宣称 validation
+pass / fail、不触碰 2026 final test range。
+
+### 39.2 改动文件
+
+| 路径 | 类型 | 说明 |
+|---|---|---|
+| `services/continuous_smoothing_candidate.py` | 新增 | pure read-only candidate generator（~ 220 行）；输入 `regime_labels.v1` dict，输出 `continuous_smoothing_candidate.v1`（含 risk_score / risk_bucket / market_trend_strength / monthly_shock / SEED_COEFFICIENTS）|
+| `tests/test_continuous_smoothing_candidate.py` | 新增 | 31 focused tests（schema / risk_score / market_trend_strength 4 段 / monthly_shock / 缺字段 / final_test_refusal / immutability / no validation claims / isolation / SEED 不变量） |
+| `tasks/step_1_contract_pipeline_summary.md` | 修改 | 新增 §39（本节） |
+
+`predict.py` / `run_predict` / `scanner.py` / `prediction_store.py` /
+`app.py` / `services/regime_labels_builder.py` /
+`services/regime_validation_helper.py` / 任何 builder / DB schema 全部
+未触碰；no `services.prediction_store` / `longbridge` / `broker` /
+`paper_trade` / `yfinance` / `requests` / `streamlit` / `services.regime_validation_helper`
+引入（`ast.walk` 静态测试锁定）。
+
+### 39.3 公共 API
+
+```python
+build_continuous_smoothing_candidate(
+    regime_labels: dict,
+    *,
+    as_of_date: str | None = None,
+    final_test_cutoff: str = "2026-01-01",
+) -> dict
+```
+
+| 项 | 值 |
+|---|---|
+| 类型 | **pure read-only helper** |
+| 是否读 / 写 DB | ❌ 否 |
+| 是否跑 replay / 接 yfinance / requests / trading | ❌ 否 |
+| 是否读 W4 output | ❌ 否（输入是 caller 提供的 `regime_labels.v1` dict） |
+| 是否 import `services.regime_validation_helper` | ❌ 否（候选层 / 评分层解耦；`ast.walk` 锁定） |
+| 是否改 input `regime_labels` | ❌ 否（深拷贝测试锁定） |
+| 是否宣称 validation pass / fail | ❌ 否（无 `gate_status` / `validation_passed` / `overall_status` 等字段） |
+| 是否触碰 2026 | ❌ 否（`as_of_date >= cutoff` → `final_test_refusal=true` + risk_score=None） |
+
+### 39.4 SEED 系数
+
+design-stage values from Step 3R-3 §5；**not validated**；helper 不
+claim pass / fail：
+
+| 系数 | 值 | 方向 |
+|---|---:|---|
+| `pos20` | **+1.2** | pos20 高 → 风险高 |
+| `avgo_minus_soxx_20d` | **+1.0** | AVGO 跑赢 SOXX 多 → 风险高 |
+| `peer_5d_aligned_pct` | **-0.8** | peer 同向强 → 风险下降 |
+| `market_trend_strength` | **-0.7** | sustained bull 强 → 风险下降 |
+| `monthly_shock` | **+0.5** | shock / breakout 月 → 风险加成 |
+
+`risk_score = sigmoid(z)`，其中 `z = Σ coeff_i * feature_i`。
+`risk_score ∈ (0, 1)`；`adjustment_score = risk_score - 0.5`。
+
+### 39.5 `market_trend_strength`（4 段优先级）
+
+| 段 | 触发 | 值 |
+|---|---|---:|
+| `strong_bull` | `qqq_slope > 0.015` ∧ `soxx_slope > 0.015` ∧ `qqq_drawdown < 0.05` | **1.0** |
+| `bull` | `qqq_slope > 0.01` 或 `soxx_slope > 0.01`（任一） | **0.6** |
+| `weak` | `qqq_drawdown > 0.10` 或 `qqq_slope < -0.005` ∧ `soxx_slope < -0.005` | **-0.5** |
+| `neutral` | 其它 | **0.0** |
+
+### 39.6 `monthly_shock`（3 段优先级）
+
+| 段 | 触发 | 值 |
+|---|---|---:|
+| shock | `monthly_max_abs_daily_return >= 0.08` | **1.0** |
+| breakout | `monthly_return_pct >= 0.12` | **0.5** |
+| neutral | 其它 | **0.0** |
+
+### 39.7 `risk_bucket`
+
+| bucket | 范围 |
+|---|---|
+| `low` | `< 0.35` |
+| `medium` | `[0.35, 0.60)` |
+| `high` | `[0.60, 0.80)` |
+| `extreme` | `>= 0.80` |
+| `unknown` | `risk_score is None`（缺字段 / refusal） |
+
+### 39.8 final_test_refusal 路径
+
+| 触发 | 行为 |
+|---|---|
+| `as_of_date >= 2026-01-01`（含边界） | `final_test_refusal=true` + `risk_score=None` + `risk_bucket="unknown"` + warning `final_test_range_refusal` |
+| `regime_labels.final_test_refusal=True` | 同上 + warning `regime_labels_final_test_refusal_propagated` |
+| 显式 `as_of_date` 参数 override | argparse-side 优先于 `regime_labels["as_of_date"]` |
+
+### 39.9 测试覆盖
+
+31 focused tests 全部通过：
+
+| 测试类 | 数量 | 覆盖点 |
+|---|---|---|
+| `OutputSchemaTests` | 3 | 顶层 10 字段 / `seed_coefficients` 在 features_used 内 / `data_cutoff_date == as_of_date` |
+| `RiskScoreRangeTests` | 4 | risk_score ∈ [0, 1] / low bucket / extreme bucket / `adjustment_score = risk_score - 0.5` |
+| `MarketTrendStrengthTests` | 5 | strong_bull / bull / weak (drawdown) / weak (both negative) / neutral |
+| `MonthlyShockTests` | 3 | shock / breakout / neutral |
+| `MissingFeatureTests` | 3 | 缺 pos20 / 缺 peer / 缺 raw_features dict |
+| `FinalTestRefusalTests` | 4 | 边界 2026-01-01 / 后段 2026-04-01 / 显式 arg override / regime_labels propagated |
+| `ImmutabilityTests` | 1 | 输入 dict 深拷贝不被 mutate |
+| `NoValidationClaimsTests` | 2 | 无 `gate_status` / `validation_passed` / `overall_status` / `hard_*` / `simulated_trade` / `no_trade` / `final_direction` / `final_projection` 字段；无 `validation_passed` / `regime_validation_report.v1` 字符串 |
+| `IsolationTests` | 3 | `ast.walk` 锁定 18 项 forbidden module；字符串锁定无 `optimized_coefficients` / `hard_exclusion_allowed` / `forced_exclusion` / `_PROTECTION_LAYER_CONNECTED` / `simulated_trade` / `no_trade` / `final_direction` / `final_projection` |
+| `SeedCoefficientsTests` | 3 | SEED 系数 5 项与 design 一致 / 输出含 SEED / SEED 是 deep copy |
+
+### 39.10 测试结果
+
+| 命令 | 结果 |
+|---|---|
+| `pytest tests/test_continuous_smoothing_candidate.py -q` | **31 passed** |
+| `pytest tests/test_regime_labels_builder.py -q` | **38 passed**（零回归） |
+| `pytest -q`（全量） | **2753 passed / 10 skipped / 0 failed / 26 warnings / 94 subtests** |
+
+测试基线累积：**Step 3R-4.2 终点 2722 → Step 3R-3.1 终点 2753**
+（+31 净增；2722 基线零回归）。
+
+### 39.11 边界事实
+
+- ❌ **没**改 `predict.py` / `run_predict` / `scanner.py` /
+  `prediction_store.py` / `app.py` / DB schema
+- ❌ **没**改 04 / 05 / 07 任何 required 字段
+- ❌ **没**改 `final_projection` / `final_direction` /
+  `simulated_trade` / `no_trade` / `confidence_system`（字符串静态测试锁定）
+- ❌ **没**写 DB；helper 是纯函数，输入 dict 输出 dict
+- ❌ **没**改 `services/regime_labels_builder.py` /
+  `services/regime_validation_helper.py` / 任何已有 service
+- ❌ **没**让 `_PROTECTION_LAYER_CONNECTED` 翻 True（字符串静态测试锁定）
+- ❌ **没**让 `hard_gate_status.protection_layer_connected` 自动 pass
+- ❌ **没**启用 `hard` / `forced_exclusion` / `anti_false_exclusion_triggered`
+- ❌ **没**接 `yfinance` / `requests` / 任何网络（`ast.walk` 锁定）
+- ❌ **没**接 trading API / `longbridge` / `broker` / `paper_trade`（`ast.walk` 锁定）
+- ❌ **没**触碰 2026-01-01 之后 final test range
+- ❌ **没**读 W4 output（候选层只接受 caller-injected `regime_labels` dict）
+- ❌ **没**宣称 validation pass / fail；输出**无** `gate_status` / `validation_passed` / `overall_status` 等字段
+- ❌ **没**用 "optimized" 术语描述系数；统一称 "seed coefficients"（`test_module_does_not_use_optimized_terminology` 锁定）
+- ❌ **没**改 Step 3R-3 design / checkpoint
+- ❌ **没**改 Step 3R-2 helper / 3R-4 protocol thresholds / 3R-4.2 helper 行为
+- ✅ `continuous_smoothing_candidate.v1` schema + 5 seed coefficients + market_trend_strength 4 段 + monthly_shock 3 段 + risk_bucket 5 桶 + final_test_refusal 双路径 全部 acceptance 锁定
+- ✅ **2753 / 0 failed / 10 skipped**；现有 2722 基线零回归
+
+
+
