@@ -4656,3 +4656,162 @@ execution glue **不**直接 `import sqlite3`；DB 仅通过 wrapper 接触（wr
 - ❌ **没** add 任何 W4 / smoke / `logs/regime_validation/` / `logs/prediction_log.jsonl` / DB backup / `agent_loop.py` / `.claude/worktrees/`
 - ✅ execution glue + CLI lock + DB / market-data / backup guard + output-files verify + 21 项 isolation + 5 项 lock 字符串扫全部 acceptance 锁定
 - ✅ **2905 / 0 failed / 10 skipped**；现有 2877 基线零回归
+
+## 45. Continuous Smoothing Candidate v2（Step 3R-3.3F-A，false-exclusion-risk sidecar）
+
+### 45.1 范围
+
+把 Step 3R-3.3E v2 launch review design + checkpoint（commits `4fd1278` / `7c1a0e5`）+ Step 3R-3.3F v2 candidate design + checkpoint（commits `b16fce9` / `7eda5b4`）落到一个独立的 read-only candidate 模块：
+
+- 新模块：`services/continuous_smoothing_candidate_v2.py`（**不** import v1，**不**复制 v1 SEED）
+- 输出 schema：`continuous_smoothing_candidate_v2.v1`（`candidate_name = "continuous_smoothing_v2"`）
+- risk_score 语义**已锁定**：`risk_score = P̂(prediction will be wrong | features)`；高 score → exclude 是合理的；高 score + prediction 实际正确 = false exclusion
+- 8 个 deterministic engineering feature families（每个都是工程默认；**不**优化、**不**验证、**不**从 v1 fail baseline 拟合）
+- 引入 `risk_bucket = "abstain"` + `abstain_reason` + `trigger_support` —— 解决 v1 H5（缺 candidate-level min trigger support guard）
+- 仍**不**接 DB / 网络 / trading；**不**写 DB；**不**触碰 2026 final-test range；**不**自动启 hard / Gate 5 / Gate 6 / `_PROTECTION_LAYER_CONNECTED`
+- v2 仍**不**自动 promotion；real validation 由后续 single real run（用户单独触发）+ result checkpoint 决定
+
+### 45.2 改动文件
+
+| 路径 | 类型 | 说明 |
+|---|---|---|
+| `services/continuous_smoothing_candidate_v2.py` | 新增 | 8 family + abstain mode + locked risk_score 语义 + bucket boundaries 0.33/0.55/0.75（与 v1 0.35/0.60/0.80 不同） |
+| `tests/test_continuous_smoothing_candidate_v2.py` | 新增 | 32 focused tests（6 类） |
+| `tasks/step_1_contract_pipeline_summary.md` | 修改 | 新增 §45（本节） |
+
+### 45.3 公共 API
+
+```python
+build_continuous_smoothing_candidate_v2(
+    regime_labels: dict,
+    *,
+    as_of_date: str | None = None,
+    final_test_cutoff: str = "2026-01-01",
+) -> dict
+```
+
+输入：`regime_labels.v1` —— 仅读 `as_of_date` / `final_test_refusal` / `raw_features`（8 个 OHLC-derived 特征 key）。
+
+输出：`continuous_smoothing_candidate_v2.v1`，11 字段：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `schema_version` | str | `"continuous_smoothing_candidate_v2.v1"` |
+| `as_of_date` | str | row analysis_date（abstain on missing） |
+| `data_cutoff_date` | str | 同 as_of_date |
+| `candidate_name` | str | `"continuous_smoothing_v2"`（lock） |
+| `risk_score` | float \| None | 0~1 = `P̂(prediction wrong | features)`；abstain 时 None |
+| `risk_bucket` | str | `{abstain, low, medium, high, extreme}` |
+| `abstain_reason` | str \| None | 4 种：`final_test_range_refusal` / `missing_raw_features` / `low_trigger_support` / `missing_as_of_date` |
+| `trigger_support` | float \| None | 0~1 = 已 finite 输入的比例 |
+| `features_used` | dict | 8 family keys + `raw_inputs` audit |
+| `warnings` | list[str] | candidate 内部 warning |
+| `final_test_refusal` | bool | `as_of_date >= "2026-01-01"` 或 `regime_labels.final_test_refusal=True` 时 true |
+
+### 45.4 risk_score 语义（已锁定）
+
+```
+risk_score = P̂(prediction will be wrong | features)
+```
+
+- 高 score → candidate 越确信"如果不 exclude 这条 prediction，它将会错"
+- 高 score + prediction 实际正确 = **false exclusion**（candidate 错）
+- 与 adapter mapping 对齐：`risk_bucket ∈ {high, extreme}` → `candidate_triggered=True`；`{abstain, low, medium}` → `candidate_triggered=False`
+- adapter / helper / orchestrator / wrapper / glue 全部**不动**
+- calibration 来源：先验 + 工程判断；**不**从 v1 fail baseline 拟合（`calibration_context.fitted_to_v1_baseline = False`）
+
+### 45.5 8 feature families（每个都是 deterministic engineering heuristic）
+
+| # | family | 方向 | 触发条件（工程默认）|
+|---|---|---|---|
+| 1 | `trend_continuation_protection` | 负（保护强势 survivor） | `qqq_slope > 0.012 ∧ soxx_slope > 0.012 ∧ qqq_drawdown < 0.05 ∧ avgo_minus_soxx_20d ≥ 0` → `-0.4`；次级 `-0.2`；否则 `0` |
+| 2 | `peer_confirmation_strength` | 负 | `peer_5d_aligned_pct ≥ 0.75` → `-0.3`；`≥ 0.50` → `-0.15`；否则 `0` |
+| 3 | `overextension_without_confirmation` | 正 | `(pos20≥0.65 ∨ avgo_minus_soxx_20d≥0.025)` 且无 peer/trend 确认 → `0.25` 或 `0.5` |
+| 4 | `reversal_pressure` | 正 | `qqq_drawdown ≥ 0.10` → `0.4`；负 slopes → `0.3`；中等 drawdown + AVGO underperform → `0.2` |
+| 5 | `regime_stability` | 双向 | `monthly_max_abs ≥ 0.07` → `+0.2`；`< 0.03` → `-0.1` |
+| 6 | `monthly_shock_context` | 正 | shock + drawdown combo → `0.3`；shock alone → `0.1` |
+| 7 | `trigger_support` | float | 8 raw input 的 finite 比例；`< 0.5` → abstain |
+| 8 | `calibration_context` | descriptor | 描述 calibration 方法 + bucket 边界；明确 `fitted_to_v1_baseline=False` / `fitted_to_outcome_data=False` |
+
+风险得分：`risk_score = sigmoid(family[1..6] sum)`；7/8 不进入 sum（7 控 abstain；8 是 descriptor）。
+
+### 45.6 abstain mode
+
+| 触发条件 | abstain_reason |
+|---|---|
+| `as_of_date >= 2026-01-01` | `"final_test_range_refusal"`（`final_test_refusal=true`）|
+| `regime_labels.final_test_refusal=True` | `"final_test_range_refusal"`（同上；warning 多一条 `regime_labels_final_test_refusal_propagated`）|
+| `regime_labels.raw_features` 不是 dict | `"missing_raw_features"` |
+| `trigger_support < 0.5` | `"low_trigger_support"` |
+| `as_of_date` 不是 str / 空字符串 | `"missing_as_of_date"` |
+
+abstain ≠ pass / no_trade / hold / sell；adapter 视为 `candidate_triggered=False`；helper 不把这些 row 计入 false_exclusion / survival → 防 W1 那种 2 条 trigger 直接 collapse。
+
+### 45.7 isolation / forbidden imports
+
+`test_no_forbidden_imports` 锁定（27 项；ast.walk）：
+
+- `yfinance` / `requests` / `urllib` / `urllib3` / `httpx`
+- `longbridge` / `broker` / `paper_trade`
+- `sqlite3` / `services.prediction_store` / `services.outcome_capture`
+- `services.confidence_engine` / `contradiction_engine` / `risk_model` / `soft_metadata_simulator` / `anti_false_exclusion_dashboard` / `regime_diagnostics_dashboard` / `protection_layer_diagnostics` / `historical_replay_training`
+- `services.regime_validation_helper` / `replay_validation_record_adapter` / `real_regime_label_provider` / `regime_labels_builder`
+- **`services.continuous_smoothing_candidate`（v1，永久不 import）**
+- `scripts.run_continuous_smoothing_validation` / `run_real_continuous_smoothing_validation` / `run_real_continuous_smoothing_validation_execute`
+- `predict` / `scanner` / `streamlit` / `ui.protection_layer_diagnostics_renderer`
+
+字符串扫：
+
+- `test_no_v1_module_string_reference`：模块文本不出现 `services.continuous_smoothing_candidate ` / `from services.continuous_smoothing_candidate import`
+- `test_no_hard_required_or_trading_strings`（8 项）：`hard_exclusion_allowed` / `forced_exclusion` / `anti_false_exclusion_triggered` / `_PROTECTION_LAYER_CONNECTED` / `simulated_trade` / `no_trade` / `final_direction` / `final_projection`
+- `test_no_validation_pass_fail_strings`（5 项）：`gate_status` / `validation_passed` / `overall_status` / `primary_blocker` / `hard_gate_status`
+- `test_no_threshold_sweep_or_grid_strings`（8 项）：`thresholds = [` / `for threshold in` / `for t in thresholds` / `candidate_thresholds` / `threshold_grid` / `optimize_threshold` / `sweep_threshold` / `grid_search`
+- `test_no_fitted_to_v1_baseline_claim`（4 项）：`optimized_to_v1` / `validated_against_baseline` / `tuned_via_baseline` / `is_validated`，并断言 calibration_context 中 `fitted_to_v1_baseline=False` / `fitted_to_outcome_data=False`
+
+### 45.8 测试覆盖
+
+32 focused tests 全部通过：
+
+| 测试类 | 数量 | 覆盖点 |
+|---|---|---|
+| `OutputSchemaTests` | 5 | 11 必填字段 / schema_version / candidate_name / `risk_bucket ∈ ALLOWED_RISK_BUCKETS` / 8 family + raw_inputs / 21 项 forbidden 输出字段 |
+| `RiskScoreRangeTests` | 5 | risk_score in (0, 1) / 4 个 bucket（low / medium / high / extreme）通过 fixture 可达 |
+| `AbstainTests` | 7 | `as_of_date == cutoff` / `> cutoff` / `regime_labels.final_test_refusal` / 缺 raw_features / 低 trigger_support / 缺 as_of_date / abstain payload 仍含 8 family keys |
+| `TriggerSupportTests` | 2 | 顶层 + features_used 一致 / 全输入 ⇒ 1.0 |
+| `IsolationFromLeakTests` | 1 | outcome / W4 future-leak 字段（actual_close_change / direction_correct / actual_state / five_state_projection / predict_result_json / research_result_json / scan_result_json）注入后 → 输出不变 |
+| `InputNotMutatedTests` | 1 | 多次调用后 `regime_labels` 字典不变 |
+| `DeterminismTests` | 2 | same input ⇒ same output / calibration_context 声明 not fitted |
+| `AsOfDateOverrideTests` | 2 | 显式 as_of_date 覆盖 label 字段 / minimal regime_labels fixture works |
+| `IsolationTests` | 7 | 27 项 forbidden import / no v1 string ref / 8 hard-required-trading / 5 validation pass-fail / 8 threshold-sweep / 4 fitted-claim / cutoff lock |
+
+### 45.9 测试结果
+
+| 命令 | 结果 |
+|---|---|
+| `pytest tests/test_continuous_smoothing_candidate_v2.py -q` | **32 passed** |
+| `pytest tests/test_continuous_smoothing_candidate_v2.py tests/test_continuous_smoothing_candidate.py tests/test_regime_validation_helper.py -q` | **96 passed**（零回归） |
+| `pytest -q`（全量） | **2937 passed / 10 skipped / 0 failed / 26 warnings / 94 subtests** |
+
+测试基线累积：Step 3R-3.3C-C-C 终点 **2905** → Step 3R-3.3F-A 终点 **2937**（+32 净增；2905 基线零回归）。
+
+### 45.10 边界事实
+
+- ❌ **没**改 `predict.py` / `run_predict` / `scanner.py` / `prediction_store.py` / `app.py` / DB schema
+- ❌ **没**改 04 / 05 / 07 任何 required 字段
+- ❌ **没**改 v1 `services/continuous_smoothing_candidate.py`（仍锁；CANDIDATE_NAME / SEED_COEFFICIENTS / SCHEMA_VERSION 全部不变）
+- ❌ **没**改 `services/regime_features_builder.py` / `regime_labels_builder.py` / `regime_validation_helper.py` / `replay_validation_record_adapter.py` / `historical_replay_training.py` / `real_regime_label_provider.py` / 任何 ui 模块 / 任何 builder
+- ❌ **没**改 `scripts/run_continuous_smoothing_validation.py` / `run_real_continuous_smoothing_validation.py` / `run_real_continuous_smoothing_validation_execute.py`
+- ❌ **没**改 v1 `tests/test_continuous_smoothing_candidate.py` / 任何已 merge 测试
+- ❌ **没**写 DB；v2 不连 sqlite / 不连 DB write 路径
+- ❌ **没**接网络（`ast.walk` 锁定 27 项 forbidden import）
+- ❌ **没**接 trading API
+- ❌ **没**让 `_PROTECTION_LAYER_CONNECTED` 翻 True
+- ❌ **没**触碰 2026-01-01 之后 final-test range（cutoff 仍锁；abstain payload 含 `final_test_refusal=true`）
+- ❌ **没**真实运行 W1-W4 validation（real run 必须用户单独指令触发）
+- ❌ **没**扫 / 学 / 反推 candidate_threshold（v2 没有 threshold；v2 abstain / bucket 边界是工程默认，calibration_context 明确 not fitted）
+- ❌ **没** import v1 candidate（永久封禁；ast 检查 + 字符串扫双锁）
+- ❌ **没**复制 v1 SEED_COEFFICIENTS（v2 没有 seed_coefficients 字段；测试断言 `seed_coefficients` 不在输出）
+- ❌ **没**自动 promotion（v2 fail / pass 都不解锁 3R-5 / 3R-6 / hard / Gate 5 / Gate 6）
+- ❌ **没** add 任何 W4 / smoke / `logs/regime_validation/` / `logs/prediction_log.jsonl` / DB backup / `agent_loop.py` / `.claude/worktrees/`
+- ✅ v2 candidate factory + 8 family + abstain mode + locked risk_score 语义 + 27 项 isolation + 6 项字符串扫全部 acceptance 锁定
+- ✅ **2937 / 0 failed / 10 skipped**；现有 2905 基线零回归
