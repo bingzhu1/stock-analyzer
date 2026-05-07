@@ -4815,3 +4815,185 @@ abstain ≠ pass / no_trade / hold / sell；adapter 视为 `candidate_triggered=
 - ❌ **没** add 任何 W4 / smoke / `logs/regime_validation/` / `logs/prediction_log.jsonl` / DB backup / `agent_loop.py` / `.claude/worktrees/`
 - ✅ v2 candidate factory + 8 family + abstain mode + locked risk_score 语义 + 27 项 isolation + 6 项字符串扫全部 acceptance 锁定
 - ✅ **2937 / 0 failed / 10 skipped**；现有 2905 基线零回归
+
+## 46. V2 Execution Path（Step 3R-3.3F-C，parallel v2 orchestrator + execution glue）
+
+### 46.1 范围
+
+把 Step 3R-3.3F-C v2 execution path design + checkpoint（commits `18a41d8` / `fe76252`）落到两个独立的 v2-only 脚本 + 配套测试：
+
+- 新模块（**全部独立**；不 import v1）：
+  - `scripts/run_continuous_smoothing_validation_v2.py`：v2 orchestrator
+  - `scripts/run_real_continuous_smoothing_validation_execute_v2.py`：v2 execution glue
+- 解决 pre-flight blocker：v1 orchestrator (`scripts/run_continuous_smoothing_validation.py:45`) 硬 import v1 candidate；v2 必须有平行 path 才能跑
+- 保持 v1 / v2 完全隔离：v2 模块**不** import v1 candidate / v1 orchestrator / v1 glue（ast.walk + 字符串扫双锁）
+- adapter / helper / wrapper / real provider / candidate v1 / candidate v2 全部**未改**（protocol 层；多消费方共享）
+- v2 real validation 由用户**单独指令**触发（独立流程；不在本节范围）
+
+### 46.2 改动文件
+
+| 路径 | 类型 | 行数 |
+|---|---|---|
+| `scripts/run_continuous_smoothing_validation_v2.py` | 新增 v2 orchestrator | 333 |
+| `scripts/run_real_continuous_smoothing_validation_execute_v2.py` | 新增 v2 execution glue | 327 |
+| `tests/test_run_continuous_smoothing_validation_v2.py` | 新增 v2 orchestrator tests（17 passed） | 433 |
+| `tests/test_run_real_continuous_smoothing_validation_execute_v2.py` | 新增 v2 glue tests（32 passed） | 695 |
+| `tasks/step_1_contract_pipeline_summary.md` | 修改 | 新增 §46（本节） |
+
+### 46.3 v2 orchestrator API
+
+```python
+run_continuous_smoothing_validation_v2(
+    replay_rows: list[dict],
+    *,
+    regime_label_provider: Callable[[str, dict], dict],
+    w4_manifest: dict,
+    candidate_threshold: float = 0.60,
+    candidate_name: str = "continuous_smoothing_v2",
+    final_test_cutoff: str = "2026-01-01",
+    output_dir: str | Path | None = None,
+    write_outputs: bool = False,
+) -> dict
+```
+
+模块常量：
+
+| 常量 | 值 |
+|---|---|
+| `RUN_SCHEMA_VERSION` | `"continuous_smoothing_validation_run_v2.v1"` |
+| `RUN_MANIFEST_SCHEMA_VERSION` | `"regime_validation_run_manifest.v1"`（与 v1 共享，protocol 层） |
+| `DEFAULT_CANDIDATE_NAME` | `"continuous_smoothing_v2"` |
+| `DEFAULT_CANDIDATE_THRESHOLD` | `0.60`（v2 first-run lock；语义切换由 v2 candidate design §8 锁定） |
+| `DEFAULT_FINAL_TEST_CUTOFF` | `"2026-01-01"` |
+
+与 v1 orchestrator 的**唯一三处差异**：
+
+| # | 差异 | v1 | v2 |
+|---|---|---|---|
+| 1 | candidate import | `from services.continuous_smoothing_candidate import build_continuous_smoothing_candidate` | `from services.continuous_smoothing_candidate_v2 import build_continuous_smoothing_candidate_v2` |
+| 2 | candidate 调用 | `build_continuous_smoothing_candidate(labels, ...)` | `build_continuous_smoothing_candidate_v2(labels, ...)` |
+| 3 | `candidate_name` 默认 / run schema | `"continuous_smoothing_v1"` / `"continuous_smoothing_validation_run.v1"` | `"continuous_smoothing_v2"` / `"continuous_smoothing_validation_run_v2.v1"` |
+
+candidate 仍 attach 在 `enriched["candidate"]` 键（与 v1 同），保持 adapter `_candidate_state` 接口兼容。
+
+### 46.4 v2 execution glue API
+
+公共 helpers：
+
+| 函数 | 说明 |
+|---|---|
+| `get_backup_count(pattern="avgo_agent.db.backup_*") -> int` | glob cwd 计数 |
+| `assert_backup_count_unchanged(before, after) -> None` | mismatch → `RuntimeError("db_backup_count_changed:...")` |
+| `validate_execution_args_v2(args) -> None` | run_once_v2 / threshold / cutoff / output_dir / 必填 path 全 lock；mismatch → `ValueError(...)` |
+| `build_execution_summary_v2(...) -> dict` | `real_validation_execution_summary_v2.v1`（12 字段） |
+| `run_real_validation_execution_v2(args) -> dict` | 完整 11 步 execution flow；调 v2 orchestrator |
+| `main(argv=None) -> int` | CLI 入口；refusal → exit 2；happy → JSON summary + exit 0 |
+
+模块常量：
+
+| 常量 | 值 |
+|---|---|
+| `SUMMARY_SCHEMA_VERSION` | `"real_validation_execution_summary_v2.v1"` |
+| `LOCKED_CANDIDATE_THRESHOLD` | `0.60` |
+| `LOCKED_FINAL_TEST_CUTOFF` | `"2026-01-01"` |
+| `LOCKED_CANDIDATE_NAME` | `"continuous_smoothing_v2"` |
+| `EXPECTED_OUTPUT_FILES` | 4 文件（与 v1 同） |
+
+execution flow 11 步（与 v1 glue 对齐；唯一差异：第 7 步调 `run_continuous_smoothing_validation_v2(...)` 替换 v1 orchestrator）。
+
+### 46.5 CLI lock
+
+| 参数 | 默认 | lock 行为 |
+|---|---|---|
+| `--run-once-real-validation-v2` | flag，默认 False | 不传 → exit 2 `refuse_to_run:missing_explicit_opt_in:--run-once-real-validation-v2 is required` |
+| `--candidate-threshold` | `0.60` | ≠ 0.60 → exit 2 `refuse_to_run:candidate_threshold_locked:expected=0.6,got=...` |
+| `--final-test-cutoff` | `"2026-01-01"` | ≠ `"2026-01-01"` → exit 2 `refuse_to_run:final_test_cutoff_locked:...` |
+| `--output-dir` | 必填 | 已存在 → exit 2 `refuse_to_run:output_dir_exists:...` |
+| `--db-path` / `--w4-jsonl` / `--w4-manifest` / `--avgo-csv` / `--nvda-csv` / `--soxx-csv` / `--qqq-csv` / `--output-dir` | 必填 | 缺任一 → exit 2 `refuse_to_run:missing_required_args:...` |
+
+**parser `allow_abbrev=False`**：argparse 默认接受 prefix 匹配，会把 `--run-once-real-validation`（v1 flag）当成 v2 flag 的缩写 silently 接受。v2 parser 显式 disable prefix 匹配 → v1 flag 现在被 argparse SystemExit 拒绝。
+
+不存在的 flag（与 v1 glue 一致；argparse 自动 SystemExit）：
+
+- `--allow-overwrite` / `--threshold-sweep` / `--skip-db-guard` / `--write-db` / `--enable-hard` / `--enable-forced` / `--allow-network` / `--ignore-final-test-cutoff` / `--connect-protection-layer`
+
+### 46.6 adapter / helper compatibility
+
+`services/replay_validation_record_adapter.py` `_candidate_state(...)` 是 threshold-on-`risk_score`：
+
+| v2 candidate 输出 | adapter 行为 |
+|---|---|
+| `risk_bucket="abstain"` + `risk_score=None` | `_candidate_state` warning `candidate_unavailable` + `candidate_triggered=False` |
+| `final_test_refusal=True` | warning `candidate_final_test_refusal` + `candidate_triggered=False` |
+| `risk_score >= threshold` | `candidate_triggered=True` |
+| `risk_score < threshold` | `candidate_triggered=False` |
+
+`services/regime_validation_helper.py` 只看 records；`candidate_name` 由 caller 透传。**两个模块都未改**。
+
+### 46.7 isolation / forbidden imports
+
+**v2 orchestrator 与 v2 glue 都遵守**（ast.walk）：
+
+| 类别 | 模块 |
+|---|---|
+| 网络 | `yfinance` / `requests` / `urllib` / `urllib3` / `httpx` |
+| trading | `longbridge` / `broker` / `paper_trade` |
+| sqlite / DB 写 | `sqlite3` / `services.prediction_store` / `services.outcome_capture` |
+| production engine | `services.confidence_engine` / `contradiction_engine` / `risk_model` / `soft_metadata_simulator` / `anti_false_exclusion_dashboard` / `regime_diagnostics_dashboard` / `protection_layer_diagnostics` / `historical_replay_training` |
+| production app | `predict` / `scanner` / `streamlit` / `ui.protection_layer_diagnostics_renderer` |
+| **v1 candidate / orchestrator / glue（永久封禁）** | `services.continuous_smoothing_candidate` / `scripts.run_continuous_smoothing_validation` / `scripts.run_real_continuous_smoothing_validation_execute` |
+
+v2 glue 额外锁：`import sqlite3` / `from sqlite3` 字符串扫不出现（execution glue 自身**不**直接连 DB；通过 wrapper `mode=ro` URI）。
+
+字符串扫：
+
+- v1 module 字符串引用：`from services.continuous_smoothing_candidate import` / `from scripts.run_continuous_smoothing_validation import` / `from scripts.run_real_continuous_smoothing_validation_execute import` —— 全部**不**出现
+- hard / required / trading：`hard_exclusion_allowed` / `forced_exclusion` / `anti_false_exclusion_triggered` / `_PROTECTION_LAYER_CONNECTED` / `simulated_trade` / `no_trade` / `final_direction` / `final_projection`
+- threshold sweep / 9 项 forbidden CLI flag
+
+### 46.8 测试覆盖
+
+49 focused tests 全部通过：
+
+| 测试文件 | 数量 | 覆盖点 |
+|---|---|---|
+| `tests/test_run_continuous_smoothing_validation_v2.py` | 17 | output schema + run schema_version v2 / `candidate_name` 默认 v2 / v2 candidate factory 被调（v1 spy 不被调）/ candidate 在 row["candidate"] / final_test row skipped + touched / regime_labels final_test_refusal propagates / threshold passthrough / write_outputs=False 不写 / write_outputs=True 写 4 文件 / 已存在 output_dir 抛 FileExistsError / write_outputs=True without output_dir → ValueError / input rows + manifest 不被 mutate / forbidden imports（含**不** import v1 任一模块）/ 字符串扫 hard / required / trading / threshold sweep |
+| `tests/test_run_real_continuous_smoothing_validation_execute_v2.py` | 32 | get_backup_count / assert_backup_count_unchanged / validate_execution_args_v2 lock（含**拒** v1 flag attribute）/ build_execution_summary_v2（schema_version v2）/ happy path（mocked，hits v2 orchestrator）/ run_real_validation_execution_v2 verifies v2 orchestrator called / 缺 output 文件 raises / DB size mismatch / DB mtime mismatch / market_data.db mismatch / backup count mismatch / CLI 缺 v2 flag → exit 2 / CLI v1 flag 被 argparse SystemExit / threshold ≠ 0.60 / cutoff ≠ "2026-01-01" / output_dir 已存在 / 9 项 forbidden flag argparse SystemExit / mocked happy CLI → exit 0 + JSON v2 summary / forbidden imports（含**不** import v1 任一模块） / no v1 string ref / no direct sqlite3 / hard / required / trading 字符串 / threshold sweep + override flag 字符串 / locked constants 必须存在 |
+
+### 46.9 测试结果
+
+| 命令 | 结果 |
+|---|---|
+| `pytest tests/test_run_continuous_smoothing_validation_v2.py -q` | **17 passed** |
+| `pytest tests/test_run_real_continuous_smoothing_validation_execute_v2.py -q` | **32 passed** |
+| `pytest tests/test_continuous_smoothing_candidate_v2.py -q` | **32 passed** |
+| `pytest tests/test_run_continuous_smoothing_validation.py tests/test_run_real_continuous_smoothing_validation_execute.py -q` | **84 passed**（v1 零回归） |
+| `pytest -q`（全量） | **2986 passed / 10 skipped / 0 failed / 26 warnings / 94 subtests** |
+
+测试基线累积：Step 3R-3.3F-A 终点 **2937** → Step 3R-3.3F-C 终点 **2986**（+49 净增；2937 基线零回归）。
+
+### 46.10 边界事实
+
+- ❌ **没**改 v1 orchestrator（`scripts/run_continuous_smoothing_validation.py`）
+- ❌ **没**改 v1 execution glue（`scripts/run_real_continuous_smoothing_validation_execute.py`）
+- ❌ **没**改 v1 candidate（`services/continuous_smoothing_candidate.py`）
+- ❌ **没**改 v2 candidate（`services/continuous_smoothing_candidate_v2.py`）
+- ❌ **没**改 adapter / helper（`services/replay_validation_record_adapter.py` / `services/regime_validation_helper.py`）
+- ❌ **没**改 wrapper（`scripts/run_real_continuous_smoothing_validation.py`）/ real provider（`services/real_regime_label_provider.py`）/ labels builder
+- ❌ **没**改 v1 测试 / v2 candidate 测试 / 任何已 merge 测试
+- ❌ **没** import v1 candidate / v1 orchestrator / v1 glue（ast.walk + 字符串扫双锁）
+- ❌ **没**改 04 / 05 / 07 任何 required 字段
+- ❌ **没**写 DB；v2 glue 不直接 import sqlite3
+- ❌ **没**接网络（27 项 forbidden import 锁定）
+- ❌ **没**接 trading API
+- ❌ **没**让 `_PROTECTION_LAYER_CONNECTED` 翻 True
+- ❌ **没**触碰 2026-01-01 之后 final-test range（cutoff lock + 6 层 hard stop 全保留）
+- ❌ **没**真实运行 v2 W1-W4 validation（real run 必须用户单独指令触发）
+- ❌ **没** monkey-patch
+- ❌ **没**跑 v1 冒充 v2（v2 orchestrator 真实调 `build_continuous_smoothing_candidate_v2`；spy 测试断言）
+- ❌ **没** sweep / grid search / hyperparameter optimization
+- ❌ **没**用 v1 fail baseline 数据反推 v2 任何具体参数
+- ❌ **没**自动 promotion（v2 fail / pass 都不解锁 3R-5 / 3R-6 / hard / Gate 5 / Gate 6）
+- ❌ **没** add 任何 W4 / smoke / `logs/regime_validation/` / `logs/prediction_log.jsonl` / DB backup / `agent_loop.py` / `.claude/worktrees/`
+- ✅ v2 orchestrator + v2 execution glue + 49 focused tests + parser `allow_abbrev=False`（拒 v1 flag 缩写）+ 27 项 forbidden import + 6 项字符串扫全部 acceptance 锁定
+- ✅ **2986 / 0 failed / 10 skipped**；现有 2937 基线零回归
