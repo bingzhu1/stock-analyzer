@@ -890,6 +890,35 @@ def build_overall_confidence(
     }
 
 
+def _override_section_from_confidence_result(
+    section: dict[str, Any],
+    *,
+    level_source: dict[str, Any],
+    section_label: str,
+) -> dict[str, Any]:
+    """Derive a renderer confidence section from a confidence_result block.
+
+    This is read-only display: the renderer never recomputes a level when a
+    ``confidence_result`` is present (11C §11.4 stage B). It simply reuses
+    the level / score / reasoning from the confidence_evaluator output.
+    """
+    level = _normalize_level(level_source.get("level"))
+    raw_score = _safe_float(level_source.get("score"))
+    score = raw_score if raw_score is not None else _level_to_score(level)
+    reasoning = [
+        _clean_str(item)
+        for item in _as_list(level_source.get("reasoning"))
+        if _clean_str(item)
+    ]
+    if not reasoning:
+        reasoning = [f"{section_label} 来自 confidence_result（read-only display）。"]
+    merged = dict(section) if isinstance(section, dict) else {}
+    merged["level"] = level
+    merged["score"] = score
+    merged["reasoning"] = reasoning
+    return merged
+
+
 def build_confidence_evaluator(v2_raw: dict[str, Any] | None) -> dict[str, Any]:
     v2 = _as_dict(v2_raw)
     conflicts = _conflicts_from_v2(v2)
@@ -900,6 +929,35 @@ def build_confidence_evaluator(v2_raw: dict[str, Any] | None) -> dict[str, Any]:
         projection_confidence=projection,
         conflicts=conflicts,
     )
+
+    # Boundary contract (11C §11.4 stage B): when v2_raw exposes a wired
+    # confidence_result, the renderer surfaces ITS levels instead of the
+    # legacy self-computed ones. The legacy fallback is kept only for
+    # back-compat with consumers that have not yet wired the evaluator.
+    confidence_result = _as_dict(v2.get("confidence_result"))
+    if confidence_result and confidence_result.get("ready"):
+        proj_section = _as_dict(confidence_result.get("projection_confidence"))
+        excl_section = _as_dict(confidence_result.get("exclusion_confidence"))
+        combined_section = _as_dict(confidence_result.get("combined_confidence"))
+        if proj_section:
+            projection = _override_section_from_confidence_result(
+                projection,
+                level_source=proj_section,
+                section_label="projection",
+            )
+        if excl_section:
+            negative = _override_section_from_confidence_result(
+                negative,
+                level_source=excl_section,
+                section_label="exclusion",
+            )
+        if combined_section:
+            overall = _override_section_from_confidence_result(
+                overall,
+                level_source=combined_section,
+                section_label="overall",
+            )
+
     return {
         "negative_system_confidence": negative,
         "projection_system_confidence": projection,

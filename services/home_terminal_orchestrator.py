@@ -18,6 +18,7 @@ from typing import Any, Callable
 import pandas as pd
 
 from scanner import load_peer_coded
+from services.confidence_evaluator import build_confidence_result
 from services.consistency_layer import build_consistency_layer
 from services.exclusion_layer import run_exclusion_layer
 from services.log_store import write_prediction_log
@@ -159,6 +160,18 @@ def build_home_terminal_orchestrator_result(
         historical_match_result=historical_match_result,
         symbol="AVGO",
     )
+    # Boundary contract (07C / 11C §11.4 stage B): build a read-only
+    # confidence_result alongside main_projection / exclusion_result so
+    # the home-terminal payload exposes one unified confidence schema.
+    # The evaluator never mutates either input; calibration is unwired in
+    # this path so the levels degrade to "unknown" until calibration is
+    # connected.
+    confidence_result = build_confidence_result(
+        projection_result=main_projection,
+        exclusion_result=exclusion_result,
+        target_date=target_date_str,
+        symbol="AVGO",
+    )
 
     log_id = None
     if persist_log:
@@ -182,6 +195,7 @@ def build_home_terminal_orchestrator_result(
         consistency=consistency,
         historical_match_result=historical_match_result,
         prediction_log_id=log_id,
+        extra={"confidence_result": confidence_result},
     )
 
 

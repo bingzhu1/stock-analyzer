@@ -469,6 +469,12 @@ def build_confidence_result(
         "system_name": "confidence_system",
         "question_answered": "system_reliability_evaluation",
         "symbol": str(symbol or "AVGO").strip().upper() or "AVGO",
+        # ``ready`` is always True for this evaluator: even when calibration
+        # is missing the result is a deterministic, well-formed dict whose
+        # confidence levels degrade to ``unknown``. Downstream consumers
+        # (e.g. final_decision._confidence_from_result) gate on this field
+        # and read levels from ``combined_confidence`` regardless.
+        "ready": True,
         "projection_confidence": projection_confidence,
         "exclusion_confidence": exclusion_confidence,
         "agreement_status": agreement_status,

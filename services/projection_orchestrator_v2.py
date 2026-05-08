@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
+from services.confidence_evaluator import build_confidence_result
 from services.final_decision import build_final_decision
 from services.historical_probability import build_historical_probability
 from services.peer_adjustment import build_peer_adjustment
@@ -358,22 +359,21 @@ def _build_final_decision(
     warnings: list[str],
     trace: list[dict[str, str]],
     final_decision_builder: Callable[..., dict[str, Any]],
+    confidence_result: dict[str, Any] | None = None,
+    exclusion_result: dict[str, Any] | None = None,
 ) -> tuple[str, dict[str, Any]]:
-    # Boundary contract (06 / 07C / 07D / 11B): the aggregator must read
-    # confidence from confidence_result. Step 12C-B will wire a real
-    # confidence_result; until then we explicitly pass None so the
-    # aggregator surfaces final_confidence as "unknown" rather than
-    # recomputing internally. exclusion_result stays None here because it
-    # is generated later in the chain and is display-only for the
-    # aggregator; passing it would not affect direction/confidence.
+    # Boundary contract (06 / 07C / 07D / 11B / 11C): the aggregator reads
+    # confidence strictly from the wired confidence_result (Step 12C-B).
+    # exclusion_result is forwarded for display-only source attribution
+    # (07D §3.1) and never influences direction or confidence.
     try:
         result = final_decision_builder(
             primary_analysis=primary_analysis,
             peer_adjustment=peer_adjustment,
             historical_probability=historical_probability,
             preflight=preflight,
-            confidence_result=None,
-            exclusion_result=None,
+            confidence_result=confidence_result,
+            exclusion_result=exclusion_result,
             symbol=symbol,
         )
     except Exception as exc:
@@ -385,8 +385,8 @@ def _build_final_decision(
             peer_adjustment=peer_adjustment,
             historical_probability=historical_probability,
             preflight=preflight,
-            confidence_result=None,
-            exclusion_result=None,
+            confidence_result=confidence_result,
+            exclusion_result=exclusion_result,
             symbol=symbol,
         )
 
@@ -477,6 +477,15 @@ def run_projection_v2(
             historical_summary=None,
             context_features=None,
         )
+        # Even on the legacy-runner failure path, surface a deterministic
+        # confidence_result (all unknowns) so downstream consumers see a
+        # consistent payload shape (11C §11.4 stage B).
+        confidence_result = build_confidence_result(
+            projection_result=main_projection,
+            exclusion_result=exclusion_result,
+            target_date=target_date,
+            symbol=normalized_symbol,
+        )
         final_status, final = _build_final_decision(
             primary_status="failed",
             primary_analysis=primary,
@@ -489,6 +498,8 @@ def run_projection_v2(
             warnings=warnings,
             trace=trace,
             final_decision_builder=_final_decision_builder,
+            confidence_result=confidence_result,
+            exclusion_result=exclusion_result,
         )
         step_status.update({
             "preflight": "skipped",
@@ -515,6 +526,7 @@ def run_projection_v2(
                 "peer_adjustment": peer,
                 "historical_probability": historical,
                 "final_decision": final,
+                "confidence_result": confidence_result,
                 "warnings": list(dict.fromkeys(warnings)),
                 "trace": trace,
                 "step_status": step_status,
@@ -558,6 +570,24 @@ def run_projection_v2(
         trace=trace,
         historical_probability_builder=_historical_probability_builder,
     )
+    # Boundary contract (11C §11.4 stage B): build the standardized chain
+    # (exclusion + main_projection + consistency) BEFORE the final_decision
+    # aggregator so we can derive a confidence_result and pass it as a
+    # read-only signal into the aggregator. The aggregator never mutates
+    # main_projection / exclusion_result; the order is purely about data
+    # availability.
+    feature_payload, exclusion_result, main_projection, consistency = _build_standardized_chain(
+        symbol=normalized_symbol,
+        primary_analysis=primary,
+        scan_result=scan_result,
+    )
+    effective_target_date = primary.get("target_date") or target_date
+    confidence_result = build_confidence_result(
+        projection_result=main_projection,
+        exclusion_result=exclusion_result,
+        target_date=effective_target_date,
+        symbol=normalized_symbol,
+    )
     final_status, final = _build_final_decision(
         primary_status=primary_status,
         primary_analysis=primary,
@@ -570,6 +600,8 @@ def run_projection_v2(
         warnings=warnings,
         trace=trace,
         final_decision_builder=_final_decision_builder,
+        confidence_result=confidence_result,
+        exclusion_result=exclusion_result,
     )
     step_status.update({
         "preflight": preflight_status,
@@ -579,11 +611,6 @@ def run_projection_v2(
         "final_decision": final_status,
     })
     ready = primary_status == "success" and final_status == "success"
-    feature_payload, exclusion_result, main_projection, consistency = _build_standardized_chain(
-        symbol=normalized_symbol,
-        primary_analysis=primary,
-        scan_result=scan_result,
-    )
     historical_match_result = _as_dict(scan_result.get("historical_match_summary"))
     return build_unified_projection_payload(
         kind="projection_v2_report",
@@ -597,12 +624,13 @@ def run_projection_v2(
         prediction_log_id=None,
         extra={
             "lookback_days": lookback_days,
-            "target_date": primary.get("target_date") or target_date,
+            "target_date": effective_target_date,
             "preflight": preflight,
             "primary_analysis": primary,
             "peer_adjustment": peer,
             "historical_probability": historical,
             "final_decision": final,
+            "confidence_result": confidence_result,
             "warnings": list(dict.fromkeys(warnings)),
             "trace": trace,
             "step_status": step_status,
