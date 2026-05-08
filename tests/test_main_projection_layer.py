@@ -12,19 +12,30 @@ from services.main_projection_layer import build_main_projection_layer
 
 
 class MainProjectionLayerTests(unittest.TestCase):
-    def test_exclusion_of_big_up_prevents_big_up_top1(self) -> None:
-        result = build_main_projection_layer(
-            current_20day_features={
-                "symbol": "AVGO",
-                "pos20": 84.0,
-                "vol_ratio20": 1.18,
-                "upper_shadow_ratio": 0.08,
-                "lower_shadow_ratio": 0.10,
-                "ret1": 1.8,
-                "ret3": 3.2,
-                "ret5": 5.8,
-                "ret10": 7.5,
-            },
+    def test_exclusion_of_big_up_does_not_change_main_projection(self) -> None:
+        """Per 11A §8.2: the legacy `_apply_exclusion` behavior is forbidden.
+        Passing `triggered_rule=exclude_big_up` must not zero out the 大涨
+        probability or otherwise modify the projection scores."""
+        baseline_features = {
+            "symbol": "AVGO",
+            "pos20": 84.0,
+            "vol_ratio20": 1.18,
+            "upper_shadow_ratio": 0.08,
+            "lower_shadow_ratio": 0.10,
+            "ret1": 1.8,
+            "ret3": 3.2,
+            "ret5": 5.8,
+            "ret10": 7.5,
+        }
+
+        baseline = build_main_projection_layer(
+            current_20day_features=baseline_features,
+            exclusion_result=None,
+            historical_match_result={"dominant_historical_outcome": "up_bias"},
+            peer_alignment={"up_support": "supported", "down_support": "unsupported"},
+        )
+        with_exclude_big_up = build_main_projection_layer(
+            current_20day_features=baseline_features,
             exclusion_result={
                 "excluded": True,
                 "triggered_rule": "exclude_big_up",
@@ -33,34 +44,41 @@ class MainProjectionLayerTests(unittest.TestCase):
                     "down_support": "unsupported",
                 },
             },
-            historical_match_result={
-                "dominant_historical_outcome": "up_bias",
-            },
-            peer_alignment={
-                "up_support": "supported",
-                "down_support": "unsupported",
-            },
+            historical_match_result={"dominant_historical_outcome": "up_bias"},
+            peer_alignment={"up_support": "supported", "down_support": "unsupported"},
         )
 
-        self.assertTrue(result["ready"])
-        self.assertNotEqual(result["predicted_top1"]["state"], "大涨")
-        self.assertEqual(result["predicted_top1"]["state"], "小涨")
-        self.assertEqual(result["state_probabilities"]["大涨"], 0.0)
-        self.assertTrue(any("禁止将大涨排为 Top1" in item for item in result["rationale"]))
+        self.assertTrue(baseline["ready"])
+        self.assertTrue(with_exclude_big_up["ready"])
+        self.assertEqual(
+            baseline["state_probabilities"],
+            with_exclude_big_up["state_probabilities"],
+        )
+        self.assertGreater(with_exclude_big_up["state_probabilities"]["大涨"], 0.0)
 
-    def test_exclusion_of_big_down_prevents_big_down_top1(self) -> None:
-        result = build_main_projection_layer(
-            current_20day_features={
-                "symbol": "AVGO",
-                "pos20": 16.0,
-                "vol_ratio20": 1.25,
-                "upper_shadow_ratio": 0.12,
-                "lower_shadow_ratio": 0.08,
-                "ret1": -1.7,
-                "ret3": -3.0,
-                "ret5": -5.4,
-                "ret10": -7.2,
-            },
+    def test_exclusion_of_big_down_does_not_change_main_projection(self) -> None:
+        """Per 11A §8.2: passing `triggered_rule=exclude_big_down` must not
+        zero out the 大跌 probability or otherwise modify projection scores."""
+        baseline_features = {
+            "symbol": "AVGO",
+            "pos20": 16.0,
+            "vol_ratio20": 1.25,
+            "upper_shadow_ratio": 0.12,
+            "lower_shadow_ratio": 0.08,
+            "ret1": -1.7,
+            "ret3": -3.0,
+            "ret5": -5.4,
+            "ret10": -7.2,
+        }
+
+        baseline = build_main_projection_layer(
+            current_20day_features=baseline_features,
+            exclusion_result=None,
+            historical_match_result={"dominant_historical_outcome": "down_bias"},
+            peer_alignment={"up_support": "unsupported", "down_support": "supported"},
+        )
+        with_exclude_big_down = build_main_projection_layer(
+            current_20day_features=baseline_features,
             exclusion_result={
                 "excluded": True,
                 "triggered_rule": "exclude_big_down",
@@ -69,20 +87,17 @@ class MainProjectionLayerTests(unittest.TestCase):
                     "down_support": "supported",
                 },
             },
-            historical_match_result={
-                "dominant_historical_outcome": "down_bias",
-            },
-            peer_alignment={
-                "up_support": "unsupported",
-                "down_support": "supported",
-            },
+            historical_match_result={"dominant_historical_outcome": "down_bias"},
+            peer_alignment={"up_support": "unsupported", "down_support": "supported"},
         )
 
-        self.assertTrue(result["ready"])
-        self.assertNotEqual(result["predicted_top1"]["state"], "大跌")
-        self.assertEqual(result["predicted_top1"]["state"], "小跌")
-        self.assertEqual(result["state_probabilities"]["大跌"], 0.0)
-        self.assertTrue(any("禁止将大跌排为 Top1" in item for item in result["rationale"]))
+        self.assertTrue(baseline["ready"])
+        self.assertTrue(with_exclude_big_down["ready"])
+        self.assertEqual(
+            baseline["state_probabilities"],
+            with_exclude_big_down["state_probabilities"],
+        )
+        self.assertGreater(with_exclude_big_down["state_probabilities"]["大跌"], 0.0)
 
     def test_neutral_case_returns_stable_distribution_and_top2(self) -> None:
         result = build_main_projection_layer(

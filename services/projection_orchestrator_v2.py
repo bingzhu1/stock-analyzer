@@ -107,11 +107,13 @@ def _build_standardized_chain(
         scan_result=scan_result,
     )
     exclusion_result = run_exclusion_layer(feature_payload)
+    # Boundary contract (06 / 07A / 11A): exclusion_result must not enter
+    # build_main_projection_layer. peer_alignment is a market-feature
+    # derivation; main_projection_layer recomputes it from features when no
+    # explicit value is supplied.
     main_projection = build_main_projection_layer(
         current_20day_features=feature_payload,
-        exclusion_result=exclusion_result,
         historical_match_result=historical_match_result,
-        peer_alignment=_as_dict(exclusion_result.get("peer_alignment")),
         symbol=symbol,
     )
     consistency = build_consistency_layer(

@@ -1,8 +1,13 @@
 """Standardized main projection layer for five-state next-day output.
 
 This module produces a stable Top1 / Top2 / probability distribution report
-from current 20-day features, exclusion constraints, peer alignment, and
-optional historical matching evidence.
+from current 20-day features, peer alignment, and optional historical
+matching evidence.
+
+Boundary contract (06 / 07A / 11A): the projection system must not consume
+exclusion outputs. The ``exclusion_result`` parameter on the public entry
+points is deprecated and ignored; it is preserved only for caller signature
+compatibility while Step 14 cleanup removes it.
 """
 
 from __future__ import annotations
@@ -252,28 +257,6 @@ def _apply_history_weights(
     return adjusted
 
 
-def _apply_exclusion(
-    scores: dict[str, float],
-    exclusion_result: dict[str, Any],
-    reasons: list[str],
-) -> dict[str, float]:
-    exclusion = _as_dict(exclusion_result)
-    adjusted = dict(scores)
-
-    if not exclusion.get("excluded"):
-        return adjusted
-
-    triggered_rule = str(exclusion.get("triggered_rule") or "")
-    if triggered_rule == "exclude_big_up":
-        adjusted["大涨"] = 0.0
-        reasons.append("排除层已给出“明天不太可能大涨”，主推演层禁止将大涨排为 Top1。")
-    elif triggered_rule == "exclude_big_down":
-        adjusted["大跌"] = 0.0
-        reasons.append("排除层已给出“明天不太可能大跌”，主推演层禁止将大跌排为 Top1。")
-
-    return adjusted
-
-
 def _normalize_distribution(scores: dict[str, float]) -> dict[str, float]:
     safe_scores = {state: max(float(value), 0.0) for state, value in scores.items()}
     total = sum(safe_scores.values())
@@ -305,15 +288,20 @@ def build_main_projection_layer(
     peer_alignment: dict[str, Any] | None = None,
     symbol: str = "AVGO",
 ) -> dict[str, Any]:
-    """Build a stable five-state projection from current 20-day context."""
+    """Build a stable five-state projection from current 20-day context.
+
+    Boundary contract (06 / 07A / 11A): ``exclusion_result`` is **deprecated
+    and ignored**. The projection system must not read or be modified by the
+    exclusion system. The parameter remains only for caller signature
+    compatibility and will be removed by the Step 14 cleanup pass.
+    """
+    del exclusion_result  # boundary contract: exclusion_result must not influence projection
     normalized = _normalize_current_features(current_20day_features)
     clean_symbol = str(symbol or normalized["symbol"] or "AVGO").strip().upper() or "AVGO"
     reasons: list[str] = []
     warnings: list[str] = []
 
     peer_payload = _as_dict(peer_alignment)
-    if not peer_payload:
-        peer_payload = _as_dict(_as_dict(exclusion_result).get("peer_alignment"))
     if not peer_payload:
         peer_payload = build_peer_alignment(normalized)
 
@@ -359,7 +347,6 @@ def build_main_projection_layer(
 
     scores = _score_distribution(outlook, normalized)
     scores = _apply_history_weights(scores, _as_dict(historical_match_result))
-    scores = _apply_exclusion(scores, _as_dict(exclusion_result), reasons)
     distribution = _normalize_distribution(scores)
     ranked = _rank_states(distribution)
 
@@ -384,7 +371,11 @@ def run_main_projection_layer(
     peer_alignment: dict[str, Any] | None = None,
     symbol: str = "AVGO",
 ) -> dict[str, Any]:
-    """Convenience wrapper for callers that prefer run_* naming."""
+    """Convenience wrapper for callers that prefer run_* naming.
+
+    Boundary contract (06 / 07A / 11A): ``exclusion_result`` is deprecated
+    and ignored; it is preserved for caller signature compatibility only.
+    """
     return build_main_projection_layer(
         current_20day_features=current_20day_features,
         exclusion_result=exclusion_result,

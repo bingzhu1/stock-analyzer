@@ -143,11 +143,13 @@ def build_home_terminal_orchestrator_result(
     historical_match_result = as_dict(as_dict(scan_result).get("historical_match_summary"))
 
     exclusion_result = run_exclusion_layer(feature_payload)
+    # Boundary contract (06 / 07A / 11A): exclusion_result must not enter
+    # build_main_projection_layer. peer_alignment is a market-feature
+    # derivation; main_projection_layer recomputes it from features when no
+    # explicit value is supplied.
     main_projection = build_main_projection_layer(
         current_20day_features=feature_payload,
-        exclusion_result=exclusion_result,
         historical_match_result=historical_match_result,
-        peer_alignment=as_dict(exclusion_result.get("peer_alignment")),
         symbol="AVGO",
     )
     consistency = build_consistency_layer(
