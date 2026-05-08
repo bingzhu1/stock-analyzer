@@ -1,8 +1,55 @@
-"""Build a conservative production adoption handoff from promotion outputs."""
+"""Build a conservative production adoption handoff from promotion outputs.
+
+OFFLINE_ONLY:
+This module is for research / calibration / validation only.
+It MUST NOT be imported by online projection, exclusion, confidence,
+final report, UI, trading, or production promotion paths.
+
+Allowed callers:
+- offline training pipelines (e.g. services/avgo_1000day_training.py)
+- offline scripts under scripts/
+- test files under tests/
+
+Forbidden callers (enforced by tests/test_promotion_offline_only_boundary.py):
+- app.py
+- ui/*
+- services/projection_*  (any projection-side module)
+- services/exclusion_layer.py / services/anti_false_exclusion_*
+- services/confidence_evaluator.py
+- services/final_decision.py
+- services/main_projection_layer.py
+- services/projection_orchestrator_v2.py
+- services/home_terminal_orchestrator.py
+
+Output safety contract (11G §9):
+- output dict MUST include {"mode": "offline_only", "online_safe": False, ...}
+- output dict MUST NOT include trading_action / buy / sell / hold /
+  hard_exclusion / forced_exclusion / required_decision /
+  production_promotion / _PROTECTION_LAYER_CONNECTED.
+
+See:
+- tasks/record_06_three_system_independence_principle.md
+- tasks/record_07d_final_report_aggregator_contract.md
+- tasks/record_11g_promotion_offline_only_documentation_lock_design.md
+"""
 
 from __future__ import annotations
 
 from typing import Any
+
+
+def _safety_fields() -> dict[str, Any]:
+    """Return the OFFLINE_ONLY safety contract fields (11G §9.1)."""
+    return {
+        "mode": "offline_only",
+        "online_safe": False,
+        "may_affect_active_prediction": False,
+        "may_affect_active_exclusion": False,
+        "may_affect_active_confidence": False,
+        "may_affect_final_report": False,
+        "may_affect_trading": False,
+        "requires_human_review": True,
+    }
 
 
 def _empty_report() -> dict[str, Any]:
@@ -24,6 +71,7 @@ def _empty_report() -> dict[str, Any]:
         "handoff_artifact": [],
         "summary": "",
         "warnings": [],
+        **_safety_fields(),
     }
 
 
