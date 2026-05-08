@@ -50,19 +50,47 @@ PREDICT_LEGACY_WRAPPER_KIND = "legacy_predict_wrapper"
 PREDICT_LEGACY_WRAPPER_VERSION = "predict_legacy_wrapper.v1"
 
 
+_LEGACY_COMPAT_CONFIDENCE_LEVELS: tuple[str, ...] = ("low", "medium", "high", "unknown")
+
+
+def _extract_compat_confidence(confidence_result: dict[str, Any] | None) -> str:
+    """Read the legacy compat ``final_confidence`` value strictly from a
+    ``confidence_system_result.v1`` payload.
+
+    Boundary contract (07C / 11C / 11E X2): the wrapper MUST NOT recompute
+    confidence. ``run_predict`` calls this helper to project
+    ``confidence_result.combined_confidence.level`` onto the legacy
+    ``final_confidence`` / ``confidence`` fields. Anything not in the
+    fixed level set degrades to ``"unknown"`` — never falls back to a
+    heuristic.
+    """
+    if not isinstance(confidence_result, dict):
+        return "unknown"
+    combined = confidence_result.get("combined_confidence")
+    if not isinstance(combined, dict):
+        return "unknown"
+    raw = combined.get("level")
+    if not isinstance(raw, str):
+        return "unknown"
+    level = raw.strip().lower()
+    if level in _LEGACY_COMPAT_CONFIDENCE_LEVELS:
+        return level
+    return "unknown"
+
+
 def _legacy_source_mapping() -> dict[str, str]:
-    """Source-of-truth foundation for the legacy compat fields surfaced by
+    """Source-of-truth mapping for the legacy compat fields surfaced by
     ``run_predict``.
 
-    X1 only declares the *foundation*: which V2 / contract source each
-    legacy compat field will eventually map from. Stages X2..X4 wire the
-    actual derivation. Until then the value of the legacy field is still
-    produced by the in-file v1 helpers; the ``source_mapping`` entries
-    flag the migration target so callers can audit progress.
+    X2 wires ``compat_final_confidence`` and ``compat_confidence`` to
+    ``confidence_result.combined_confidence.level`` (or ``unknown`` when
+    no confidence_result is supplied). Other entries remain pending until
+    stages X3 / X4 migrate the corresponding fields.
     """
     return {
         "compat_final_bias": "legacy_predict_path (pending X4 migration to final_decision.final_direction)",
-        "compat_final_confidence": "legacy_predict_path (pending X2/X3 migration to confidence_result.combined_confidence.level)",
+        "compat_final_confidence": "confidence_result.combined_confidence.level or unknown",
+        "compat_confidence": "confidence_result.combined_confidence.level or unknown",
         "compat_prediction_summary": "legacy_predict_path (pending X4 migration to final_report.combined_user_summary)",
         "compat_primary_direction": "legacy_predict_path (pending X4 migration to main_projection.predicted_top1.state)",
         "compat_peer_adjustment": "legacy_predict_path (pending X4 migration to V2 peer_adjustment)",
@@ -75,9 +103,9 @@ def _legacy_deprecation_notes() -> list[str]:
     payload. Surfaced through ``deprecation_notes``."""
     return [
         "predict.py is a legacy compatibility wrapper (RISK-8 / 11E).",
-        "Stage 12E-X1 only marks the wrapper and adds source_mapping; no logic was migrated.",
+        "Stage 12E-X1 marks the wrapper and adds source_mapping; X2 wires final_confidence from confidence_result.",
         "New code should call services/projection_entrypoint.run_projection_entrypoint (V2) directly.",
-        "compatibility field values will be re-sourced from V2 / confidence_result / final_report in stages X2..X4.",
+        "Remaining compatibility field values will be re-sourced from V2 / final_report in stages X3..X4.",
         "Wrapper must not introduce new judgment, recompute confidence, flip direction, or fabricate summary text.",
     ]
 
@@ -1061,12 +1089,18 @@ def build_final_projection(
     }
 
 
-def _missing_scan_result(research_result: dict[str, Any] | None, symbol: str) -> PredictResult:
+def _missing_scan_result(
+    research_result: dict[str, Any] | None,
+    symbol: str,
+    confidence_result: dict[str, Any] | None = None,
+) -> PredictResult:
     research = research_result or {}
     adjustment = str(research.get("research_bias_adjustment", "missing_research"))
     primary_projection = build_primary_projection(None, research_result=research_result, symbol=symbol)
     peer_adjustment = apply_peer_adjustment(primary_projection, None)
     final_projection = build_final_projection(primary_projection, peer_adjustment, research_result, None)
+    # 11E X2: final_confidence / confidence are sourced from confidence_result.
+    compat_confidence = _extract_compat_confidence(confidence_result)
     return {
         "symbol": symbol,
         "predict_timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -1074,7 +1108,8 @@ def _missing_scan_result(research_result: dict[str, Any] | None, symbol: str) ->
         "scan_confidence": "low",
         "research_bias_adjustment": adjustment,
         "final_bias": "unavailable",
-        "final_confidence": "low",
+        "final_confidence": compat_confidence,
+        "confidence": compat_confidence,
         "open_tendency": "unclear",
         "close_tendency": "unclear",
         "prediction_summary": _summarize("unavailable", "low", adjustment),
@@ -1189,10 +1224,19 @@ def run_predict(
     research_result: dict[str, Any] | None = None,
     symbol: str = "AVGO",
     pre_briefing: dict | None = None,
+    confidence_result: dict[str, Any] | None = None,
 ) -> PredictResult:
-    """Run the v2 two-step projection chain and keep the old result shape."""
+    """Run the v2 two-step projection chain and keep the old result shape.
+
+    11E X2: ``confidence_result`` is a read-only signal from
+    ``services.confidence_evaluator.build_confidence_result``. When
+    provided, ``final_confidence`` / ``confidence`` are sourced from
+    ``confidence_result.combined_confidence.level`` (degrades to
+    ``"unknown"`` if absent or malformed). The wrapper does NOT recompute
+    confidence and does not introduce new judgment.
+    """
     if not scan_result:
-        return _missing_scan_result(research_result, symbol)
+        return _missing_scan_result(research_result, symbol, confidence_result=confidence_result)
 
     scan = scan_result or {}
     research = research_result or {}
@@ -1209,10 +1253,25 @@ def run_predict(
     scan_confidence = _normalize_confidence(str(final_projection.get("scan_confidence", scan.get("scan_confidence", "low"))))
     adjustment = str(research.get("research_bias_adjustment", "missing_research"))
     final_bias = str(final_projection.get("final_bias", "neutral"))
-    final_confidence = _normalize_confidence(str(final_projection.get("final_confidence", "low")))
+    # 11E X2: final_confidence / confidence are sourced from
+    # confidence_result.combined_confidence.level. The wrapper no longer
+    # accepts the v1-computed value here. The inner ``final_projection``
+    # block still carries its v1 ``final_confidence`` for legacy
+    # consumers of that nested dict; only the outer compat field is
+    # rewired.
+    compat_confidence = _extract_compat_confidence(confidence_result)
     supporting_factors = list(final_projection.get("supporting_factors", []))
     conflicting_factors = list(final_projection.get("conflicting_factors", []))
-    prediction_summary = str(final_projection.get("prediction_summary", _summarize(final_bias, final_confidence, adjustment)))
+    # Summary text remains v1-sourced until X3.
+    legacy_v1_confidence_for_summary = _normalize_confidence(
+        str(final_projection.get("final_confidence", "low"))
+    )
+    prediction_summary = str(
+        final_projection.get(
+            "prediction_summary",
+            _summarize(final_bias, legacy_v1_confidence_for_summary, adjustment),
+        )
+    )
     path_risk = str(final_projection.get("path_risk", "medium"))
     peer_path_risk_adjustment = final_projection.get("peer_path_risk_adjustment")
     if not isinstance(peer_path_risk_adjustment, dict):
@@ -1226,7 +1285,8 @@ def run_predict(
         "scan_confidence": scan_confidence,
         "research_bias_adjustment": adjustment,
         "final_bias": final_bias,
-        "final_confidence": final_confidence,
+        "final_confidence": compat_confidence,
+        "confidence": compat_confidence,
         "open_tendency": str(final_projection.get("open_tendency", "unclear")),
         "close_tendency": str(final_projection.get("close_tendency", "unclear")),
         "pred_open": final_projection.get("pred_open"),
@@ -1244,9 +1304,13 @@ def run_predict(
         "briefing_caution_applied": False,
         "briefing_caution_reason": None,
         "projection_three_systems": _build_projection_three_systems_attachment(symbol=symbol),
-        # 11E X1: legacy wrapper metadata (does not change any legacy value).
+        # 11E X1/X2: legacy wrapper metadata (X2 wires confidence source).
         **_legacy_wrapper_metadata(),
     }
     if pre_briefing and pre_briefing.get("has_data"):
         result = _apply_briefing_caution(result, pre_briefing)
+        # _apply_briefing_caution may have lowered final_confidence; keep
+        # the ``confidence`` alias in lockstep so the two compat fields
+        # never diverge.
+        result["confidence"] = result.get("final_confidence", compat_confidence)
     return result

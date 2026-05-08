@@ -358,7 +358,25 @@ class ConfidenceRunPredictRoundTripTests(unittest.TestCase):
 
     def test_extras_mirrors_live_predict_result(self) -> None:
         scan = self._scan()
-        predict = run_predict(scan, research_result=None, symbol="AVGO")
+        # Step 12E-X2: ``run_predict.final_confidence`` is now sourced from
+        # ``confidence_result.combined_confidence.level``. Pass a wired
+        # confidence_result so this round-trip mirror retains a non-
+        # ``unknown`` value to compare against; otherwise the adapter's
+        # ``_normalize_confidence`` would map ``unknown`` to ``low`` and
+        # break the equality below for reasons unrelated to the contract.
+        confidence_result = {
+            "schema_version": "confidence_system_result.v1",
+            "ready": True,
+            "combined_confidence": {"level": "high"},
+            "agreement_status": "aligned",
+            "conflict_level": "none",
+        }
+        predict = run_predict(
+            scan,
+            research_result=None,
+            symbol="AVGO",
+            confidence_result=confidence_result,
+        )
         payload = adapt_projection_output(
             scan_result=scan, research_result=None, predict_result=predict
         )

@@ -175,13 +175,10 @@ class PredictRunPredictMetadataTests(unittest.TestCase):
     def test_source_mapping_marks_pending_migrations(self) -> None:
         result = self._run()
         mapping = result["source_mapping"]
-        # X1 explicitly leaves later stages as pending — no premature
-        # promise that the wires already point at confidence_evaluator etc.
-        self.assertIn(
-            "pending",
-            mapping["compat_final_confidence"].lower(),
-            msg="compat_final_confidence must be marked pending until X2/X3",
-        )
+        # ``compat_prediction_summary`` remains pending until X3/X4. X2
+        # wired ``compat_final_confidence`` so its mapping now points at
+        # confidence_result instead of carrying a ``pending`` marker —
+        # see test_predict_x2_confidence_wiring_boundary.py.
         self.assertIn(
             "pending",
             mapping["compat_prediction_summary"].lower(),
@@ -211,11 +208,13 @@ class PredictRunPredictMetadataTests(unittest.TestCase):
 
     def test_run_predict_x1_does_not_change_core_shape(self) -> None:
         """The missing-scan path produced ``final_bias=='unavailable'`` and
-        ``final_confidence=='low'`` before X1; X1 must not change those
-        legacy values."""
+        ``scan_bias=='missing'`` before X1; X1/X2 must not change those
+        legacy direction-side values. ``final_confidence`` is sourced from
+        ``confidence_result`` starting at X2 and degrades to ``unknown``
+        when no confidence_result is supplied."""
         result = self._run()
         self.assertEqual(result["final_bias"], "unavailable")
-        self.assertEqual(result["final_confidence"], "low")
+        self.assertEqual(result["final_confidence"], "unknown")
         self.assertEqual(result["scan_bias"], "missing")
 
     def test_run_predict_no_trading_or_hard_fields(self) -> None:
