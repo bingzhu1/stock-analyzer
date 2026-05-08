@@ -41,6 +41,8 @@ import threading
 from datetime import datetime
 from typing import Any, TypedDict
 
+from services.predict_legacy_adapter import adapt_v2_payload_to_predict_legacy
+
 
 # ---------------------------------------------------------------------------
 # Legacy wrapper metadata (RISK-8 / 11E X1)
@@ -151,6 +153,134 @@ def _legacy_wrapper_metadata() -> dict[str, Any]:
         "source_mapping": _legacy_source_mapping(),
         "deprecation_notes": _legacy_deprecation_notes(),
     }
+
+
+# ---------------------------------------------------------------------------
+# 11E X4-B: opt-in V2 payload overlay
+# ---------------------------------------------------------------------------
+
+# Allowlist of legacy compat keys that may be overlaid from
+# ``adapt_v2_payload_to_predict_legacy(...).legacy_fields``. Per X4-B §A.2,
+# the wrapper must NOT overlay any other key.
+_V2_OVERLAY_ALLOWLIST: tuple[str, ...] = (
+    "final_bias",
+    "direction",
+    "final_confidence",
+    "confidence",
+    "prediction_summary",
+    "summary",
+    "primary_projection",
+    "peer_adjustment",
+    "final_projection",
+    "path_risk",
+    "supporting_factors",
+    "conflicting_factors",
+    "scan_bias",
+    "open_tendency",
+    "close_tendency",
+    "pred_open",
+    "pred_path",
+    "pred_close",
+)
+
+# When the wrapper passes its own current legacy result back to the
+# adapter as ``fallback_legacy_payload``, it should expose only the
+# allowlist keys — never the wrapper-metadata or briefing-caution keys —
+# so the adapter never picks up unrelated wrapper internals.
+_V2_FALLBACK_KEYS: tuple[str, ...] = _V2_OVERLAY_ALLOWLIST
+
+
+def _apply_v2_legacy_adapter_overlay(
+    result: dict[str, Any],
+    *,
+    v2_payload: Any,
+) -> dict[str, Any]:
+    """Apply an opt-in V2-payload-derived overlay to ``result``.
+
+    Boundary contract (07A / 07C / 07D / 11E §7 X4-B):
+
+    - When ``v2_payload`` is ``None``, return ``result`` unchanged. The
+      legacy baseline (X3 output) is preserved byte-for-byte.
+    - When ``v2_payload`` is not a dict (e.g. a string or list passed in
+      by mistake), return a shallow copy of ``result`` with
+      ``v2_adapter_used = False`` and a recorded warning. The legacy
+      baseline values are preserved.
+    - When ``v2_payload`` is a dict, invoke
+      ``adapt_v2_payload_to_predict_legacy(v2_payload,
+      fallback_legacy_payload=<allowlist subset of result>)`` and:
+        * Overlay each allowlist key from ``adapter_result.legacy_fields``
+          onto a fresh copy of ``result``.
+        * Replace ``result.source_mapping[<compat_key>]`` for each
+          overlaid key with the adapter's dict entry.
+        * Set ``result.v2_adapter_used = True``.
+        * Set ``result.v2_adapter_result`` to the adapter's metadata
+          (kind / version / source / source_mapping / warnings) but
+          NOT the bulk ``legacy_fields`` block (already merged on top).
+
+    The wrapper never invokes the V2 orchestrator, the final-decision
+    builder, the confidence-evaluator entry point, the LLM, or any I/O
+    surface. The adapter is a pure function (X4-A); this helper only
+    composes its output with the wrapper's existing legacy result.
+    """
+    if v2_payload is None:
+        # Legacy default path: do nothing.
+        return result
+
+    if not isinstance(v2_payload, dict):
+        new_result = dict(result)
+        new_result["v2_adapter_used"] = False
+        warnings_list = list(new_result.get("v2_adapter_warnings") or [])
+        warnings_list.append(
+            "v2_payload is not a dict; legacy baseline preserved without overlay."
+        )
+        new_result["v2_adapter_warnings"] = warnings_list
+        return new_result
+
+    # Build a minimal fallback the adapter can read for compat keys the V2
+    # payload may not surface (e.g. scan_bias / pred_open / open_tendency).
+    fallback = {
+        key: result[key]
+        for key in _V2_FALLBACK_KEYS
+        if key in result
+    }
+
+    adapter_result = adapt_v2_payload_to_predict_legacy(
+        v2_payload,
+        fallback_legacy_payload=fallback,
+    )
+    legacy_fields = adapter_result.get("legacy_fields") or {}
+    adapter_source_mapping = adapter_result.get("source_mapping") or {}
+
+    new_result = dict(result)
+    # Overlay only the allowlisted keys.
+    for key in _V2_OVERLAY_ALLOWLIST:
+        if key in legacy_fields:
+            new_result[key] = legacy_fields[key]
+
+    # Merge adapter source_mapping entries for overlaid keys onto the
+    # wrapper's top-level source_mapping. The wrapper's own pre-X4-B
+    # mapping uses string values; adapter entries are dicts. Replacing
+    # the entry surfaces the adapter's audit trail (legacy_field /
+    # source_path / fallback_used / notes) for each overlaid compat key.
+    merged_source_mapping = dict(new_result.get("source_mapping") or {})
+    for compat_key, entry in adapter_source_mapping.items():
+        merged_source_mapping[compat_key] = entry
+    new_result["source_mapping"] = merged_source_mapping
+
+    new_result["v2_adapter_used"] = True
+    # Surface adapter metadata + audit trail without duplicating the bulk
+    # legacy_fields payload (already merged into the top-level result).
+    new_result["v2_adapter_result"] = {
+        "adapter_kind": adapter_result.get("adapter_kind"),
+        "adapter_version": adapter_result.get("adapter_version"),
+        "source": adapter_result.get("source"),
+        "source_mapping": adapter_source_mapping,
+        "warnings": list(adapter_result.get("warnings") or []),
+        "non_mutation_confirmations": adapter_result.get(
+            "non_mutation_confirmations"
+        ),
+    }
+    return new_result
 
 
 # Re-entry guard for the projection_three_systems attachment (Task 108).
@@ -1127,6 +1257,7 @@ def _missing_scan_result(
     symbol: str,
     confidence_result: dict[str, Any] | None = None,
     final_report: dict[str, Any] | None = None,
+    v2_payload: dict[str, Any] | None = None,
 ) -> PredictResult:
     research = research_result or {}
     adjustment = str(research.get("research_bias_adjustment", "missing_research"))
@@ -1140,7 +1271,7 @@ def _missing_scan_result(
     # legacy ``_summarize`` fallback. The wrapper never invents text.
     legacy_summary = _summarize("unavailable", "low", adjustment)
     compat_summary, _summary_source = _extract_compat_summary(final_report, legacy_summary)
-    return {
+    base = {
         "symbol": symbol,
         "predict_timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "scan_bias": "missing",
@@ -1170,6 +1301,8 @@ def _missing_scan_result(
         # 11E X1: legacy wrapper metadata (does not change any legacy value).
         **_legacy_wrapper_metadata(),
     }
+    # 11E X4-B: opt-in adapter overlay (no-op when v2_payload is None).
+    return _apply_v2_legacy_adapter_overlay(base, v2_payload=v2_payload)
 
 
 def _build_projection_three_systems_attachment(
@@ -1266,6 +1399,7 @@ def run_predict(
     pre_briefing: dict | None = None,
     confidence_result: dict[str, Any] | None = None,
     final_report: dict[str, Any] | None = None,
+    v2_payload: dict[str, Any] | None = None,
 ) -> PredictResult:
     """Run the v2 two-step projection chain and keep the old result shape.
 
@@ -1279,8 +1413,17 @@ def run_predict(
     aggregator (07D / 11B). When ``final_report.combined_user_summary``
     is a non-empty string, ``prediction_summary`` / ``summary`` are
     sourced from it; otherwise the wrapper falls back to the v1 legacy
-    summary it already produces. The wrapper does NOT recompute
-    confidence, flip direction, or fabricate new summary text.
+    summary it already produces.
+
+    11E X4-B: ``v2_payload`` is an opt-in V2 orchestrator payload. When
+    a non-None dict is supplied, the wrapper invokes
+    ``services.predict_legacy_adapter.adapt_v2_payload_to_predict_legacy``
+    and overlays its ``legacy_fields`` onto the wrapper's compat surface
+    (allowlist only). When ``v2_payload`` is None — the default — the
+    wrapper preserves its X3 legacy baseline byte-for-byte and never
+    invokes the adapter. The wrapper never builds a V2 payload itself;
+    it does NOT recompute confidence, flip direction, or fabricate new
+    summary text.
     """
     if not scan_result:
         return _missing_scan_result(
@@ -1288,6 +1431,7 @@ def run_predict(
             symbol,
             confidence_result=confidence_result,
             final_report=final_report,
+            v2_payload=v2_payload,
         )
 
     scan = scan_result or {}
@@ -1371,4 +1515,5 @@ def run_predict(
         # the ``confidence`` alias in lockstep so the two compat fields
         # never diverge.
         result["confidence"] = result.get("final_confidence", compat_confidence)
-    return result
+    # 11E X4-B: opt-in adapter overlay (no-op when v2_payload is None).
+    return _apply_v2_legacy_adapter_overlay(result, v2_payload=v2_payload)
