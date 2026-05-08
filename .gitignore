@@ -14,3 +14,17 @@ snapshots/
 !.env.example
 .tmp_test_env/
 .DS_Store
+
+# Step 14K — local generated artifacts / backups (see tasks/record_14j_*).
+# Scope-limited per Step 14J §9.2: do NOT blanket-ignore logs/, .claude/,
+# .claude/handoffs/, agent_loop.py, tasks/, archive/. The 4 tracked log
+# evidence sets (logs/historical_training/03_fresh_replay/,
+# logs/historical_training/exclusion_action_validation_2e*,
+# logs/technical_features/) stay tracked.
+avgo_agent.db.backup_*
+logs/prediction_log.jsonl
+logs/historical_training/three_system_1005/
+logs/historical_training/three_system_w4_2024_08_2025_12/
+logs/historical_training/three_system_w4_smoke_2024_08_05_2024_08_09/
+logs/regime_validation/
+.claude/worktrees/
