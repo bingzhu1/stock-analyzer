@@ -175,14 +175,19 @@ class PredictRunPredictMetadataTests(unittest.TestCase):
     def test_source_mapping_marks_pending_migrations(self) -> None:
         result = self._run()
         mapping = result["source_mapping"]
-        # ``compat_prediction_summary`` remains pending until X3/X4. X2
-        # wired ``compat_final_confidence`` so its mapping now points at
-        # confidence_result instead of carrying a ``pending`` marker —
-        # see test_predict_x2_confidence_wiring_boundary.py.
+        # X4 still owns the direction-side / projection-side / peer /
+        # path_risk migrations. The other entries (final_confidence,
+        # prediction_summary) have already been wired by X2 / X3 — see
+        # the corresponding boundary test files.
         self.assertIn(
             "pending",
-            mapping["compat_prediction_summary"].lower(),
-            msg="compat_prediction_summary must be marked pending until X4",
+            mapping["compat_final_bias"].lower(),
+            msg="compat_final_bias must remain pending until X4",
+        )
+        self.assertIn(
+            "pending",
+            mapping["compat_primary_direction"].lower(),
+            msg="compat_primary_direction must remain pending until X4",
         )
 
     def test_run_predict_outputs_deprecation_notes(self) -> None:
