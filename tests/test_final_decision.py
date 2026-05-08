@@ -67,8 +67,27 @@ def _preflight(**overrides) -> dict:
     return result
 
 
+def _confidence_result(level: str = "high") -> dict:
+    return {
+        "kind": "confidence_evaluator_result",
+        "ready": True,
+        "combined_confidence": {"level": level},
+        "agreement_status": "consistent",
+        "conflict_level": "low",
+    }
+
+
 class FinalDecisionTests(unittest.TestCase):
-    def test_full_support_returns_fixed_schema_and_raises_confidence_cautiously(self) -> None:
+    """Step 12B (RISK-2): final_decision is a pure aggregator.
+
+    These tests assert the post-purification contract:
+    - final_direction == primary_analysis.direction
+    - final_confidence == confidence_result.combined_confidence.level (or
+      "unknown" when no confidence_result is wired)
+    - peer / historical / preflight do not change direction or confidence
+    """
+
+    def test_full_support_returns_fixed_schema(self) -> None:
         result = build_final_decision(
             primary_analysis=_primary(),
             peer_adjustment=_peer(),
@@ -89,16 +108,32 @@ class FinalDecisionTests(unittest.TestCase):
             "layer_contributions",
             "why_not_more_bullish_or_bearish",
             "source_snapshot",
+            "non_mutation_confirmations",
+            "source_attribution",
         ):
             self.assertIn(key, result)
         self.assertEqual(result["kind"], "final_decision")
+        self.assertEqual(result["schema_version"], "final_report_aggregator_result.v1")
+        self.assertEqual(result["system_name"], "final_report_aggregator")
+        self.assertTrue(result["ready"])
+        self.assertEqual(result["final_direction"], "偏多")
+        # No confidence_result wired → unknown (Step 12C-B will change this).
+        self.assertEqual(result["final_confidence"], "unknown")
+        self.assertEqual(result["source_snapshot"]["peer_adjustment"], "reinforce_bullish")
+        self.assertEqual(result["source_snapshot"]["historical_bias"], "supports_bullish")
+
+    def test_full_support_with_confidence_result_uses_confidence_level(self) -> None:
+        result = build_final_decision(
+            primary_analysis=_primary(),
+            peer_adjustment=_peer(),
+            historical_probability=_historical(),
+            preflight=_preflight(),
+            confidence_result=_confidence_result("high"),
+        )
+
         self.assertTrue(result["ready"])
         self.assertEqual(result["final_direction"], "偏多")
         self.assertEqual(result["final_confidence"], "high")
-        self.assertEqual(result["risk_level"], "low")
-        self.assertEqual(result["source_snapshot"]["peer_adjustment"], "reinforce_bullish")
-        self.assertEqual(result["source_snapshot"]["historical_bias"], "supports_bullish")
-        self.assertIn("MVP 决策层不做更激进加权", result["why_not_more_bullish_or_bearish"])
 
     def test_bearish_full_support_follows_primary_direction(self) -> None:
         result = build_final_decision(
@@ -115,16 +150,19 @@ class FinalDecisionTests(unittest.TestCase):
                 summary="历史层支持偏空。",
             ),
             preflight=_preflight(),
+            confidence_result=_confidence_result("high"),
         )
 
         self.assertTrue(result["ready"])
         self.assertEqual(result["final_direction"], "偏空")
         self.assertEqual(result["final_confidence"], "high")
-        self.assertEqual(result["risk_level"], "low")
         self.assertEqual(result["source_snapshot"]["peer_adjustment"], "reinforce_bearish")
         self.assertEqual(result["source_snapshot"]["historical_bias"], "supports_bearish")
 
-    def test_peer_downgrade_keeps_direction_but_lowers_confidence(self) -> None:
+    def test_peer_downgrade_does_not_change_direction_or_confidence(self) -> None:
+        """Boundary contract: peer downgrade no longer flips direction or
+        recomputes confidence. final_direction stays primary; final_confidence
+        comes from confidence_result."""
         result = build_final_decision(
             primary_analysis=_primary(confidence="high"),
             peer_adjustment=_peer(
@@ -135,16 +173,16 @@ class FinalDecisionTests(unittest.TestCase):
             ),
             historical_probability=_historical(),
             preflight=_preflight(),
+            confidence_result=_confidence_result("medium"),
         )
 
         self.assertTrue(result["ready"])
         self.assertEqual(result["final_direction"], "偏多")
         self.assertEqual(result["final_confidence"], "medium")
-        self.assertEqual(result["risk_level"], "medium")
         self.assertIn("同业未确认或偏弱", result["why_not_more_bullish_or_bearish"])
         self.assertIn("peer 修正削弱", result["layer_contributions"]["peer"])
 
-    def test_historical_mixed_prevents_fake_high_confidence(self) -> None:
+    def test_historical_mixed_does_not_recompute_confidence(self) -> None:
         result = build_final_decision(
             primary_analysis=_primary(confidence="high"),
             peer_adjustment=_peer(adjustment="no_change", adjusted_confidence="high"),
@@ -154,15 +192,17 @@ class FinalDecisionTests(unittest.TestCase):
                 summary="历史样本混杂。",
             ),
             preflight=_preflight(),
+            confidence_result=_confidence_result("medium"),
         )
 
         self.assertTrue(result["ready"])
         self.assertEqual(result["final_direction"], "偏多")
+        # final_confidence comes from the confidence_result, not from
+        # historical impact.
         self.assertEqual(result["final_confidence"], "medium")
-        self.assertEqual(result["risk_level"], "medium")
         self.assertIn("历史样本混杂", result["why_not_more_bullish_or_bearish"])
 
-    def test_historical_insufficient_keeps_final_cautious(self) -> None:
+    def test_historical_insufficient_keeps_direction_and_uses_confidence_result(self) -> None:
         result = build_final_decision(
             primary_analysis=_primary(confidence="high"),
             peer_adjustment=_peer(adjustment="no_change", adjusted_confidence="high"),
@@ -175,16 +215,16 @@ class FinalDecisionTests(unittest.TestCase):
                 summary="历史样本不足。",
             ),
             preflight=_preflight(),
+            confidence_result=_confidence_result("low"),
         )
 
         self.assertTrue(result["ready"])
         self.assertEqual(result["final_direction"], "偏多")
-        self.assertEqual(result["final_confidence"], "medium")
-        self.assertEqual(result["risk_level"], "medium")
+        self.assertEqual(result["final_confidence"], "low")
         self.assertIn("历史样本不足", result["why_not_more_bullish_or_bearish"])
         self.assertTrue(any("历史样本" in warning for warning in result["warnings"]))
 
-    def test_peer_missing_and_history_missing_forces_cautious_final(self) -> None:
+    def test_peer_missing_and_history_missing_does_not_recompute_confidence(self) -> None:
         result = build_final_decision(
             primary_analysis=_primary(confidence="medium"),
             peer_adjustment=_peer(
@@ -206,8 +246,9 @@ class FinalDecisionTests(unittest.TestCase):
 
         self.assertTrue(result["ready"])
         self.assertEqual(result["final_direction"], "偏多")
-        self.assertEqual(result["final_confidence"], "low")
-        self.assertEqual(result["risk_level"], "high")
+        # No confidence_result wired → unknown, regardless of peer/historical
+        # being missing.
+        self.assertEqual(result["final_confidence"], "unknown")
         self.assertIn("未获 peers 确认", result["summary"])
         self.assertIn("未获得历史概率支持", result["summary"])
         self.assertTrue(any("peers" in warning for warning in result["warnings"]))
@@ -223,13 +264,13 @@ class FinalDecisionTests(unittest.TestCase):
         self.assertFalse(result["ready"])
         self.assertEqual(result["final_direction"], "unknown")
         self.assertEqual(result["final_confidence"], "unknown")
-        self.assertEqual(result["risk_level"], "high")
         self.assertIn("不能伪造完整", result["summary"])
         self.assertTrue(result["warnings"])
+        self.assertIn("non_mutation_confirmations", result)
+        self.assertIn("source_attribution", result)
 
     def test_preflight_rules_count_reads_matched_rules_list_not_matched_count(self) -> None:
-        # Regression for F1: new preflight emits matched_rules (list of dicts), no matched_count.
-        # _preflight_rules_count must read len(matched_rules), not fall back to matched_count=0.
+        # Regression for F1: new preflight emits matched_rules (list of dicts).
         new_format_preflight = {
             "kind": "projection_rule_preflight",
             "ready": True,
@@ -270,14 +311,14 @@ class FinalDecisionTests(unittest.TestCase):
 
         self.assertTrue(result["ready"])
         self.assertEqual(result["final_direction"], "中性")
-        self.assertEqual(result["final_confidence"], "low")
+        # No confidence_result wired → unknown.
+        self.assertEqual(result["final_confidence"], "unknown")
         self.assertIn("主分析信号混杂", result["why_not_more_bullish_or_bearish"])
 
 
-class PreflightInfluenceTests(unittest.TestCase):
-    """Task 046: preflight rules now influence final_confidence / risk_level."""
-
-    # ── helpers ──────────────────────────────────────────────────────────────
+class PreflightDisplayOnlyTests(unittest.TestCase):
+    """Step 12B: preflight is display-only. applied_effects stays [] for
+    every severity; preflight cannot change direction, confidence, or risk."""
 
     def _rule(self, severity: str, category: str = "wrong_direction") -> dict:
         return {
@@ -301,8 +342,6 @@ class PreflightInfluenceTests(unittest.TestCase):
             "source_counts": {"matched_rule_count": len(rule_list)},
         }
 
-    # ── 1. no-rule path ──────────────────────────────────────────────────────
-
     def test_no_rules_preflight_influence_shape_present(self) -> None:
         """preflight_influence key always present even with zero rules."""
         result = build_final_decision(
@@ -318,25 +357,27 @@ class PreflightInfluenceTests(unittest.TestCase):
         self.assertIsInstance(inf["summary"], str)
 
     def test_string_rules_no_influence_applied(self) -> None:
-        """Old-format string rules produce no score changes."""
+        """String rules produce no score changes; applied_effects stays []."""
+        confidence = _confidence_result("high")
         base = build_final_decision(
             primary_analysis=_primary(confidence="high"),
             peer_adjustment=_peer(),
             historical_probability=_historical(),
             preflight=_preflight(matched_rules=[]),
+            confidence_result=confidence,
         )
         with_strings = build_final_decision(
             primary_analysis=_primary(confidence="high"),
             peer_adjustment=_peer(),
             historical_probability=_historical(),
             preflight=_preflight(matched_rules=["文本提醒1", "文本提醒2"]),
+            confidence_result=confidence,
         )
         self.assertEqual(base["final_confidence"], with_strings["final_confidence"])
-        self.assertEqual(base["risk_level"], with_strings["risk_level"])
         self.assertEqual(with_strings["preflight_influence"]["applied_effects"], [])
 
     def test_primary_missing_result_has_preflight_influence(self) -> None:
-        """preflight_influence present even when primary is missing (shape stability)."""
+        """preflight_influence present even when primary is missing."""
         result = build_final_decision(
             primary_analysis=_primary(ready=False, direction="unknown", confidence="unknown"),
             peer_adjustment=_peer(),
@@ -346,44 +387,42 @@ class PreflightInfluenceTests(unittest.TestCase):
         self.assertFalse(result["ready"])
         self.assertIn("preflight_influence", result)
 
-    # ── 2. low-severity warns only ───────────────────────────────────────────
-
     def test_low_severity_rule_no_score_change(self) -> None:
-        """Low-severity rule adds a warning note but does not change confidence or risk."""
+        confidence = _confidence_result("high")
         without_rule = build_final_decision(
             primary_analysis=_primary(confidence="high"),
             peer_adjustment=_peer(),
             historical_probability=_historical(),
             preflight=_preflight(matched_rules=[]),
+            confidence_result=confidence,
         )
         with_low = build_final_decision(
             primary_analysis=_primary(confidence="high"),
             peer_adjustment=_peer(),
             historical_probability=_historical(),
             preflight=self._preflight_with_rules(self._rule("low")),
+            confidence_result=confidence,
         )
         self.assertEqual(without_rule["final_confidence"], with_low["final_confidence"])
-        self.assertEqual(without_rule["risk_level"], with_low["risk_level"])
         self.assertEqual(with_low["preflight_influence"]["applied_effects"], [])
         self.assertEqual(with_low["preflight_influence"]["matched_rule_count"], 1)
 
-    # ── 3. high-severity lowers confidence ──────────────────────────────────
-
-    def test_high_severity_rule_lowers_confidence_one_step(self) -> None:
-        """One high-severity rule drops final_confidence by exactly one level."""
+    def test_high_severity_rule_does_not_lower_confidence(self) -> None:
+        """Boundary contract: high severity preflight rule must NOT lower
+        final_confidence. final_confidence stays equal to
+        confidence_result.combined_confidence.level."""
         result = build_final_decision(
             primary_analysis=_primary(confidence="medium"),
             peer_adjustment=_peer(adjustment="reinforce_bullish"),
             historical_probability=_historical(impact="support"),
             preflight=self._preflight_with_rules(self._rule("high")),
+            confidence_result=_confidence_result("high"),
         )
-        # Base: medium + reinforce + support = high → rule drops to medium
-        self.assertEqual(result["final_confidence"], "medium")
-        self.assertIn("lower_confidence", result["preflight_influence"]["applied_effects"])
-        self.assertEqual(result["final_direction"], "偏多")  # direction unchanged
+        self.assertEqual(result["final_confidence"], "high")
+        self.assertEqual(result["preflight_influence"]["applied_effects"], [])
+        self.assertEqual(result["final_direction"], "偏多")
 
     def test_high_severity_rule_does_not_change_direction(self) -> None:
-        """High-severity rule never changes final_direction."""
         result = build_final_decision(
             primary_analysis=_primary(direction="偏空", confidence="high"),
             peer_adjustment=_peer(adjustment="reinforce_bearish", adjusted_direction="偏空"),
@@ -391,56 +430,23 @@ class PreflightInfluenceTests(unittest.TestCase):
             preflight=self._preflight_with_rules(self._rule("high")),
         )
         self.assertEqual(result["final_direction"], "偏空")
-        self.assertIn("lower_confidence", result["preflight_influence"]["applied_effects"])
+        self.assertEqual(result["preflight_influence"]["applied_effects"], [])
 
-    def test_high_rule_confidence_appears_in_decision_factors_and_why_not(self) -> None:
-        """Influence summary appears in why_not_more and layer_contributions."""
-        result = build_final_decision(
-            primary_analysis=_primary(confidence="medium"),
-            peer_adjustment=_peer(adjustment="reinforce_bullish"),
-            historical_probability=_historical(impact="support"),
-            preflight=self._preflight_with_rules(self._rule("high")),
-        )
-        self.assertIn("lower_confidence", result["preflight_influence"]["applied_effects"])
-        combined_factors = " ".join(result["decision_factors"])
-        self.assertTrue(
-            "下调置信度" in result["why_not_more_bullish_or_bearish"]
-            or "下调置信度" in combined_factors
-            or "下调置信度" in result["layer_contributions"]["preflight"]
-        )
-
-    # ── 4. medium-severity raises risk ──────────────────────────────────────
-
-    def test_medium_severity_rule_raises_risk_one_step(self) -> None:
-        """One medium-severity rule raises risk_level by exactly one step."""
+    def test_medium_severity_rule_does_not_raise_risk(self) -> None:
+        """Boundary contract: medium severity preflight rule must NOT raise
+        risk_level. applied_effects stays []; risk_level is decoupled from
+        preflight (it now defaults to unknown until 12C-B wires
+        confidence_result reliability)."""
         result = build_final_decision(
             primary_analysis=_primary(confidence="high"),
             peer_adjustment=_peer(adjustment="reinforce_bullish"),
             historical_probability=_historical(impact="support"),
             preflight=self._preflight_with_rules(self._rule("medium")),
         )
-        # Base risk: full support → low; medium rule → medium
-        self.assertEqual(result["risk_level"], "medium")
-        self.assertIn("raise_risk", result["preflight_influence"]["applied_effects"])
-        self.assertEqual(result["final_direction"], "偏多")  # direction unchanged
-
-    def test_medium_rule_at_high_risk_stays_high(self) -> None:
-        """Medium rule cannot raise risk above 'high'."""
-        result = build_final_decision(
-            primary_analysis=_primary(confidence="medium"),
-            peer_adjustment=_peer(ready=False, adjustment="missing"),
-            historical_probability=_historical(ready=False, impact="missing", historical_bias="missing"),
-            preflight=self._preflight_with_rules(self._rule("medium")),
-        )
-        # Base risk is already "high" (peer_missing + hist_missing)
-        self.assertEqual(result["risk_level"], "high")
-        # raise_risk was attempted but capped — no effect visible
         self.assertEqual(result["preflight_influence"]["applied_effects"], [])
+        self.assertEqual(result["final_direction"], "偏多")
 
-    # ── 5. multiple rules cap at one step each ───────────────────────────────
-
-    def test_three_high_rules_only_drop_confidence_once(self) -> None:
-        """Multiple high-severity rules are capped at one confidence downgrade."""
+    def test_three_high_rules_still_apply_zero_effects(self) -> None:
         result = build_final_decision(
             primary_analysis=_primary(confidence="medium"),
             peer_adjustment=_peer(adjustment="reinforce_bullish"),
@@ -450,14 +456,12 @@ class PreflightInfluenceTests(unittest.TestCase):
                 self._rule("high"),
                 self._rule("high"),
             ),
+            confidence_result=_confidence_result("high"),
         )
-        # Base: medium+reinforce+support → high; one cap drop → medium
-        self.assertEqual(result["final_confidence"], "medium")
-        applied = result["preflight_influence"]["applied_effects"]
-        self.assertEqual(applied.count("lower_confidence"), 1)
+        self.assertEqual(result["final_confidence"], "high")
+        self.assertEqual(result["preflight_influence"]["applied_effects"], [])
 
-    def test_high_and_medium_rule_applies_both_effects(self) -> None:
-        """One high + one medium rule applies lower_confidence AND raise_risk."""
+    def test_high_and_medium_rules_apply_zero_effects(self) -> None:
         result = build_final_decision(
             primary_analysis=_primary(confidence="medium"),
             peer_adjustment=_peer(adjustment="reinforce_bullish"),
@@ -467,16 +471,10 @@ class PreflightInfluenceTests(unittest.TestCase):
                 self._rule("medium"),
             ),
         )
-        applied = result["preflight_influence"]["applied_effects"]
-        self.assertIn("lower_confidence", applied)
-        self.assertIn("raise_risk", applied)
-        # direction still unchanged
+        self.assertEqual(result["preflight_influence"]["applied_effects"], [])
         self.assertEqual(result["final_direction"], "偏多")
 
-    # ── 6. primary neutral not overridden ────────────────────────────────────
-
     def test_neutral_primary_stays_neutral_under_high_preflight_rules(self) -> None:
-        """High-severity preflight rules never flip a neutral primary to directional."""
         result = build_final_decision(
             primary_analysis=_primary(direction="中性", confidence="medium"),
             peer_adjustment=_peer(adjustment="reinforce_bullish", adjusted_direction="偏多"),
@@ -487,12 +485,9 @@ class PreflightInfluenceTests(unittest.TestCase):
             ),
         )
         self.assertEqual(result["final_direction"], "中性")
-        self.assertIn("lower_confidence", result["preflight_influence"]["applied_effects"])
-
-    # ── 7. preflight_influence shape always complete ──────────────────────────
+        self.assertEqual(result["preflight_influence"]["applied_effects"], [])
 
     def test_preflight_influence_shape_complete(self) -> None:
-        """preflight_influence always has matched_rule_count, applied_effects, summary."""
         for preflight_arg in [
             None,
             {},
@@ -505,17 +500,14 @@ class PreflightInfluenceTests(unittest.TestCase):
                 historical_probability=_historical(),
                 preflight=preflight_arg,
             )
-            if result.get("ready"):  # skip primary-missing path
+            if result.get("ready"):
                 inf = result["preflight_influence"]
                 self.assertIn("matched_rule_count", inf)
                 self.assertIn("applied_effects", inf)
                 self.assertIn("summary", inf)
-                self.assertIsInstance(inf["applied_effects"], list)
+                self.assertEqual(inf["applied_effects"], [])
 
-    # ── 8. Task 045 rule_candidate format compatibility ───────────────────────
-
-    def test_task_045_rule_candidate_format_consumed_correctly(self) -> None:
-        """Rule candidates from Task 045 projection_review_closed_loop are accepted."""
+    def test_task_045_rule_candidate_format_is_display_only(self) -> None:
         task_045_candidates = [
             {
                 "rule_id": "review-rc-a1b2c3d4",
@@ -548,23 +540,20 @@ class PreflightInfluenceTests(unittest.TestCase):
             preflight=preflight,
         )
         self.assertTrue(result["ready"])
-        # high rule → lower_confidence; medium rule → raise_risk
-        applied = result["preflight_influence"]["applied_effects"]
-        self.assertIn("lower_confidence", applied)
-        self.assertIn("raise_risk", applied)
+        self.assertEqual(result["preflight_influence"]["applied_effects"], [])
         self.assertEqual(result["preflight_influence"]["matched_rule_count"], 2)
-        self.assertEqual(result["final_direction"], "偏多")  # direction unchanged
+        self.assertEqual(result["final_direction"], "偏多")
 
-    def test_explicit_effect_field_overrides_severity_inference(self) -> None:
-        """If rule carries an explicit 'effect' field it takes precedence over severity."""
-        # High severity but explicit effect = "raise_risk" → only raises risk, not lowers conf
+    def test_explicit_effect_field_is_ignored_by_aggregator(self) -> None:
+        """Even when the rule carries an explicit effect, the aggregator
+        treats it as display-only — applied_effects stays []."""
         rule = {
             "rule_id": "explicit-effect-rule",
             "title": "显式 effect 规则",
             "category": "false_confidence",
             "severity": "high",
-            "effect": "raise_risk",  # explicit override
-            "message": "显式 raise_risk 覆盖 high severity 默认行为。",
+            "effect": "raise_risk",
+            "message": "显式 raise_risk 规则不应再影响最终结论。",
         }
         result = build_final_decision(
             primary_analysis=_primary(confidence="high"),
@@ -572,9 +561,7 @@ class PreflightInfluenceTests(unittest.TestCase):
             historical_probability=_historical(impact="support"),
             preflight=self._preflight_with_rules(rule),
         )
-        applied = result["preflight_influence"]["applied_effects"]
-        self.assertIn("raise_risk", applied)
-        self.assertNotIn("lower_confidence", applied)
+        self.assertEqual(result["preflight_influence"]["applied_effects"], [])
 
 
 if __name__ == "__main__":

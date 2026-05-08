@@ -182,7 +182,10 @@ class ProjectionOrchestratorV2Tests(unittest.TestCase):
             self.assertEqual(result["step_status"][key], "success")
         self.assertEqual(result["final_decision"]["kind"], "final_decision")
         self.assertEqual(result["final_decision"]["final_direction"], "偏多")
-        self.assertEqual(result["final_decision"]["final_confidence"], "high")
+        # Step 12B: final_decision aggregator does not recompute confidence.
+        # Until Step 12C-B wires confidence_result, the orchestrator passes
+        # confidence_result=None, so final_confidence is "unknown".
+        self.assertEqual(result["final_decision"]["final_confidence"], "unknown")
         self.assertEqual(result["final_decision"]["direction"], "偏多")
         self.assertIn("layer_contributions", result["final_decision"])
         self.assertIn("why_not_more_bullish_or_bearish", result["final_decision"])

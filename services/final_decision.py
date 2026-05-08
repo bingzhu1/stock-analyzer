@@ -1,7 +1,20 @@
 """Independent projection v2 final decision layer.
 
-This module aggregates the projection v2 layers into a stable final decision.
-It does not change scanner, predict, matcher, peer, or historical rules.
+Boundary contract (06 / 07C / 07D / 11B): this module is a **pure
+aggregator + display formatter**. It must not:
+
+- override / flip ``final_direction`` (it strictly equals
+  ``primary_analysis.direction`` or ``unknown`` when primary is missing);
+- recompute ``final_confidence`` (it comes from
+  ``confidence_result.combined_confidence.level`` or ``unknown`` when
+  confidence_result is not wired);
+- apply preflight rules as a forced effect (preflight is display-only
+  ``risk_disclosure`` / ``warnings`` / ``evidence_summary``).
+
+Several legacy helpers (``_apply_preflight_influence``,
+``_confidence_from_score``, ``_risk_level``) remain in the module as dead
+code. The Step 14 cleanup pass will delete them; this Step 12B fix only
+removes their call sites from ``build_final_decision``.
 """
 
 from __future__ import annotations
@@ -240,29 +253,109 @@ def _why_not_more(
     return "；".join(reasons) + "。"
 
 
+_NON_MUTATION_FIELDS = (
+    "projection_result_mutated",
+    "exclusion_result_mutated",
+    "confidence_result_mutated",
+    "final_direction_overridden",
+    "confidence_recomputed",
+    "preflight_applied_as_decision",
+)
+
+
+def _non_mutation_confirmations() -> dict[str, bool]:
+    return {field: False for field in _NON_MUTATION_FIELDS}
+
+
+def _confidence_from_result(confidence_result: dict[str, Any] | None) -> tuple[str, str, str, bool]:
+    """Read confidence display values strictly from confidence_result.
+
+    Returns (final_confidence, agreement_status, conflict_level, wired)
+    where ``wired`` indicates whether a usable confidence_result was provided.
+    """
+    cr = _as_dict(confidence_result)
+    if not cr or not cr.get("ready"):
+        return "unknown", "unknown", "unknown", False
+    combined = _as_dict(cr.get("combined_confidence"))
+    level = str(combined.get("level") or "unknown").strip().lower()
+    if level not in _CONFIDENCE_LEVELS:
+        level = "unknown"
+    agreement_status = str(cr.get("agreement_status") or "unknown").strip() or "unknown"
+    conflict_level = str(cr.get("conflict_level") or "unknown").strip() or "unknown"
+    return level, agreement_status, conflict_level, True
+
+
+def _preflight_warnings(matched_rules: list[Any]) -> list[str]:
+    warnings: list[str] = []
+    for rule in matched_rules:
+        if not isinstance(rule, dict):
+            continue
+        identifier = (
+            str(rule.get("rule_id") or "").strip()
+            or str(rule.get("title") or "").strip()
+            or "未命名规则"
+        )
+        message = str(rule.get("message") or "").strip()
+        if message:
+            warnings.append(f"历史规则提醒（仅展示）：{identifier} — {message}")
+        else:
+            warnings.append(f"历史规则提醒（仅展示）：{identifier}")
+    return warnings
+
+
 def build_final_decision(
     *,
     primary_analysis: dict[str, Any],
     peer_adjustment: dict[str, Any] | None = None,
     historical_probability: dict[str, Any] | None = None,
     preflight: dict[str, Any] | None = None,
+    confidence_result: dict[str, Any] | None = None,
+    exclusion_result: dict[str, Any] | None = None,
     symbol: str = "AVGO",
 ) -> dict[str, Any]:
-    """Aggregate projection v2 layers into a stable final decision."""
+    """Aggregate projection v2 layers into a stable final decision.
+
+    Boundary contract (06 / 07C / 07D / 11B):
+
+    - ``final_direction`` strictly equals ``primary_analysis.direction``;
+      this aggregator does not flip direction.
+    - ``final_confidence`` strictly equals
+      ``confidence_result.combined_confidence.level`` or ``"unknown"`` when
+      ``confidence_result`` is not wired (e.g. before Step 12C-B); this
+      aggregator does not recompute confidence.
+    - ``preflight`` rules are display-only: they surface as warnings /
+      evidence summary, never as decision input.
+
+    ``exclusion_result`` is accepted only for display (``exclusion_section``)
+    and source attribution; it does not influence direction or confidence.
+    """
     normalized_symbol = str(symbol or "AVGO").strip().upper() or "AVGO"
     primary = _as_dict(primary_analysis)
     peer = _as_dict(peer_adjustment)
     historical = _as_dict(historical_probability)
     preflight_layer = _as_dict(preflight)
+    exclusion = _as_dict(exclusion_result)
 
     if not primary.get("ready") or _direction(primary.get("direction")) == "unknown":
-        return _primary_missing_result(
+        result = _primary_missing_result(
             symbol=normalized_symbol,
             primary=primary,
             peer=peer,
             historical=historical,
             preflight=preflight_layer,
         )
+        result["non_mutation_confirmations"] = _non_mutation_confirmations()
+        result["source_attribution"] = [
+            {
+                "section": "projection",
+                "field": "final_direction",
+                "source_field": "primary_analysis.direction",
+            },
+        ]
+        result["schema_version"] = "final_report_aggregator_result.v1"
+        result["system_name"] = "final_report_aggregator"
+        result["question_answered"] = "aggregate_three_system_outputs"
+        return result
 
     primary_direction = _direction(primary.get("direction"))
     primary_confidence = _confidence(primary.get("confidence"))
@@ -277,46 +370,31 @@ def build_final_decision(
         preflight_count == 0 and not preflight_layer.get("matched_rules")
     )
 
+    # Boundary contract: final_direction strictly transparent passthrough.
     final_direction = primary_direction
-    if (
-        primary_direction in {"偏多", "偏空"}
-        and peer_adjustment_label == "downgrade"
-        and _direction(peer.get("adjusted_direction")) == "中性"
-    ):
-        final_direction = "中性"
 
-    score = _confidence_score(primary_confidence)
-    if primary_direction == "中性":
-        score = min(score, 1)
-    elif peer_adjustment_label in {"reinforce_bullish", "reinforce_bearish"} and historical_impact == "support":
-        score += 1
-    elif peer_adjustment_label == "downgrade":
-        score -= 1
-
-    if historical_impact == "caution":
-        score -= 1
-    elif historical_impact == "missing":
-        score -= 1
-
-    if peer_missing and historical_impact == "missing":
-        score = min(score, 1)
-
-    final_confidence = _confidence_from_score(score)
-    risk_level = _risk_level(
-        primary_confidence=final_confidence,
-        peer_missing=peer_missing,
-        peer_adjustment=peer_adjustment_label,
-        historical_impact=historical_impact,
-        historical_bias=historical_bias,
+    final_confidence, agreement_status, conflict_level, confidence_wired = (
+        _confidence_from_result(confidence_result)
     )
+    risk_level = "unknown"
 
-    # Apply preflight rule influence (confidence −1 / risk +1, capped at one step each)
     matched_rules: list[Any] = list(preflight_layer.get("matched_rules") or [])
-    final_confidence, risk_level, preflight_influence = _apply_preflight_influence(
-        matched_rules, final_confidence, risk_level
-    )
+    preflight_influence = {
+        "matched_rule_count": preflight_count,
+        "applied_effects": [],  # boundary contract: preflight is display-only
+        "summary": (
+            f"命中 {preflight_count} 条历史规则提醒（仅展示，不影响最终结论）。"
+            if preflight_count
+            else "未命中会影响最终结论的历史规则。"
+        ),
+    }
 
     warnings: list[str] = []
+    if not confidence_wired:
+        warnings.append(
+            "final_decision 未接入 confidence_result，可信度展示为 unknown。"
+        )
+    warnings.extend(_preflight_warnings(matched_rules))
     if peer_missing:
         warnings.append("final_decision 未获 peers 确认。")
     if not historical_ready or historical_impact == "missing":
@@ -325,8 +403,7 @@ def build_final_decision(
         warnings.append("final_decision 未接入规则前置提醒或未命中规则。")
 
     _preflight_contrib = (
-        f"preflight 命中 {preflight_count} 条提醒。"
-        + (f" {preflight_influence['summary']}" if preflight_influence["applied_effects"] else "")
+        f"preflight 命中 {preflight_count} 条提醒（仅展示，不影响最终结论）。"
         if preflight_count
         else "preflight 未命中规则或未接入可用提醒。"
     )
@@ -344,8 +421,6 @@ def build_final_decision(
         historical_bias=historical_bias,
         preflight_missing=preflight_missing,
     )
-    if preflight_influence["applied_effects"]:
-        why_not_more += f" 历史规则约束：{preflight_influence['summary']}"
     decision_factors = [
         layer_contributions["primary"],
         layer_contributions["peer"],
@@ -359,13 +434,50 @@ def build_final_decision(
         f"{layer_contributions['historical']} 约束：{why_not_more}"
     )
 
+    source_attribution: list[dict[str, str]] = [
+        {
+            "section": "projection",
+            "field": "final_direction",
+            "source_field": "primary_analysis.direction",
+        },
+    ]
+    if confidence_wired:
+        source_attribution.append({
+            "section": "confidence",
+            "field": "final_confidence",
+            "source_field": "confidence_result.combined_confidence.level",
+        })
+    else:
+        source_attribution.append({
+            "section": "confidence",
+            "field": "final_confidence",
+            "source_field": "unwired_confidence_result",
+        })
+    if exclusion:
+        source_attribution.append({
+            "section": "exclusion",
+            "field": "most_unlikely_state",
+            "source_field": "exclusion_result.most_unlikely_state",
+        })
+    if preflight_count:
+        source_attribution.append({
+            "section": "preflight",
+            "field": "warnings",
+            "source_field": "preflight.matched_rules[*]",
+        })
+
     return {
         "kind": "final_decision",
+        "schema_version": "final_report_aggregator_result.v1",
+        "system_name": "final_report_aggregator",
+        "question_answered": "aggregate_three_system_outputs",
         "symbol": normalized_symbol,
         "ready": True,
         "final_direction": final_direction,
         "final_confidence": final_confidence,
         "risk_level": risk_level,
+        "agreement_status": agreement_status,
+        "conflict_level": conflict_level,
         "summary": summary,
         "decision_factors": decision_factors,
         "warnings": warnings,
@@ -380,4 +492,6 @@ def build_final_decision(
         "direction": final_direction,
         "confidence": final_confidence,
         "preflight_influence": preflight_influence,
+        "source_attribution": source_attribution,
+        "non_mutation_confirmations": _non_mutation_confirmations(),
     }

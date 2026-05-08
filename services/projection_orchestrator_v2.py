@@ -359,12 +359,21 @@ def _build_final_decision(
     trace: list[dict[str, str]],
     final_decision_builder: Callable[..., dict[str, Any]],
 ) -> tuple[str, dict[str, Any]]:
+    # Boundary contract (06 / 07C / 07D / 11B): the aggregator must read
+    # confidence from confidence_result. Step 12C-B will wire a real
+    # confidence_result; until then we explicitly pass None so the
+    # aggregator surfaces final_confidence as "unknown" rather than
+    # recomputing internally. exclusion_result stays None here because it
+    # is generated later in the chain and is display-only for the
+    # aggregator; passing it would not affect direction/confidence.
     try:
         result = final_decision_builder(
             primary_analysis=primary_analysis,
             peer_adjustment=peer_adjustment,
             historical_probability=historical_probability,
             preflight=preflight,
+            confidence_result=None,
+            exclusion_result=None,
             symbol=symbol,
         )
     except Exception as exc:
@@ -376,6 +385,8 @@ def _build_final_decision(
             peer_adjustment=peer_adjustment,
             historical_probability=historical_probability,
             preflight=preflight,
+            confidence_result=None,
+            exclusion_result=None,
             symbol=symbol,
         )
 
