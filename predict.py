@@ -2,9 +2,37 @@
 """
 predict.py - Lightweight Predict v2 layer for the AVGO analyzer.
 
-Predict v2 builds an AVGO-only primary projection, applies peer adjustment,
-then emits the final explainable directional judgment. It is rule-based manual
-trading assistance, not an ML forecaster.
+LEGACY_COMPATIBILITY_WRAPPER (RISK-8 / 11E):
+predict.py is a legacy compatibility wrapper retained for backward
+compatibility with 9+ active importers (UI tabs, scripts, log_store,
+projection_orchestrator V1, review_agent, contract_replay_writer, ...).
+Core projection, exclusion, confidence, and final report responsibilities
+are being migrated to contract-separated services
+(``services/projection_entrypoint.py`` /
+``services/projection_orchestrator_v2.py`` /
+``services/final_decision.py`` /
+``services/confidence_evaluator.py`` / etc.).
+
+This file MUST NOT add new cross-system judgment logic. The 12E split
+proceeds in stages:
+
+    X1 (this commit) — mark as legacy + add source_mapping foundation
+    X2  — wire final_confidence from confidence_result (depends on 11C-A)
+    X3  — wire summary from final_report.combined_user_summary (depends on 11B)
+    X4  — delegate primary/peer/final to V2 path (depends on 11A/11B/11C-B)
+    X5  — Step 14 cleanup of dead helpers
+
+X1 is purely about declaration and metadata: it does not migrate any
+projection / aggregator / confidence logic, does not change any legacy
+field value, and does not delete any legacy field.
+
+See:
+- tasks/record_06_three_system_independence_principle.md
+- tasks/record_07a_projection_system_contract.md
+- tasks/record_07c_confidence_system_contract.md
+- tasks/record_07d_final_report_aggregator_contract.md
+- tasks/record_11e_predict_py_split_design.md
+- tasks/record_11h_boundary_enforcement_design_signoff.md
 """
 
 from __future__ import annotations
@@ -12,6 +40,56 @@ from __future__ import annotations
 import threading
 from datetime import datetime
 from typing import Any, TypedDict
+
+
+# ---------------------------------------------------------------------------
+# Legacy wrapper metadata (RISK-8 / 11E X1)
+# ---------------------------------------------------------------------------
+
+PREDICT_LEGACY_WRAPPER_KIND = "legacy_predict_wrapper"
+PREDICT_LEGACY_WRAPPER_VERSION = "predict_legacy_wrapper.v1"
+
+
+def _legacy_source_mapping() -> dict[str, str]:
+    """Source-of-truth foundation for the legacy compat fields surfaced by
+    ``run_predict``.
+
+    X1 only declares the *foundation*: which V2 / contract source each
+    legacy compat field will eventually map from. Stages X2..X4 wire the
+    actual derivation. Until then the value of the legacy field is still
+    produced by the in-file v1 helpers; the ``source_mapping`` entries
+    flag the migration target so callers can audit progress.
+    """
+    return {
+        "compat_final_bias": "legacy_predict_path (pending X4 migration to final_decision.final_direction)",
+        "compat_final_confidence": "legacy_predict_path (pending X2/X3 migration to confidence_result.combined_confidence.level)",
+        "compat_prediction_summary": "legacy_predict_path (pending X4 migration to final_report.combined_user_summary)",
+        "compat_primary_direction": "legacy_predict_path (pending X4 migration to main_projection.predicted_top1.state)",
+        "compat_peer_adjustment": "legacy_predict_path (pending X4 migration to V2 peer_adjustment)",
+        "compat_path_risk": "legacy_predict_path (pending X4 migration to final_decision.risk_level)",
+    }
+
+
+def _legacy_deprecation_notes() -> list[str]:
+    """Human-readable deprecation hints attached to every ``run_predict``
+    payload. Surfaced through ``deprecation_notes``."""
+    return [
+        "predict.py is a legacy compatibility wrapper (RISK-8 / 11E).",
+        "Stage 12E-X1 only marks the wrapper and adds source_mapping; no logic was migrated.",
+        "New code should call services/projection_entrypoint.run_projection_entrypoint (V2) directly.",
+        "compatibility field values will be re-sourced from V2 / confidence_result / final_report in stages X2..X4.",
+        "Wrapper must not introduce new judgment, recompute confidence, flip direction, or fabricate summary text.",
+    ]
+
+
+def _legacy_wrapper_metadata() -> dict[str, Any]:
+    return {
+        "wrapper_kind": PREDICT_LEGACY_WRAPPER_KIND,
+        "wrapper_version": PREDICT_LEGACY_WRAPPER_VERSION,
+        "legacy_compatibility": True,
+        "source_mapping": _legacy_source_mapping(),
+        "deprecation_notes": _legacy_deprecation_notes(),
+    }
 
 
 # Re-entry guard for the projection_three_systems attachment (Task 108).
@@ -1014,6 +1092,8 @@ def _missing_scan_result(research_result: dict[str, Any] | None, symbol: str) ->
         "projection_three_systems": _build_projection_three_systems_attachment(
             symbol=symbol, reason="scan_result missing"
         ),
+        # 11E X1: legacy wrapper metadata (does not change any legacy value).
+        **_legacy_wrapper_metadata(),
     }
 
 
@@ -1164,6 +1244,8 @@ def run_predict(
         "briefing_caution_applied": False,
         "briefing_caution_reason": None,
         "projection_three_systems": _build_projection_three_systems_attachment(symbol=symbol),
+        # 11E X1: legacy wrapper metadata (does not change any legacy value).
+        **_legacy_wrapper_metadata(),
     }
     if pre_briefing and pre_briefing.get("has_data"):
         result = _apply_briefing_caution(result, pre_briefing)
