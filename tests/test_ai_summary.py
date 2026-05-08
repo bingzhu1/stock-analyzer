@@ -139,107 +139,157 @@ class AISummaryServiceTests(unittest.TestCase):
         self.assertEqual(captured["authorization"], "Bearer system-key")
         self.assertEqual(captured["body"]["model"], "system-model")
 
-    def test_projection_payload_builds_guarded_prompt(self) -> None:
-        captured: dict[str, str] = {}
+    def _projection_summary_fake(self, sentence_text: str = "明日推演方向偏多。") -> object:
+        """Step 12F (RISK-9) — fake LLM that returns the contract JSON shape.
 
-        def fake_generator(*, input_text: str, instructions: str) -> str:
-            captured["input_text"] = input_text
-            captured["instructions"] = instructions
+        Each fake reply uses ``transformation=paraphrase`` and references a
+        field that exists in the test payload. The legacy wrappers will
+        forward this through ``generate_ai_summary``, so the post-check
+        passes only when source attribution is well-formed."""
+        import json
+
+        body = json.dumps(
+            {
+                "sentences": [
+                    {
+                        "sentence": sentence_text,
+                        "source_system": "final_report",
+                        "source_field": "summary_text",
+                        "source_value": "明日方向：偏多",
+                        "transformation": "paraphrase",
+                    }
+                ]
+            },
+            ensure_ascii=False,
+        )
+
+        def _gen(*, input_text: str, instructions: str, **_) -> str:
+            return body
+
+        return _gen
+
+    def test_projection_payload_default_does_not_call_llm(self) -> None:
+        """Step 12F (RISK-9): the legacy wrapper is opt-in; the default path
+        must return an empty string and never invoke the LLM."""
+        calls: list = []
+
+        def fake_generator(*, input_text: str, instructions: str, **_) -> str:
+            calls.append((input_text, instructions))
             return "AI 推演总结"
 
         text = build_projection_ai_summary(
             {
+                "final_report": {"summary_text": "明日方向：偏多"},
                 "final_bias": "bullish",
-                "readable_summary": {"summary_text": "明日方向：偏多"},
             },
             text_generator=fake_generator,
         )
+        self.assertEqual(text, "")
+        self.assertEqual(calls, [])
 
-        self.assertEqual(text, "AI 推演总结")
-        self.assertIn('"final_bias": "bullish"', captured["input_text"])
-        self.assertIn("明日方向：偏多", captured["input_text"])
-        self.assertIn("不要新增事实", captured["instructions"])
-        self.assertIn("不得改写规则层主结论", captured["instructions"])
+    def test_projection_payload_opt_in_returns_attributed_summary(self) -> None:
+        text = build_projection_ai_summary(
+            {
+                "final_report": {"summary_text": "明日方向：偏多"},
+                "projection_result": {"most_likely_state": "小涨"},
+            },
+            enable_ai_summary=True,
+            text_generator=self._projection_summary_fake("明日推演方向偏多。"),
+        )
+        self.assertIn("明日推演方向偏多。", text)
 
-    def test_review_payload_builds_guarded_prompt(self) -> None:
-        captured: dict[str, str] = {}
+    def test_review_payload_default_does_not_call_llm(self) -> None:
+        calls: list = []
 
-        def fake_generator(*, input_text: str, instructions: str) -> str:
-            captured["input_text"] = input_text
-            captured["instructions"] = instructions
+        def fake_generator(*, input_text: str, instructions: str, **_) -> str:
+            calls.append(input_text)
             return "AI 复盘总结"
 
         text = build_review_ai_summary(
             {
-                "prediction_id": "pid-1",
-                "final_bias": "bearish",
-                "outcome": {"direction_correct": 1, "actual_close_change": -0.012},
+                "final_report": {"summary_text": "复盘文本"},
+                "outcome_record": {"direction_correct": 1},
             },
             text_generator=fake_generator,
         )
+        self.assertEqual(text, "")
+        self.assertEqual(calls, [])
 
-        self.assertEqual(text, "AI 复盘总结")
-        self.assertIn('"prediction_id": "pid-1"', captured["input_text"])
-        self.assertIn('"direction_correct": 1', captured["input_text"])
-        self.assertIn("不要新增事实", captured["instructions"])
-        self.assertIn("不得改写规则层复盘结论", captured["instructions"])
+    def test_review_payload_opt_in_returns_attributed_summary(self) -> None:
+        import json
 
-    def test_projection_explanation_prompt_keeps_rule_conclusion_fixed(self) -> None:
-        captured: dict[str, str] = {}
+        body = json.dumps(
+            {
+                "sentences": [
+                    {
+                        "sentence": "上次预测方向已被实际收盘印证。",
+                        "source_system": "final_report",
+                        "source_field": "summary_text",
+                        "source_value": "复盘文本",
+                        "transformation": "paraphrase",
+                    }
+                ]
+            },
+            ensure_ascii=False,
+        )
 
-        def fake_generator(*, input_text: str, instructions: str) -> str:
-            captured["input_text"] = input_text
-            captured["instructions"] = instructions
+        def fake_generator(*, input_text: str, instructions: str, **_) -> str:
+            return body
+
+        text = build_review_ai_summary(
+            {
+                "final_report": {"summary_text": "复盘文本"},
+                "outcome_record": {"direction_correct": 1},
+            },
+            enable_ai_summary=True,
+            text_generator=fake_generator,
+        )
+        self.assertIn("上次预测方向已被实际收盘印证。", text)
+
+    def test_projection_explanation_default_does_not_call_llm(self) -> None:
+        calls: list = []
+
+        def fake_generator(*, input_text: str, instructions: str, **_) -> str:
+            calls.append(input_text)
             return "AI 解释"
 
         text = build_projection_ai_explanation(
-            {
-                "ai_request": {"focus": "direction", "direction": "偏多"},
-                "projection_report": {"direction": "偏多", "confidence": "low"},
-            },
+            {"projection_result": {"most_likely_state": "小涨"}},
             text_generator=fake_generator,
         )
+        self.assertEqual(text, "")
+        self.assertEqual(calls, [])
 
-        self.assertEqual(text, "AI 解释")
-        self.assertIn('"direction": "偏多"', captured["input_text"])
-        self.assertIn("不要新增事实", captured["instructions"])
-        self.assertIn("不得改写规则层主结论", captured["instructions"])
-        self.assertIn("不要重新预测", captured["input_text"])
+    def test_compare_explanation_default_does_not_call_llm(self) -> None:
+        calls: list = []
 
-    def test_compare_explanation_prompt_uses_existing_stats_only(self) -> None:
-        captured: dict[str, str] = {}
-
-        def fake_generator(*, input_text: str, instructions: str) -> str:
-            captured["input_text"] = input_text
-            captured["instructions"] = instructions
+        def fake_generator(*, input_text: str, instructions: str, **_) -> str:
+            calls.append(input_text)
             return "AI 比较总结"
 
         text = build_compare_ai_explanation(
-            {"stats": {"total": 20, "matched": 13, "match_rate": 65.0}},
+            {"compare_result": {"total": 20, "matched": 13, "match_rate": 65.0}},
             text_generator=fake_generator,
         )
+        self.assertEqual(text, "")
+        self.assertEqual(calls, [])
 
-        self.assertEqual(text, "AI 比较总结")
-        self.assertIn('"matched": 13', captured["input_text"])
-        self.assertIn("不得改写 total", captured["instructions"])
+    def test_risk_explanation_default_does_not_call_llm(self) -> None:
+        calls: list = []
 
-    def test_risk_explanation_prompt_does_not_invent_risks(self) -> None:
-        captured: dict[str, str] = {}
-
-        def fake_generator(*, input_text: str, instructions: str) -> str:
-            captured["input_text"] = input_text
-            captured["instructions"] = instructions
+        def fake_generator(*, input_text: str, instructions: str, **_) -> str:
+            calls.append(input_text)
             return "AI 风险解释"
 
         text = build_risk_ai_explanation(
-            {"readable_summary": {"risk_reminders": ["样本不足"]}},
+            {
+                "final_report": {"risk_reminders": ["样本不足"]},
+                "confidence_result": {"reliability_warnings": ["样本不足"]},
+            },
             text_generator=fake_generator,
         )
-
-        self.assertEqual(text, "AI 风险解释")
-        self.assertIn("样本不足", captured["input_text"])
-        self.assertIn("不要新增事实", captured["instructions"])
-        self.assertIn("不得改写规则层主结论", captured["instructions"])
+        self.assertEqual(text, "")
+        self.assertEqual(calls, [])
 
 
 class _FakeSpinner:
