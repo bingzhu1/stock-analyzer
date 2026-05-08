@@ -247,9 +247,22 @@ import；保留只为审计与教训。
 
 ### 7.2 旧 V1 orchestrator（仅 V2 / tests 内部 import）
 
-| path | reason | current evidence | required check before quarantine | suggested action |
+> ⚠ **14G CORRECTION (supersedes the original 14A tentative classification
+> for `services/projection_orchestrator.py`).**
+>
+> [Step 14G audit](tasks/record_14g_legacy_v1_orchestrator_audit.md) 完成
+> 后已确认：[`services/projection_orchestrator_v2.py:16`](services/projection_orchestrator_v2.py:16)
+> 在**模块顶层** `from services.projection_orchestrator import build_projection_orchestrator_result`，
+> 并把它当作 `run_projection_v2` 的**默认** `_projection_runner`
+> ([line 413](services/projection_orchestrator_v2.py:413), 在 [line 450](services/projection_orchestrator_v2.py:450)
+> 实际调用)。本 14A §7.2 原文的"仅由 `tests/test_projection_orchestrator.py`
+> 显式 import"判断**已过期**——V2 在生产路径上调用 V1，V1 是 active code，
+> 不再是 quarantine candidate。下表已按 14G 结论更新；任何与
+> "thin shim / archive / delete" 相关的 14A 措辞均**作废**，以本更正为准。
+
+| path | status (post-14G) | reason | current evidence | suggested action |
 |---|---|---|---|---|
-| `services/projection_orchestrator.py` | 旧 V1 orchestrator；Task 104 re-entry 链路存在；只被 `tests/test_projection_orchestrator.py` 显式 import；`predict.py` docstring 仅文本提及 | grep 显示**仅** `tests/test_projection_orchestrator.py` 真实 import；其余 4 处出现都在 boundary test 字符串里（验证 predict.py 不 import） | 14D 步骤：(a) 确认 V2 path **不**通过此 orchestrator 路由；(b) 确认 active path 没有 dynamic import；(c) 评估是否能压缩为 thin shim 或彻底 quarantine | 14D audit → 决定保留 thin shim、移到 `archive/legacy/`、或 delete |
+| `services/projection_orchestrator.py` | **KEEP_ACTIVE** after Step 14G audit | imported by [`services/projection_orchestrator_v2.py:16`](services/projection_orchestrator_v2.py:16) at module top level and used as the default `_projection_runner` for `run_projection_v2`; 4 active V2 callers (`projection_entrypoint` / `historical_replay_training` / `projection_v2_adapter` / `predict.py` lazy import) all rely on this default; `predict.py` docstring + re-entry guard ([predict.py:1315](predict.py:1315), [predict.py:1330-1336](predict.py:1330-1336)) presume V1 stays on the active path | `rg "^\s*from services\.projection_orchestrator import"` 真实命中 = 2 行：V2（active code）+ `tests/test_projection_orchestrator.py`（test）；其余 6 处全部为 docstring / `forbidden_modules` 字符串；`pytest tests/test_projection_orchestrator.py -q` = 5 passed；full pytest = 3256 passed / 0 failed | **do not quarantine / do not delete / do not move / do not thin-shim**。保留 V1 byte-identical；如未来要简化 V2 → V1 调用链（V2 内联 V1），属架构改动，**不**在 14 系列 cleanup 范围 |
 
 ### 7.3 test fixture monkeypatch hygiene
 
@@ -349,6 +362,15 @@ import；保留只为审计与教训。
   `cleanup: delete root v1 dead stub <name>`
 
 ### 10.3 Step 14D — legacy V1 orchestrator audit + 决策
+
+> ⚠ **Superseded by Step 14G (commit `6d2a87e`).** 实际编号路径：root dead
+> stubs audit → 14B；root stubs delete decision → 14C；root v1 stubs
+> quarantine → 14D；test fixture hygiene plan → 14E；test fixture hygiene
+> implementation → 14F；**legacy V1 orchestrator audit → 14G**（原计划
+> 此 §10.3 中的 "Step 14D"）。14G 结论 = `KEEP_ACTIVE`；本 §10.3 中
+> "保留 thin shim、archive 或 delete" 的三选项**全部作废**——不 archive、
+> 不 delete、不 thin-shim，详见 §7.2 14G CORRECTION 与
+> [tasks/record_14g_legacy_v1_orchestrator_audit.md](tasks/record_14g_legacy_v1_orchestrator_audit.md) §7.3 / §8。
 
 - **前置**：14C 完成
 - **范围**：`services/projection_orchestrator.py` + `tests/test_projection_orchestrator.py`
