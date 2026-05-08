@@ -115,6 +115,21 @@ def fake_predict(scan_result: dict, research_result: dict | None, symbol: str = 
     }
 
 
+# Step 14F: Save originals before rebind so the finally block can restore
+# the active modules and avoid permanent monkeypatch pollution into other
+# tests (see tasks/record_14e_test_fixture_hygiene_plan.md §8.1).
+_ORIGINALS = {
+    (matcher, "load_coded_avgo"): matcher.load_coded_avgo,
+    (matcher, "build_next_day_match_table"): matcher.build_next_day_match_table,
+    (matcher, "build_near_match_table"): matcher.build_near_match_table,
+    (matcher, "save_match_results"): matcher.save_match_results,
+    (matcher, "save_near_match_results"): matcher.save_near_match_results,
+    (stats_reporter, "build_stats_summary"): stats_reporter.build_stats_summary,
+    (stats_reporter, "save_stats_summary"): stats_reporter.save_stats_summary,
+    (scanner, "run_scan"): scanner.run_scan,
+    (predict, "run_predict"): predict.run_predict,
+}
+
 matcher.load_coded_avgo = fake_coded_df
 matcher.build_next_day_match_table = lambda coded_df, target_date: fake_match_df(target_date)
 matcher.build_near_match_table = lambda coded_df, target_date: fake_match_df(target_date)
@@ -125,4 +140,8 @@ stats_reporter.save_stats_summary = lambda *args, **kwargs: None
 scanner.run_scan = fake_scan
 predict.run_predict = fake_predict
 
-runpy.run_path(str(ROOT / "app.py"), run_name="__main__")
+try:
+    runpy.run_path(str(ROOT / "app.py"), run_name="__main__")
+finally:
+    for (_module, _attr), _original in _ORIGINALS.items():
+        setattr(_module, _attr, _original)
