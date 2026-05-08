@@ -1,4 +1,10 @@
-"""Orchestration-facing advisory block for projection preflight."""
+"""Orchestration-facing advisory block for projection preflight.
+
+Boundary contract (06 / 07A / 11D): the orchestrator forwards
+``target_date`` to ``build_projection_preflight`` so the downstream
+memory briefing can apply the cutoff guard. Legacy callers that omit
+``target_date`` see the original behaviour.
+"""
 
 from __future__ import annotations
 
@@ -12,6 +18,7 @@ def build_projection_orchestrator_preflight(
     symbol: str,
     error_category: str | None = None,
     limit: int = 5,
+    target_date: str | None = None,
 ) -> dict[str, Any]:
     """
     Package projection preflight output for future orchestration flows.
@@ -23,6 +30,7 @@ def build_projection_orchestrator_preflight(
         symbol=symbol,
         error_category=error_category,
         limit=limit,
+        target_date=target_date,
     )
     advisory_block = {
         "kind": "projection_preflight_advisory",

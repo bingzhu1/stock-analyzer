@@ -41,6 +41,7 @@ from __future__ import annotations
 from collections import Counter
 from typing import Any
 
+from services.cutoff_guard import filter_records_by_cutoff
 from services.review_store import load_review_records
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -179,6 +180,8 @@ def _summarize_records(symbol: str, records: list[dict[str, Any]]) -> dict[str, 
 def summarize_review_history(
     symbol: str,
     limit: int = 30,
+    *,
+    target_date: str | None = None,
 ) -> dict[str, Any]:
     """
     Aggregate review history for a symbol into a statistics dict.
@@ -189,15 +192,30 @@ def summarize_review_history(
     - weakest/strongest dimension by accuracy
     - error category and primary error frequency counts
 
+    When ``target_date`` is provided, the loaded records are filtered through
+    ``services.cutoff_guard.filter_records_by_cutoff`` before aggregation, and
+    the resulting audit summary is attached as ``cutoff_guard``. Without
+    ``target_date`` the original behaviour is preserved.
+
     Returns a summary dict — see module docstring for full schema.
     """
     records = load_review_records(symbol=symbol, limit=limit)
-    return _summarize_records(symbol, records)
+    cutoff_guard: dict[str, Any] | None = None
+    if target_date is not None:
+        filtered = filter_records_by_cutoff(records, target_date=target_date)
+        records = filtered["allowed_records"]
+        cutoff_guard = filtered["cutoff_guard"]
+    summary = _summarize_records(symbol, records)
+    if cutoff_guard is not None:
+        summary["cutoff_guard"] = cutoff_guard
+    return summary
 
 
 def summarize_review_history_by_open_scenario(
     symbol: str,
     limit: int = 30,
+    *,
+    target_date: str | None = None,
 ) -> dict[str, Any]:
     """
     Aggregate review history by predicted open scenario.
@@ -208,6 +226,11 @@ def summarize_review_history_by_open_scenario(
     rows remain compatible without being forced into a fake scenario.
     """
     records = load_review_records(symbol=symbol, limit=limit)
+    cutoff_guard: dict[str, Any] | None = None
+    if target_date is not None:
+        filtered = filter_records_by_cutoff(records, target_date=target_date)
+        records = filtered["allowed_records"]
+        cutoff_guard = filtered["cutoff_guard"]
     grouped_records: dict[str, list[dict[str, Any]]] = {
         scenario: [] for scenario in _OPEN_SCENARIOS
     }
@@ -229,7 +252,7 @@ def summarize_review_history_by_open_scenario(
         scenario_summaries[scenario] = summary
         scenario_record_count[scenario] = summary["record_count"]
 
-    return {
+    payload = {
         "symbol": symbol,
         "record_count": len(records),
         "scenario_type": "pred_open",
@@ -243,6 +266,9 @@ def summarize_review_history_by_open_scenario(
         "unknown_count": unknown_count,
         "scenarios": scenario_summaries,
     }
+    if cutoff_guard is not None:
+        payload["cutoff_guard"] = cutoff_guard
+    return payload
 
 
 def extract_review_rules(summary: dict[str, Any]) -> list[str]:

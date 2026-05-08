@@ -1,4 +1,8 @@
-"""Stable advisory preflight package for future projection workflows."""
+"""Stable advisory preflight package for future projection workflows.
+
+Boundary contract (06 / 07A / 11D): ``target_date`` is forwarded to the
+underlying memory briefing so the cutoff guard catches any future memory.
+"""
 
 from __future__ import annotations
 
@@ -12,12 +16,17 @@ def build_projection_preflight(
     symbol: str,
     error_category: str | None = None,
     limit: int = 5,
+    target_date: str | None = None,
 ) -> dict[str, Any]:
     """
     Package pre-projection advisory context.
 
     This helper is packaging-only. It does not adjust scores, confidence,
     weights, projection inputs, or prediction logic.
+
+    When ``target_date`` is provided it is forwarded to
+    ``build_projection_memory_briefing`` so cutoff-guarded memory feedback
+    appears under the briefing's ``cutoff_guard`` field.
     """
     clean_symbol = symbol.strip().upper()
     if not clean_symbol:
@@ -27,6 +36,7 @@ def build_projection_preflight(
         symbol=clean_symbol,
         error_category=error_category,
         limit=limit,
+        target_date=target_date,
     )
 
     return {

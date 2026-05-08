@@ -2,12 +2,20 @@
 
 This module packages existing memory / review reminders into a stable Step 0
 report. It does not learn new rules or change projection decisions.
+
+Boundary contract (06 / 07A / 11D): when ``target_date`` is provided, the
+memory briefing builder receives it as a kwarg, the review records are
+filtered through ``services.cutoff_guard.filter_records_by_cutoff`` before
+forming rules, and the merged ``cutoff_guard`` audit summary is surfaced
+on the output. Legacy callers (no ``target_date``) keep the original
+behaviour.
 """
 
 from __future__ import annotations
 
 from typing import Any, Callable
 
+from services.cutoff_guard import filter_records_by_cutoff, merge_cutoff_summaries
 from services.error_taxonomy import normalize_error_category
 from services.projection_memory_briefing import build_projection_memory_briefing
 from services.review_store import load_review_records
@@ -249,6 +257,9 @@ def build_projection_rule_preflight(
     active_pool_matches = 0
     active_pool_used = False
 
+    memory_briefing_payload: dict[str, Any] = {}
+    review_cutoff_summary: dict[str, Any] | None = None
+
     if "memory_items" in context:
         memory_rules, memory_count = _rules_from_memory_items(
             _as_list(context.get("memory_items")),
@@ -260,7 +271,9 @@ def build_projection_rule_preflight(
             briefing = _as_dict(context.get("memory_briefing")) or _memory_briefing_builder(
                 symbol=clean_symbol,
                 limit=5,
+                target_date=target_date,
             )
+            memory_briefing_payload = briefing
             memory_rules, memory_count = _rules_from_memory_briefing(briefing, warnings=warnings)
             rules.extend(memory_rules)
         except Exception as exc:
@@ -275,6 +288,13 @@ def build_projection_rule_preflight(
     else:
         try:
             review_items = _review_loader(symbol=clean_symbol, limit=5)
+            if target_date is not None:
+                filtered = filter_records_by_cutoff(
+                    review_items,
+                    target_date=target_date,
+                )
+                review_items = filtered["allowed_records"]
+                review_cutoff_summary = filtered["cutoff_guard"]
             review_rules, review_count = _rules_from_review_items(review_items, warnings=warnings)
             rules.extend(review_rules)
         except Exception as exc:
@@ -329,7 +349,16 @@ def build_projection_rule_preflight(
         ready = True
         warnings.extend(source_errors)
 
-    return {
+    cutoff_guard: dict[str, Any] | None = None
+    if target_date is not None:
+        memory_cutoff = _as_dict(memory_briefing_payload.get("cutoff_guard"))
+        cutoff_guard = merge_cutoff_summaries(
+            memory_cutoff if memory_cutoff else None,
+            review_cutoff_summary,
+            target_date=target_date,
+        )
+
+    payload: dict[str, Any] = {
         "kind": "projection_rule_preflight",
         "symbol": clean_symbol,
         "target_date": target_date,
@@ -343,3 +372,6 @@ def build_projection_rule_preflight(
         "source_counts": source_counts,
         "active_pool_used": active_pool_used,
     }
+    if cutoff_guard is not None:
+        payload["cutoff_guard"] = cutoff_guard
+    return payload

@@ -141,6 +141,8 @@ def build_pre_prediction_briefing(
     limit: int = 30,
     max_rules: int = 3,
     pred_open: str | None = None,
+    *,
+    target_date: str | None = None,
 ) -> dict[str, Any]:
     """
     Build a pre-prediction advisory briefing from historical review data.
@@ -151,15 +153,25 @@ def build_pre_prediction_briefing(
     This function is advisory only — it never modifies prediction inputs, scores,
     or confidence. `advisory_only` is always True in the returned dict.
 
+    When ``target_date`` is provided, both review-history aggregations forward
+    it to ``services.review_analyzer`` so future review records are filtered
+    out via the 11D cutoff guard. The resulting audit summary is surfaced as
+    ``cutoff_guard`` on the briefing.
+
     Parameters
     ----------
     symbol      Ticker symbol (e.g. "AVGO")
     limit       Maximum review records to read (default 30)
     max_rules   Maximum pre-trade rules to include in top_rules (default 3)
     pred_open   Optional current predicted open scenario (高开/低开/平开)
+    target_date Optional ISO date used as the cutoff for review history
+                (online inference paths must always pass this).
     """
-    summary = summarize_review_history(symbol=symbol, limit=limit)
-    scenario_summary = summarize_review_history_by_open_scenario(symbol=symbol, limit=limit)
+    summarize_kwargs: dict[str, Any] = {"symbol": symbol, "limit": limit}
+    if target_date is not None:
+        summarize_kwargs["target_date"] = target_date
+    summary = summarize_review_history(**summarize_kwargs)
+    scenario_summary = summarize_review_history_by_open_scenario(**summarize_kwargs)
     all_rules = extract_review_rules(summary)
     scenario_rules: list[str] = []
 
@@ -185,7 +197,7 @@ def build_pre_prediction_briefing(
     caution = _caution_level(overall, weakest_acc) if has_data else "none"
     top_rules = _build_top_rules(active_summary, max_rules)
 
-    return {
+    briefing: dict[str, Any] = {
         "symbol":                  symbol,
         "record_count":            record_count,
         "global_record_count":     summary.get("record_count", 0),
@@ -207,3 +219,21 @@ def build_pre_prediction_briefing(
         "scenario_top_rules":      top_rules if rule_scope == "open_scenario" else [],
         "advisory_only":           True,
     }
+    cutoff_summary = summary.get("cutoff_guard") if isinstance(summary, dict) else None
+    if cutoff_summary is None and isinstance(scenario_summary, dict):
+        cutoff_summary = scenario_summary.get("cutoff_guard")
+    if cutoff_summary is None and target_date is not None:
+        # The underlying summarizer was either monkeypatched in a test or
+        # short-circuited; synthesise an empty cutoff_guard so callers can
+        # rely on the field whenever they passed target_date.
+        cutoff_summary = {
+            "target_date": target_date,
+            "mode": "strict",
+            "allowed_count": 0,
+            "skipped_count": 0,
+            "skipped_reasons": [],
+            "by_reason": {},
+        }
+    if cutoff_summary is not None:
+        briefing["cutoff_guard"] = cutoff_summary
+    return briefing
