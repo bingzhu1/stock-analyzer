@@ -15,7 +15,7 @@ from __future__ import annotations
 from math import exp
 from typing import Any
 
-from services.exclusion_layer import build_peer_alignment
+from services.peer_alignment import build_peer_alignment
 
 
 _STATE_ORDER = ("大涨", "小涨", "震荡", "小跌", "大跌")

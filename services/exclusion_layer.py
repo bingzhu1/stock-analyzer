@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from services.peer_alignment import build_peer_alignment
+
 
 _UPSIDE_EXCLUDE_THRESHOLD = 3
 _DOWNSIDE_EXCLUDE_THRESHOLD = 3
@@ -59,79 +61,6 @@ def _kill_risk(score: int) -> str:
     if score >= 2:
         return "medium"
     return "low"
-
-
-def build_peer_alignment(features: dict[str, Any]) -> dict[str, Any]:
-    normalized = _normalize_features(features)
-    peers = {
-        "NVDA": normalized["nvda_ret1"],
-        "SOXX": normalized["soxx_ret1"],
-        "QQQ": normalized["qqq_ret1"],
-    }
-
-    available_peer_count = 0
-    bullish_count = 0
-    bearish_count = 0
-    strong_bullish_count = 0
-    strong_bearish_count = 0
-
-    for ret1 in peers.values():
-        if ret1 is None:
-            continue
-        available_peer_count += 1
-        if ret1 >= 0.5:
-            bullish_count += 1
-        if ret1 <= -0.5:
-            bearish_count += 1
-        if ret1 >= 1.0:
-            strong_bullish_count += 1
-        if ret1 <= -1.0:
-            strong_bearish_count += 1
-
-    if available_peer_count == 0:
-        alignment = "missing"
-        up_support = "unknown"
-        down_support = "unknown"
-        reasons = ["缺少 NVDA / SOXX / QQQ 的同日强弱输入，peer alignment 只能保守降级。"]
-    else:
-        if bullish_count >= 2:
-            up_support = "supported"
-        elif bullish_count == 1:
-            up_support = "partial"
-        else:
-            up_support = "unsupported"
-
-        if bearish_count >= 2:
-            down_support = "supported"
-        elif bearish_count == 1:
-            down_support = "partial"
-        else:
-            down_support = "unsupported"
-
-        if strong_bullish_count >= 2:
-            alignment = "bullish"
-        elif strong_bearish_count >= 2:
-            alignment = "bearish"
-        elif bullish_count == 0 and bearish_count == 0:
-            alignment = "neutral"
-        else:
-            alignment = "mixed"
-
-        reasons = [
-            (
-                f"peer alignment：available={available_peer_count}，"
-                f"bullish={bullish_count}，bearish={bearish_count}。"
-            )
-        ]
-
-    return {
-        "alignment": alignment,
-        "up_support": up_support,
-        "down_support": down_support,
-        "available_peer_count": available_peer_count,
-        "peer_returns": peers,
-        "reasons": reasons,
-    }
 
 
 def exclude_big_up(features: dict[str, Any]) -> dict[str, Any]:
