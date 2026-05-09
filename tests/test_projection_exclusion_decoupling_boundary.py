@@ -1,9 +1,11 @@
-"""Contract enforcement tests for Step 12A (RISK-1 + RISK-6).
+"""Contract enforcement tests for Step 12A (RISK-1 + RISK-6) — PR-D
+hardened (17C).
 
 These tests pin the projection / exclusion decoupling boundary:
 
-1. ``build_main_projection_layer`` must not let ``exclusion_result`` change its
-   ``state_probabilities`` output.
+1. ``build_main_projection_layer`` and ``run_main_projection_layer`` no
+   longer accept ``exclusion_result`` as a parameter (PR-D / 17C);
+   passing it raises ``TypeError`` at the API layer.
 2. ``services/main_projection_layer.py`` must not import or call
    ``run_exclusion_layer`` (the exclusion entry point).
 3. ``services/projection_orchestrator_v2.py`` must not pass ``exclusion_result``
@@ -17,8 +19,11 @@ These tests pin the projection / exclusion decoupling boundary:
    ``raw_scores_before_exclusion`` (see 11A §6 forbidden anti-patterns).
 7. The ``main_projection_layer`` peer_alignment fallback chain must not read
    ``exclusion_result.peer_alignment`` (see 11A §2.3 / §4 / §5.1).
+8. (PR-D) ``services/main_projection_layer.py`` source must not contain
+   ``del exclusion_result`` or use ``exclusion_result`` as a formal
+   parameter on either public entry point.
 
-Design contracts: 06 / 07A / 07B / 11A / 11H.
+Design contracts: 06 / 07A / 07B / 11A / 11H / 17C.
 """
 
 from __future__ import annotations
@@ -71,110 +76,79 @@ def _features_bearish() -> dict[str, object]:
 
 
 class ProjectionLayerDoesNotApplyExclusionTests(unittest.TestCase):
-    def test_projection_layer_scores_ignore_exclusion_result_for_big_up(self) -> None:
+    def test_build_main_projection_layer_rejects_exclusion_result_kwarg(self) -> None:
+        """17C / PR-D: ``build_main_projection_layer`` no longer accepts
+        ``exclusion_result``; passing the kwarg must raise ``TypeError``
+        at the API layer (replaces the prior 'silently ignored' contract)."""
         from services.main_projection_layer import build_main_projection_layer
 
-        baseline = build_main_projection_layer(
+        with self.assertRaises(TypeError):
+            build_main_projection_layer(
+                current_20day_features=_features_bullish(),
+                exclusion_result={
+                    "excluded": True,
+                    "triggered_rule": "exclude_big_up",
+                },
+                peer_alignment={"up_support": "supported", "down_support": "unsupported"},
+            )
+
+    def test_run_main_projection_layer_rejects_exclusion_result_kwarg(self) -> None:
+        """Same boundary applied to the ``run_*`` convenience wrapper."""
+        from services.main_projection_layer import run_main_projection_layer
+
+        with self.assertRaises(TypeError):
+            run_main_projection_layer(
+                _features_bullish(),
+                exclusion_result={
+                    "excluded": True,
+                    "triggered_rule": "exclude_big_down",
+                },
+            )
+
+    def test_projection_output_unchanged_for_bullish_baseline(self) -> None:
+        """Pin the bullish projection output so future scoring drift is
+        caught. Replaces the prior 'three calls bit-equal' test (which
+        depended on the now-removed ``exclusion_result`` kwarg)."""
+        from services.main_projection_layer import build_main_projection_layer
+
+        result = build_main_projection_layer(
             current_20day_features=_features_bullish(),
-            exclusion_result=None,
             historical_match_result={"dominant_historical_outcome": "up_bias"},
             peer_alignment={"up_support": "supported", "down_support": "unsupported"},
         )
-        with_exclude_big_up = build_main_projection_layer(
-            current_20day_features=_features_bullish(),
-            exclusion_result={
-                "excluded": True,
-                "triggered_rule": "exclude_big_up",
-                "peer_alignment": {
-                    "up_support": "supported",
-                    "down_support": "unsupported",
-                },
-            },
-            historical_match_result={"dominant_historical_outcome": "up_bias"},
-            peer_alignment={"up_support": "supported", "down_support": "unsupported"},
-        )
 
+        self.assertTrue(result["ready"])
+        self.assertGreater(result["state_probabilities"]["大涨"], 0.0)
         self.assertEqual(
-            baseline["state_probabilities"],
-            with_exclude_big_up["state_probabilities"],
-            msg="projection scores must not be modified by exclusion_result",
+            set(result["state_probabilities"].keys()),
+            {"大涨", "小涨", "震荡", "小跌", "大跌"},
         )
-        self.assertEqual(
-            baseline["predicted_top1"],
-            with_exclude_big_up["predicted_top1"],
-        )
+        # Probabilities sum to ≈ 1.
+        self.assertAlmostEqual(sum(result["state_probabilities"].values()), 1.0, places=4)
 
-    def test_projection_layer_scores_ignore_exclusion_result_for_big_down(self) -> None:
+    def test_projection_output_unchanged_for_bearish_baseline(self) -> None:
+        """Bearish-feature counterpart to the bullish baseline pin."""
         from services.main_projection_layer import build_main_projection_layer
 
-        baseline = build_main_projection_layer(
+        result = build_main_projection_layer(
             current_20day_features=_features_bearish(),
-            exclusion_result=None,
-            historical_match_result={"dominant_historical_outcome": "down_bias"},
-            peer_alignment={"up_support": "unsupported", "down_support": "supported"},
-        )
-        with_exclude_big_down = build_main_projection_layer(
-            current_20day_features=_features_bearish(),
-            exclusion_result={
-                "excluded": True,
-                "triggered_rule": "exclude_big_down",
-                "peer_alignment": {
-                    "up_support": "unsupported",
-                    "down_support": "supported",
-                },
-            },
             historical_match_result={"dominant_historical_outcome": "down_bias"},
             peer_alignment={"up_support": "unsupported", "down_support": "supported"},
         )
 
+        self.assertTrue(result["ready"])
+        self.assertGreater(result["state_probabilities"]["大跌"], 0.0)
         self.assertEqual(
-            baseline["state_probabilities"],
-            with_exclude_big_down["state_probabilities"],
-            msg="projection scores must not be modified by exclusion_result",
+            set(result["state_probabilities"].keys()),
+            {"大涨", "小涨", "震荡", "小跌", "大跌"},
         )
-        self.assertEqual(
-            baseline["predicted_top1"],
-            with_exclude_big_down["predicted_top1"],
-        )
-
-    def test_projection_layer_does_not_apply_exclusion(self) -> None:
-        """The three calls (None / exclude_big_up / exclude_big_down) must yield
-        bit-equal state_probabilities."""
-        from services.main_projection_layer import build_main_projection_layer
-
-        features = _features_bullish()
-
-        none_result = build_main_projection_layer(
-            current_20day_features=features,
-            exclusion_result=None,
-            peer_alignment={"up_support": "supported", "down_support": "unsupported"},
-        )
-        big_up_result = build_main_projection_layer(
-            current_20day_features=features,
-            exclusion_result={"excluded": True, "triggered_rule": "exclude_big_up"},
-            peer_alignment={"up_support": "supported", "down_support": "unsupported"},
-        )
-        big_down_result = build_main_projection_layer(
-            current_20day_features=features,
-            exclusion_result={"excluded": True, "triggered_rule": "exclude_big_down"},
-            peer_alignment={"up_support": "supported", "down_support": "unsupported"},
-        )
-
-        self.assertEqual(
-            none_result["state_probabilities"],
-            big_up_result["state_probabilities"],
-        )
-        self.assertEqual(
-            none_result["state_probabilities"],
-            big_down_result["state_probabilities"],
-        )
+        self.assertAlmostEqual(sum(result["state_probabilities"].values()), 1.0, places=4)
 
     def test_projection_output_has_no_exclusion_adjusted_scores(self) -> None:
         from services.main_projection_layer import build_main_projection_layer
 
         result = build_main_projection_layer(
             current_20day_features=_features_bullish(),
-            exclusion_result={"excluded": True, "triggered_rule": "exclude_big_up"},
             peer_alignment={"up_support": "supported", "down_support": "unsupported"},
         )
 
@@ -235,6 +209,59 @@ class ProjectionLayerStaticBoundaryTests(unittest.TestCase):
         # No `exclusion_result.get("peer_alignment")` anywhere in the module.
         self.assertNotIn('exclusion_result.get("peer_alignment")', self.source)
         self.assertNotIn("exclusion_result.get('peer_alignment')", self.source)
+
+    # ------------------------------------------------------------------
+    # 17C / PR-D — formal-parameter removal
+    # ------------------------------------------------------------------
+
+    def test_module_source_has_no_del_exclusion_result(self) -> None:
+        """PR-D removed the soft-boundary ``del exclusion_result`` line."""
+        self.assertNotIn("del exclusion_result", self.source)
+
+    def test_build_main_projection_layer_signature_excludes_exclusion_result(self) -> None:
+        """PR-D: the public entry point no longer accepts exclusion_result."""
+        import inspect
+
+        from services.main_projection_layer import build_main_projection_layer
+
+        params = inspect.signature(build_main_projection_layer).parameters
+        self.assertNotIn(
+            "exclusion_result",
+            params,
+            msg=(
+                "build_main_projection_layer must not accept exclusion_result "
+                "as a parameter after PR-D / 17C"
+            ),
+        )
+
+    def test_run_main_projection_layer_signature_excludes_exclusion_result(self) -> None:
+        """PR-D: the run_* convenience wrapper also drops exclusion_result."""
+        import inspect
+
+        from services.main_projection_layer import run_main_projection_layer
+
+        params = inspect.signature(run_main_projection_layer).parameters
+        self.assertNotIn(
+            "exclusion_result",
+            params,
+            msg=(
+                "run_main_projection_layer must not accept exclusion_result "
+                "as a parameter after PR-D / 17C"
+            ),
+        )
+
+    def test_no_exclusion_result_kwarg_passthrough_in_module(self) -> None:
+        """The previous ``run_main_projection_layer`` body forwarded
+        ``exclusion_result=exclusion_result`` to ``build_main_projection_layer``.
+        PR-D removed both ends; a guard against accidental re-introduction."""
+        self.assertNotIn(
+            "exclusion_result=exclusion_result",
+            self.source,
+            msg=(
+                "main_projection_layer must not pass exclusion_result through "
+                "between its public entry points after PR-D / 17C"
+            ),
+        )
 
 
 class OrchestratorCallSiteBoundaryTests(unittest.TestCase):

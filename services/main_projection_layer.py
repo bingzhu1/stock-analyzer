@@ -4,10 +4,13 @@ This module produces a stable Top1 / Top2 / probability distribution report
 from current 20-day features, peer alignment, and optional historical
 matching evidence.
 
-Boundary contract (06 / 07A / 11A): the projection system must not consume
-exclusion outputs. The ``exclusion_result`` parameter on the public entry
-points is deprecated and ignored; it is preserved only for caller signature
-compatibility while Step 14 cleanup removes it.
+Boundary contract (06 / 07A / 11A / 17C):
+- The projection system must not consume exclusion outputs. After PR-D
+  (17C) the public entry points (``build_main_projection_layer`` /
+  ``run_main_projection_layer``) **do not accept** ``exclusion_result``
+  as a parameter; passing it raises ``TypeError`` from the API layer.
+- The previous "deprecated and ignored" formal-parameter form (with a
+  runtime-discard soft-boundary) was removed by PR-D.
 """
 
 from __future__ import annotations
@@ -283,19 +286,17 @@ def _rank_states(distribution: dict[str, float]) -> list[tuple[str, float]]:
 def build_main_projection_layer(
     *,
     current_20day_features: dict[str, Any],
-    exclusion_result: dict[str, Any] | None = None,
     historical_match_result: dict[str, Any] | None = None,
     peer_alignment: dict[str, Any] | None = None,
     symbol: str = "AVGO",
 ) -> dict[str, Any]:
     """Build a stable five-state projection from current 20-day context.
 
-    Boundary contract (06 / 07A / 11A): ``exclusion_result`` is **deprecated
-    and ignored**. The projection system must not read or be modified by the
-    exclusion system. The parameter remains only for caller signature
-    compatibility and will be removed by the Step 14 cleanup pass.
+    Boundary contract (06 / 07A / 11A / 17C): the projection system does
+    not read ``exclusion_result``. PR-D removed the previously-deprecated
+    formal parameter; passing ``exclusion_result=...`` now raises
+    ``TypeError`` at the call site.
     """
-    del exclusion_result  # boundary contract: exclusion_result must not influence projection
     normalized = _normalize_current_features(current_20day_features)
     clean_symbol = str(symbol or normalized["symbol"] or "AVGO").strip().upper() or "AVGO"
     reasons: list[str] = []
@@ -366,19 +367,18 @@ def build_main_projection_layer(
 
 def run_main_projection_layer(
     current_20day_features: dict[str, Any],
-    exclusion_result: dict[str, Any] | None = None,
     historical_match_result: dict[str, Any] | None = None,
     peer_alignment: dict[str, Any] | None = None,
     symbol: str = "AVGO",
 ) -> dict[str, Any]:
     """Convenience wrapper for callers that prefer run_* naming.
 
-    Boundary contract (06 / 07A / 11A): ``exclusion_result`` is deprecated
-    and ignored; it is preserved for caller signature compatibility only.
+    Boundary contract (06 / 07A / 11A / 17C): same as
+    ``build_main_projection_layer`` — ``exclusion_result`` is not part
+    of this API after PR-D.
     """
     return build_main_projection_layer(
         current_20day_features=current_20day_features,
-        exclusion_result=exclusion_result,
         historical_match_result=historical_match_result,
         peer_alignment=peer_alignment,
         symbol=symbol,
