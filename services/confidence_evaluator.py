@@ -151,28 +151,228 @@ def _evaluate_one_side(
     return {"level": level, "score": score, "reasoning": reasoning}
 
 
+# PR-CONF-2 (18N): map legacy ``triggered_rule`` single-value strings to
+# the corresponding 5-state Chinese labels so the agreement check can
+# work against legacy exclusion_layer output that has not yet migrated
+# to ``most_unlikely_state`` / ``ranked_unlikely_states``.
+_LEGACY_TRIGGERED_RULE_TO_STATE: dict[str, str] = {
+    "exclude_big_up": "大涨",
+    "exclude_big_down": "大跌",
+}
+
+
+def _state_from_legacy_triggered_rule(value: Any) -> str | None:
+    """Internal: map a legacy ``triggered_rule`` value to a 5-state
+    label. Returns None for unrecognised inputs (incl. None / non-str)."""
+    if isinstance(value, str):
+        return _LEGACY_TRIGGERED_RULE_TO_STATE.get(value)
+    return None
+
+
+def _extract_projection_states(
+    projection_result: dict[str, Any],
+) -> tuple[str | None, list[str]]:
+    """Internal: derive (primary, candidates) for projection from either
+    standard ``projection_result.v1`` keys or legacy main_projection_layer
+    keys.
+
+    Standard schema (preferred):
+      - primary    ← ``most_likely_state`` if in _FIVE_STATES
+      - candidates ← ``ranked_states[:2]`` filtered to _FIVE_STATES
+
+    Legacy fallback (when standard keys absent):
+      - primary    ← ``predicted_top1.state`` (dict) or ``predicted_top1``
+                     (str) if in _FIVE_STATES
+      - candidates ← ``[predicted_top1.state, predicted_top2.state]``
+                     filtered + deduped
+
+    Returns ``(primary, candidates)``. ``primary`` is None if no source
+    produces a valid 5-state label. ``candidates`` is a deduplicated list
+    of 0-2 valid 5-state labels (top-2 bounded to preserve existing
+    partial_conflict semantics)."""
+    proj = _as_dict(projection_result)
+
+    primary: str | None = None
+    candidate = _clean_str(proj.get("most_likely_state"))
+    if candidate in _FIVE_STATES:
+        primary = candidate
+    else:
+        top1 = proj.get("predicted_top1")
+        if isinstance(top1, dict):
+            cs = _clean_str(top1.get("state"))
+            if cs in _FIVE_STATES:
+                primary = cs
+        elif isinstance(top1, str):
+            cs = _clean_str(top1)
+            if cs in _FIVE_STATES:
+                primary = cs
+
+    candidates: list[str] = []
+    ranked_states = _as_list(proj.get("ranked_states"))
+    if ranked_states:
+        for entry in ranked_states[:2]:
+            cs = _clean_str(entry)
+            if cs in _FIVE_STATES and cs not in candidates:
+                candidates.append(cs)
+
+    if not candidates:
+        for src in (proj.get("predicted_top1"), proj.get("predicted_top2")):
+            if isinstance(src, dict):
+                cs = _clean_str(src.get("state"))
+            elif isinstance(src, str):
+                cs = _clean_str(src)
+            else:
+                cs = ""
+            if cs in _FIVE_STATES and cs not in candidates:
+                candidates.append(cs)
+
+    if not candidates and primary is not None:
+        candidates.append(primary)
+
+    return primary, candidates
+
+
+def _extract_exclusion_states(
+    exclusion_result: dict[str, Any],
+) -> tuple[str | None, list[str]]:
+    """Internal: derive (primary, candidates) for exclusion from either
+    standard ``exclusion_result.v1`` keys or legacy exclusion_layer keys.
+
+    Standard schema (preferred for primary):
+      - primary    ← ``most_unlikely_state`` if in _FIVE_STATES
+
+    Legacy fallback for primary (in priority order):
+      - ``triggered_rule`` mapped via _LEGACY_TRIGGERED_RULE_TO_STATE
+      - ``excluded_states[i]`` first valid entry
+      - ``excluded`` (str-shaped) if in _FIVE_STATES (defensive; legacy
+        run_exclusion_layer uses bool here, which is correctly ignored)
+      - ``exclude_big_up=True`` → 大涨
+      - ``exclude_big_down=True`` → 大跌
+
+    Candidates (preferred → fallback):
+      - ``ranked_unlikely_states[:2]`` filtered to _FIVE_STATES
+        (top-2 bounded to preserve existing partial_conflict semantics)
+      - ``excluded_states`` filtered to _FIVE_STATES (rule-fired,
+        intentionally short — used in full)
+      - legacy: ``triggered_rule`` mapping + ``exclude_big_up`` / ``exclude_big_down``
+        flags + ``excluded`` (str)
+      - last resort: ``[primary]`` if primary set
+
+    Returns ``(primary, candidates)``."""
+    excl = _as_dict(exclusion_result)
+
+    primary: str | None = None
+    candidate = _clean_str(excl.get("most_unlikely_state"))
+    if candidate in _FIVE_STATES:
+        primary = candidate
+    if primary is None:
+        mapped = _state_from_legacy_triggered_rule(excl.get("triggered_rule"))
+        if mapped is not None:
+            primary = mapped
+    if primary is None:
+        excluded_states = _as_list(excl.get("excluded_states"))
+        for entry in excluded_states:
+            cs = _clean_str(entry)
+            if cs in _FIVE_STATES:
+                primary = cs
+                break
+    if primary is None:
+        excluded_value = excl.get("excluded")
+        if isinstance(excluded_value, str):
+            cs = _clean_str(excluded_value)
+            if cs in _FIVE_STATES:
+                primary = cs
+    if primary is None:
+        if excl.get("exclude_big_up") is True:
+            primary = "大涨"
+        elif excl.get("exclude_big_down") is True:
+            primary = "大跌"
+
+    candidates: list[str] = []
+    ranked_unlikely = _as_list(excl.get("ranked_unlikely_states"))
+    if ranked_unlikely:
+        for entry in ranked_unlikely[:2]:
+            cs = _clean_str(entry)
+            if cs in _FIVE_STATES and cs not in candidates:
+                candidates.append(cs)
+
+    if not candidates:
+        excluded_states = _as_list(excl.get("excluded_states"))
+        for entry in excluded_states:
+            cs = _clean_str(entry)
+            if cs in _FIVE_STATES and cs not in candidates:
+                candidates.append(cs)
+
+    if not candidates:
+        mapped = _state_from_legacy_triggered_rule(excl.get("triggered_rule"))
+        if mapped is not None and mapped not in candidates:
+            candidates.append(mapped)
+        if (
+            excl.get("exclude_big_up") is True
+            and "大涨" not in candidates
+        ):
+            candidates.append("大涨")
+        if (
+            excl.get("exclude_big_down") is True
+            and "大跌" not in candidates
+        ):
+            candidates.append("大跌")
+        excluded_value = excl.get("excluded")
+        if isinstance(excluded_value, str):
+            cs = _clean_str(excluded_value)
+            if cs in _FIVE_STATES and cs not in candidates:
+                candidates.append(cs)
+
+    if not candidates and primary is not None:
+        candidates.append(primary)
+
+    return primary, candidates
+
+
 def _compute_agreement(
     projection_result: dict[str, Any],
     exclusion_result: dict[str, Any],
 ) -> str:
+    """Compute agreement between projection and exclusion using the
+    standard schema first and falling back to legacy main_projection_layer /
+    exclusion_layer fields when the standard keys are absent (PR-CONF-2 /
+    18N).
+
+    Decision order:
+      1. Either side empty / dict-coerced empty → ``"unknown"``.
+      2. No primary state extractable on either side → ``"unknown"``
+         (legacy ``triggered_rule=None`` / no ``predicted_top1`` / etc.).
+      3. Projection primary appears in exclusion candidates → ``"strong_conflict"``
+         (broader than the prior exact-equality rule; catches the case
+         where projection picks a state that exclusion has flagged as
+         one of its top unlikely candidates).
+      4. Projection candidates ∩ exclusion candidates non-empty →
+         ``"partial_conflict"`` (top-2 bounded on both sides; preserves
+         original semantics).
+      5. Otherwise ``"aligned"``.
+
+    The function does not change ``_combine_confidence`` /
+    ``_LEVEL_RANK`` / ``_score_for_level`` / calibration handling — those
+    remain untouched (PR-CONF-3 will address ``calibration_context`` in a
+    later batch). It does not import ``projection_result_adapter`` /
+    ``exclusion_result_adapter``; the field-extraction helpers above are
+    inline so the active path stays decoupled from adapter modules."""
     proj = _as_dict(projection_result)
     excl = _as_dict(exclusion_result)
     if not proj or not excl:
         return "unknown"
 
-    most_likely = _clean_str(proj.get("most_likely_state"))
-    most_unlikely = _clean_str(excl.get("most_unlikely_state"))
-    if not most_likely or not most_unlikely:
+    proj_primary, proj_candidates = _extract_projection_states(proj)
+    excl_primary, excl_candidates = _extract_exclusion_states(excl)
+
+    if proj_primary is None or excl_primary is None:
         return "unknown"
 
-    if most_likely == most_unlikely:
+    excl_candidate_set = set(excl_candidates)
+    if proj_primary in excl_candidate_set:
         return "strong_conflict"
 
-    ranked_states = [_clean_str(s) for s in _as_list(proj.get("ranked_states"))]
-    ranked_unlikely = [_clean_str(s) for s in _as_list(excl.get("ranked_unlikely_states"))]
-    top2_likely = {s for s in ranked_states[:2] if s}
-    top2_unlikely = {s for s in ranked_unlikely[:2] if s}
-    if top2_likely & top2_unlikely:
+    if set(proj_candidates) & excl_candidate_set:
         return "partial_conflict"
 
     return "aligned"
