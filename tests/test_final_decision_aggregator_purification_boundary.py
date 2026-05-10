@@ -448,5 +448,292 @@ class PrimaryMissingPathTests(unittest.TestCase):
         self.assertEqual(result["final_confidence"], "unknown")
 
 
+# ---------------------------------------------------------------------------
+# PR-FINAL-2 (18P): forbidden import boundary, input non-mutation
+# round-trip, and dead helper removal pinning. Final Report Layer must
+# remain a pure aggregator + display formatter — no calls into
+# Projection / Exclusion / Confidence / orchestrator / UI / DB / predict.
+# ---------------------------------------------------------------------------
+
+
+class FinalDecisionImportBoundaryTests(unittest.TestCase):
+    """``services/final_decision.py`` must remain a pure aggregator with
+    zero coupling to Projection / Exclusion / Confidence / orchestrator /
+    UI / DB / predict modules. The aggregator only reads dicts handed in
+    by callers — it never calls into the upstream subsystems."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.source = (ROOT / "services" / "final_decision.py").read_text(
+            encoding="utf-8"
+        )
+
+    def test_no_main_projection_layer_import(self) -> None:
+        for f in (
+            "from services.main_projection_layer",
+            "import services.main_projection_layer",
+        ):
+            self.assertNotIn(
+                f, self.source,
+                msg=f"final_decision must not contain `{f}`",
+            )
+
+    def test_no_exclusion_layer_or_peer_alignment_import(self) -> None:
+        for f in (
+            "from services.exclusion_layer",
+            "import services.exclusion_layer",
+            "from services.peer_alignment",
+            "import services.peer_alignment",
+        ):
+            self.assertNotIn(
+                f, self.source,
+                msg=f"final_decision must not contain `{f}`",
+            )
+
+    def test_no_confidence_evaluator_import(self) -> None:
+        for f in (
+            "from services.confidence_evaluator",
+            "import services.confidence_evaluator",
+        ):
+            self.assertNotIn(
+                f, self.source,
+                msg=f"final_decision must not contain `{f}`",
+            )
+
+    def test_no_orchestrator_imports(self) -> None:
+        forbidden = (
+            "from services.projection_orchestrator",
+            "import services.projection_orchestrator",
+            "from services.projection_orchestrator_v2",
+            "import services.projection_orchestrator_v2",
+            "from services.projection_entrypoint",
+            "import services.projection_entrypoint",
+            "from services.projection_v2_adapter",
+            "import services.projection_v2_adapter",
+            "from services.home_terminal_orchestrator",
+            "import services.home_terminal_orchestrator",
+        )
+        for f in forbidden:
+            self.assertNotIn(
+                f, self.source,
+                msg=f"final_decision must not contain `{f}`",
+            )
+
+    def test_no_predict_app_ui_import(self) -> None:
+        forbidden = (
+            "import predict",
+            "from predict",
+            "import app",
+            "from app",
+            "import ui",
+            "from ui",
+            "import streamlit",
+            "from streamlit",
+        )
+        for f in forbidden:
+            self.assertNotIn(
+                f, self.source,
+                msg=f"final_decision must not contain `{f}`",
+            )
+
+    def test_no_db_or_yfinance_import(self) -> None:
+        for f in (
+            "import sqlite3",
+            "from sqlite3",
+            "import yfinance",
+            "from yfinance",
+        ):
+            self.assertNotIn(
+                f, self.source,
+                msg=f"final_decision must not contain `{f}`",
+            )
+
+    def test_no_review_or_adapter_import(self) -> None:
+        forbidden = (
+            "from services.review_orchestrator",
+            "import services.review_orchestrator",
+            "from services.projection_result_adapter",
+            "import services.projection_result_adapter",
+            "from services.exclusion_result_adapter",
+            "import services.exclusion_result_adapter",
+            "from services.feature_payload_adapter",
+            "import services.feature_payload_adapter",
+        )
+        for f in forbidden:
+            self.assertNotIn(
+                f, self.source,
+                msg=f"final_decision must not contain `{f}`",
+            )
+
+
+class FinalDecisionInputNonMutationTests(unittest.TestCase):
+    """``build_final_decision`` must not mutate any of its dict inputs.
+    PR-FINAL-2 pins this with deep-copy round-trip tests across the full
+    happy path and the primary-missing path."""
+
+    def _build_inputs(self) -> dict[str, dict[str, object]]:
+        return {
+            "primary_analysis": _primary(),
+            "peer_adjustment": _peer(),
+            "historical_probability": _historical(),
+            "preflight": _preflight(),
+            "confidence_result": {
+                "schema_version": "confidence_system_result.v1",
+                "ready": True,
+                "combined_confidence": {
+                    "level": "medium",
+                    "score": 0.55,
+                    "reasoning": ["test"],
+                },
+                "agreement_status": "aligned",
+                "conflict_level": "none",
+            },
+            "exclusion_result": {
+                "schema_version": "exclusion_system_result.v1",
+                "kind": "exclusion_layer",
+                "symbol": "AVGO",
+                "ready": True,
+                "excluded": True,
+                "action": "exclude",
+                "triggered_rule": "exclude_big_down",
+                "reasons": ["legacy reason"],
+            },
+        }
+
+    def test_happy_path_does_not_mutate_any_input(self) -> None:
+        import copy as _copy
+
+        from services.final_decision import build_final_decision
+
+        inputs = self._build_inputs()
+        snapshots = {key: _copy.deepcopy(value) for key, value in inputs.items()}
+
+        build_final_decision(**inputs)
+
+        for key, snapshot in snapshots.items():
+            self.assertEqual(
+                inputs[key], snapshot,
+                msg=f"build_final_decision mutated input {key!r}",
+            )
+
+    def test_primary_missing_path_does_not_mutate_any_input(self) -> None:
+        import copy as _copy
+
+        from services.final_decision import build_final_decision
+
+        inputs = {
+            "primary_analysis": _primary(
+                ready=False, direction="unknown", confidence="unknown",
+            ),
+            "peer_adjustment": _peer(),
+            "historical_probability": _historical(),
+            "preflight": _preflight(),
+        }
+        snapshots = {key: _copy.deepcopy(value) for key, value in inputs.items()}
+
+        build_final_decision(**inputs)
+
+        for key, snapshot in snapshots.items():
+            self.assertEqual(
+                inputs[key], snapshot,
+                msg=f"build_final_decision mutated input {key!r}",
+            )
+
+    def test_inputs_with_nested_lists_dicts_unchanged(self) -> None:
+        import copy as _copy
+
+        from services.final_decision import build_final_decision
+
+        inputs = self._build_inputs()
+        # Pad with deeply nested mutable structures to catch any in-place
+        # modification of nested data.
+        inputs["preflight"]["matched_rules"] = [
+            {"rule_id": "R1", "severity": "high", "message": "msg-1"},
+            {"rule_id": "R2", "severity": "medium", "message": "msg-2"},
+        ]
+        inputs["historical_probability"]["details"] = {
+            "samples": [1, 2, 3],
+            "notes": ["note"],
+        }
+        snapshots = {key: _copy.deepcopy(value) for key, value in inputs.items()}
+
+        build_final_decision(**inputs)
+
+        for key, snapshot in snapshots.items():
+            self.assertEqual(
+                inputs[key], snapshot,
+                msg=f"build_final_decision mutated input {key!r}",
+            )
+
+
+class FinalDecisionDeadHelperRemovalTests(unittest.TestCase):
+    """PR-FINAL-2 deletes ``_apply_preflight_influence`` /
+    ``_confidence_from_score`` / ``_risk_level`` from
+    ``services/final_decision.py``. Their absence is pinned here."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.source = (ROOT / "services" / "final_decision.py").read_text(
+            encoding="utf-8"
+        )
+        cls.tree = ast.parse(cls.source)
+
+    def _function_names(self) -> set[str]:
+        return {
+            node.name
+            for node in ast.walk(self.tree)
+            if isinstance(node, ast.FunctionDef)
+        }
+
+    def test_apply_preflight_influence_definition_removed(self) -> None:
+        self.assertNotIn(
+            "_apply_preflight_influence",
+            self._function_names(),
+            msg=(
+                "_apply_preflight_influence must be removed by PR-FINAL-2 "
+                "(it has had no caller since Step 12B)."
+            ),
+        )
+
+    def test_confidence_from_score_definition_removed(self) -> None:
+        self.assertNotIn(
+            "_confidence_from_score",
+            self._function_names(),
+            msg=(
+                "_confidence_from_score must be removed by PR-FINAL-2 "
+                "(its only caller was inside _apply_preflight_influence)."
+            ),
+        )
+
+    def test_risk_level_definition_removed(self) -> None:
+        self.assertNotIn(
+            "_risk_level",
+            self._function_names(),
+            msg=(
+                "_risk_level must be removed by PR-FINAL-2 "
+                "(it has had no caller since Step 12B)."
+            ),
+        )
+
+    def test_module_does_not_call_dead_helpers(self) -> None:
+        # The pre-existing test_build_final_decision_does_not_call_*
+        # tests scope to build_final_decision; this test scopes to the
+        # whole module to guard against any other helper accidentally
+        # reintroducing a call.
+        for forbidden_call in (
+            "_apply_preflight_influence(",
+            "_confidence_from_score(",
+            "_risk_level(",
+        ):
+            self.assertNotIn(
+                forbidden_call,
+                self.source,
+                msg=(
+                    f"final_decision must not call {forbidden_call!r} "
+                    "anywhere — PR-FINAL-2 pins removal."
+                ),
+            )
+
+
 if __name__ == "__main__":
     unittest.main()

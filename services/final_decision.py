@@ -11,10 +11,11 @@ aggregator + display formatter**. It must not:
 - apply preflight rules as a forced effect (preflight is display-only
   ``risk_disclosure`` / ``warnings`` / ``evidence_summary``).
 
-Several legacy helpers (``_apply_preflight_influence``,
-``_confidence_from_score``, ``_risk_level``) remain in the module as dead
-code. The Step 14 cleanup pass will delete them; this Step 12B fix only
-removes their call sites from ``build_final_decision``.
+Three legacy helpers (``_apply_preflight_influence``,
+``_confidence_from_score``, ``_risk_level``) were removed in Step 18P
+(PR-FINAL-2) after Step 12B's call-site removal left them dead. Their
+absence is pinned by tests in
+``tests/test_final_decision_aggregator_purification_boundary.py``.
 """
 
 from __future__ import annotations
@@ -47,10 +48,6 @@ def _confidence_score(value: str) -> int:
     return _CONFIDENCE_LEVELS.get(value, 0)
 
 
-def _confidence_from_score(score: int) -> str:
-    return _CONFIDENCE_BY_SCORE.get(max(0, min(3, score)), "unknown")
-
-
 def _risk_score(value: str) -> int:
     return _RISK_ORDER.get(str(value or "").strip().lower(), 1)
 
@@ -69,63 +66,6 @@ def _infer_rule_effect(rule: dict[str, Any]) -> str:
     if severity == "medium":
         return "raise_risk"
     return "warn"
-
-
-def _apply_preflight_influence(
-    matched_rules: list[Any],
-    final_confidence: str,
-    risk_level: str,
-) -> tuple[str, str, dict[str, Any]]:
-    """Apply preflight rule effects to confidence and risk. Caps at one step each.
-
-    severity mapping (unless rule carries explicit effect field):
-      high   → lower_confidence  (−1 confidence level)
-      medium → raise_risk        (+1 risk level)
-      low    → warn              (no score change)
-    """
-    dict_rules = [r for r in (matched_rules or []) if isinstance(r, dict)]
-
-    if not dict_rules:
-        return final_confidence, risk_level, {
-            "matched_rule_count": 0,
-            "applied_effects": [],
-            "summary": "未命中会影响最终结论的历史规则。",
-        }
-
-    applied: list[str] = []
-    confidence_lowered = False
-    risk_raised = False
-
-    for rule in dict_rules:
-        effect = _infer_rule_effect(rule)
-        if effect == "lower_confidence" and not confidence_lowered:
-            score = _confidence_score(final_confidence)
-            if score > 0:
-                final_confidence = _confidence_from_score(score - 1)
-                confidence_lowered = True
-                applied.append("lower_confidence")
-        elif effect == "raise_risk" and not risk_raised:
-            score = _risk_score(risk_level)
-            if score < 2:
-                risk_level = _risk_from_score(score + 1)
-                risk_raised = True
-                applied.append("raise_risk")
-
-    if applied:
-        parts = []
-        if "lower_confidence" in applied:
-            parts.append("下调置信度")
-        if "raise_risk" in applied:
-            parts.append("提高风险等级")
-        summary = f"命中 {len(dict_rules)} 条历史规则：{'并'.join(parts)}。"
-    else:
-        summary = f"命中 {len(dict_rules)} 条历史规则提醒（仅警告，不影响置信度和风险等级）。"
-
-    return final_confidence, risk_level, {
-        "matched_rule_count": len(dict_rules),
-        "applied_effects": applied,
-        "summary": summary,
-    }
 
 
 def _preflight_rules_count(preflight: dict[str, Any]) -> int:
@@ -201,27 +141,6 @@ def _peer_contribution(peer: dict[str, Any]) -> str:
             return "peer 修正强化主分析方向。"
         return "peer 修正保持 no_change。"
     return "未获 peers 确认。"
-
-
-def _risk_level(
-    *,
-    primary_confidence: str,
-    peer_missing: bool,
-    peer_adjustment: str,
-    historical_impact: str,
-    historical_bias: str,
-) -> str:
-    if peer_missing and historical_impact == "missing":
-        return "high"
-    if peer_adjustment == "downgrade":
-        return "medium" if historical_impact == "support" else "high"
-    if historical_impact == "caution" or historical_bias in {"mixed", "insufficient", "missing"}:
-        return "medium"
-    if historical_impact == "missing":
-        return "medium"
-    if primary_confidence == "high":
-        return "low"
-    return "medium"
 
 
 def _why_not_more(
