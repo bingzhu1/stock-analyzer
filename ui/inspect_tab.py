@@ -160,6 +160,286 @@ def _render_standard_payload_section(
             st_obj.json(summary)
 
 
+# ---------------------------------------------------------------------------
+# Contract payload diff / trend / extras display sections (PR-UI-3 / 18Y)
+#
+# These three pure render helpers consume the read-only outputs of
+# ``services.contract_payload_diff.diff_latest_contract_payloads``,
+# ``services.contract_payload_trend.summarize_recent_contract_payloads``,
+# and ``services.contract_payload_extras_dashboard.summarize_contract_extras_dashboard``
+# (already shipped as backend tools) and surface them in the Inspect
+# tab. Each helper:
+#
+#   - never mutates its input dict (defensive ``deepcopy`` is unnecessary
+#     because the helpers only read; the contract is "no writes back");
+#   - never imports / calls any business module / DB / yfinance;
+#   - degrades to friendly messages when given ``None`` / non-dict /
+#     unknown status / missing fields;
+#   - uses only the documented Streamlit-style display primitives
+#     (markdown / caption / info / warning / json / expander).
+#
+# The accompanying test suite is
+# ``tests/test_inspect_tab_diff_trend_extras_section.py``.
+# ---------------------------------------------------------------------------
+
+
+_DIFF_STATUS_LABELS: dict[str, str] = {
+    "ok": "已比对最近两次 contract_payload",
+    "not_enough_records": "记录不足两条，无法比对",
+    "missing_contract_payload": "至少一条记录缺少 contract_payload",
+    "invalid_json": "至少一条记录的 contract_payload JSON 解析失败",
+    "validation_failed": "至少一条记录的 contract_payload 校验失败",
+    "error": "diff 加载异常",
+}
+
+
+_TREND_STATUS_LABELS: dict[str, str] = {
+    "ok": "已聚合最近若干条 contract_payload",
+    "no_records": "尚无 prediction 记录",
+    "no_valid_payloads": "扫描的记录中没有可用的 contract_payload",
+    "error": "trend 加载异常",
+}
+
+
+_EXTRAS_STATUS_LABELS: dict[str, str] = {
+    "ok": "已聚合最近若干条 contract extras",
+    "no_records": "尚无符合条件的 prediction 记录",
+    "no_valid_payloads": "扫描的记录中没有可用的 contract_payload",
+    "error": "extras dashboard 加载异常",
+}
+
+
+def _render_contract_payload_diff_section(
+    diff_result: dict[str, Any] | None,
+    st_obj: Any,
+) -> None:
+    """Render the Inspect-tab contract payload diff section
+    (PR-UI-3 / 18Y).
+
+    Pure read-only display. Accepts whatever
+    ``services.contract_payload_diff.diff_latest_contract_payloads``
+    returns (or any equivalent dict). Never mutates the input; never
+    calls business modules / writes the DB / triggers prediction.
+    """
+    st_obj.markdown("---")
+    st_obj.markdown("### 最近两次 contract_payload diff")
+
+    if diff_result is None:
+        st_obj.info("尚未取得 contract_payload diff 结果。")
+        return
+    if not isinstance(diff_result, dict):
+        st_obj.warning("contract_payload diff 返回类型异常，已跳过展示。")
+        return
+
+    status = diff_result.get("status", "unknown")
+    label = _DIFF_STATUS_LABELS.get(str(status), f"未识别状态 ({status})")
+    st_obj.markdown(f"**Status**: `{status}` — {label}")
+
+    latest_id = diff_result.get("latest_prediction_id")
+    previous_id = diff_result.get("previous_prediction_id")
+    symbol = diff_result.get("symbol")
+    if any(v is not None for v in (latest_id, previous_id, symbol)):
+        st_obj.caption(
+            f"latest: {latest_id} / previous: {previous_id} / symbol: {symbol}"
+        )
+
+    available = diff_result.get("available_records")
+    if available is not None:
+        st_obj.caption(f"available_records: {available}")
+
+    failed_side = diff_result.get("failed_side")
+    if failed_side is not None:
+        st_obj.markdown(f"**failed_side**: `{failed_side}`")
+
+    error_text = diff_result.get("error")
+    if isinstance(error_text, str) and error_text:
+        st_obj.markdown(f"**error**: `{error_text}`")
+
+    validation_errors = diff_result.get("validation_errors")
+    if isinstance(validation_errors, list) and validation_errors:
+        st_obj.markdown(
+            f"**validation_errors** ({len(validation_errors)}):"
+        )
+        for err in validation_errors:
+            st_obj.markdown(f"- {err}")
+
+    changed_fields = diff_result.get("changed_fields")
+    if isinstance(changed_fields, list):
+        if changed_fields:
+            st_obj.markdown(
+                f"**changed_fields** ({len(changed_fields)}):"
+            )
+            for path in changed_fields:
+                st_obj.markdown(f"- `{path}`")
+        else:
+            st_obj.markdown("**changed_fields**: 无")
+
+    summary = diff_result.get("summary")
+    if isinstance(summary, dict) and summary:
+        with st_obj.expander("diff summary"):
+            st_obj.json(summary)
+
+
+def _render_contract_payload_trend_section(
+    trend_result: dict[str, Any] | None,
+    st_obj: Any,
+) -> None:
+    """Render the Inspect-tab contract payload trend section
+    (PR-UI-3 / 18Y).
+
+    Pure read-only display. Accepts whatever
+    ``services.contract_payload_trend.summarize_recent_contract_payloads``
+    returns (or any equivalent dict). Never mutates the input; never
+    calls business modules / writes the DB / triggers prediction.
+    """
+    st_obj.markdown("---")
+    st_obj.markdown("### contract_payload 近期 trend")
+
+    if trend_result is None:
+        st_obj.info("尚未取得 contract_payload trend 结果。")
+        return
+    if not isinstance(trend_result, dict):
+        st_obj.warning("contract_payload trend 返回类型异常，已跳过展示。")
+        return
+
+    status = trend_result.get("status", "unknown")
+    label = _TREND_STATUS_LABELS.get(str(status), f"未识别状态 ({status})")
+    st_obj.markdown(f"**Status**: `{status}` — {label}")
+
+    requested_limit = trend_result.get("requested_limit")
+    records_scanned = trend_result.get("records_scanned")
+    valid_payloads = trend_result.get("valid_payloads")
+    invalid_payloads = trend_result.get("invalid_payloads")
+    if any(
+        v is not None
+        for v in (requested_limit, records_scanned, valid_payloads, invalid_payloads)
+    ):
+        st_obj.caption(
+            f"requested_limit: {requested_limit} / "
+            f"records_scanned: {records_scanned} / "
+            f"valid_payloads: {valid_payloads} / "
+            f"invalid_payloads: {invalid_payloads}"
+        )
+
+    error_text = trend_result.get("error")
+    if isinstance(error_text, str) and error_text:
+        st_obj.markdown(f"**error**: `{error_text}`")
+
+    skipped = trend_result.get("skipped_records")
+    if isinstance(skipped, list) and skipped:
+        st_obj.markdown(f"**skipped_records** ({len(skipped)}):")
+        for entry in skipped:
+            if isinstance(entry, dict):
+                pid = entry.get("prediction_id")
+                reason = entry.get("reason")
+                st_obj.markdown(f"- `{pid}` — {reason}")
+            else:
+                st_obj.markdown(f"- {entry}")
+
+    field_distributions = trend_result.get("field_distributions")
+    if isinstance(field_distributions, dict) and field_distributions:
+        st_obj.markdown(
+            f"**field_distributions** ({len(field_distributions)} paths)"
+        )
+        with st_obj.expander("field distributions"):
+            st_obj.json(field_distributions)
+
+    numeric_stats = trend_result.get("numeric_stats")
+    if isinstance(numeric_stats, dict) and numeric_stats:
+        st_obj.markdown(
+            f"**numeric_stats** ({len(numeric_stats)} paths)"
+        )
+        with st_obj.expander("numeric stats"):
+            st_obj.json(numeric_stats)
+
+    latest_values = trend_result.get("latest_values")
+    if isinstance(latest_values, dict) and latest_values:
+        st_obj.markdown(
+            f"**latest_values** ({len(latest_values)} paths)"
+        )
+        with st_obj.expander("latest values"):
+            st_obj.json(latest_values)
+
+
+def _render_contract_payload_extras_section(
+    extras_result: dict[str, Any] | None,
+    st_obj: Any,
+) -> None:
+    """Render the Inspect-tab contract extras dashboard section
+    (PR-UI-3 / 18Y).
+
+    Pure read-only display. Accepts whatever
+    ``services.contract_payload_extras_dashboard.summarize_contract_extras_dashboard``
+    returns (or any equivalent dict). Never mutates the input; never
+    calls business modules / writes the DB / triggers prediction.
+    """
+    st_obj.markdown("---")
+    st_obj.markdown("### contract_payload extras dashboard")
+
+    if extras_result is None:
+        st_obj.info("尚未取得 contract extras dashboard 结果。")
+        return
+    if not isinstance(extras_result, dict):
+        st_obj.warning("contract extras dashboard 返回类型异常，已跳过展示。")
+        return
+
+    status = extras_result.get("status", "unknown")
+    label = _EXTRAS_STATUS_LABELS.get(str(status), f"未识别状态 ({status})")
+    st_obj.markdown(f"**Status**: `{status}` — {label}")
+
+    symbol_filter = extras_result.get("symbol_filter")
+    requested_limit = extras_result.get("requested_limit")
+    records_scanned = extras_result.get("records_scanned")
+    valid_payloads = extras_result.get("valid_payloads")
+    invalid_payloads = extras_result.get("invalid_payloads")
+    if any(
+        v is not None
+        for v in (
+            symbol_filter,
+            requested_limit,
+            records_scanned,
+            valid_payloads,
+            invalid_payloads,
+        )
+    ):
+        st_obj.caption(
+            f"symbol_filter: {symbol_filter} / "
+            f"requested_limit: {requested_limit} / "
+            f"records_scanned: {records_scanned} / "
+            f"valid_payloads: {valid_payloads} / "
+            f"invalid_payloads: {invalid_payloads}"
+        )
+
+    error_text = extras_result.get("error")
+    if isinstance(error_text, str) and error_text:
+        st_obj.markdown(f"**error**: `{error_text}`")
+
+    skipped = extras_result.get("skipped_records")
+    if isinstance(skipped, list) and skipped:
+        st_obj.markdown(f"**skipped_records** ({len(skipped)}):")
+        for entry in skipped:
+            if isinstance(entry, dict):
+                pid = entry.get("prediction_id")
+                reason = entry.get("reason")
+                st_obj.markdown(f"- `{pid}` — {reason}")
+            else:
+                st_obj.markdown(f"- {entry}")
+
+    latest_snapshot = extras_result.get("latest_snapshot")
+    if isinstance(latest_snapshot, dict) and latest_snapshot:
+        st_obj.markdown("**latest_snapshot**:")
+        with st_obj.expander("latest snapshot"):
+            st_obj.json(latest_snapshot)
+
+    extras_distributions = extras_result.get("extras_distributions")
+    if isinstance(extras_distributions, dict) and extras_distributions:
+        st_obj.markdown(
+            f"**extras_distributions** ({len(extras_distributions)} paths)"
+        )
+        with st_obj.expander("extras distributions"):
+            st_obj.json(extras_distributions)
+
+
 def _render_stats_block(block: dict[str, Any], st_obj: Any) -> None:
     """Render a standard stats block as a row of KPI cards."""
     n      = block.get("sample_count", 0)
@@ -414,3 +694,40 @@ def render_inspect_tab(current_snapshot: dict[str, Any] | None = None) -> None:
                 "missing_sections": _compute_missing_sections(sections_present),
             }
     _render_standard_payload_section(inspector_result, st)
+
+    # ── Section 5: contract_payload diff (PR-UI-3 / 18Y) ──────────────────────
+    # Display-only. Each backend call lives behind its own try/except so a
+    # DB / parse / validation failure in one helper degrades to a friendly
+    # warning rather than breaking the tab. The pure render helpers carry
+    # the testable surface; ``render_inspect_tab`` only wires them up.
+    diff_result: dict[str, Any] | None = None
+    try:
+        from services.contract_payload_diff import (
+            diff_latest_contract_payloads,
+        )
+        diff_result = diff_latest_contract_payloads()
+    except Exception as exc:  # noqa: BLE001 — display-only fallback
+        st.warning(f"contract_payload diff 加载失败：{exc}")
+    _render_contract_payload_diff_section(diff_result, st)
+
+    # ── Section 6: contract_payload trend (PR-UI-3 / 18Y) ─────────────────────
+    trend_result: dict[str, Any] | None = None
+    try:
+        from services.contract_payload_trend import (
+            summarize_recent_contract_payloads,
+        )
+        trend_result = summarize_recent_contract_payloads()
+    except Exception as exc:  # noqa: BLE001 — display-only fallback
+        st.warning(f"contract_payload trend 加载失败：{exc}")
+    _render_contract_payload_trend_section(trend_result, st)
+
+    # ── Section 7: contract extras dashboard (PR-UI-3 / 18Y) ──────────────────
+    extras_result: dict[str, Any] | None = None
+    try:
+        from services.contract_payload_extras_dashboard import (
+            summarize_contract_extras_dashboard,
+        )
+        extras_result = summarize_contract_extras_dashboard()
+    except Exception as exc:  # noqa: BLE001 — display-only fallback
+        st.warning(f"contract extras dashboard 加载失败：{exc}")
+    _render_contract_payload_extras_section(extras_result, st)
