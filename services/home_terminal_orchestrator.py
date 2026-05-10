@@ -166,9 +166,16 @@ def build_home_terminal_orchestrator_result(
     # The evaluator never mutates either input; calibration is unwired in
     # this path so the levels degrade to "unknown" until calibration is
     # connected.
+    #
+    # PR-CONF-3 (18O): pass ``calibration_context={"ready": False}``
+    # explicitly so the evaluator emits a ``ready=False`` reliability
+    # warning instead of a ``"calibration_context 缺失"`` warning.
+    # Confidence levels / scores remain ``unknown`` / ``None`` — this PR
+    # does not introduce any real calibration data.
     confidence_result = build_confidence_result(
         projection_result=main_projection,
         exclusion_result=exclusion_result,
+        calibration_context={"ready": False},
         target_date=target_date_str,
         symbol="AVGO",
     )

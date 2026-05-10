@@ -480,9 +480,16 @@ def run_projection_v2(
         # Even on the legacy-runner failure path, surface a deterministic
         # confidence_result (all unknowns) so downstream consumers see a
         # consistent payload shape (11C §11.4 stage B).
+        #
+        # PR-CONF-3 (18O): pass ``calibration_context={"ready": False}``
+        # explicitly so the evaluator emits a ``ready=False`` reliability
+        # warning instead of a ``"calibration_context 缺失"`` warning.
+        # Confidence levels / scores remain ``unknown`` / ``None`` — this
+        # PR does not introduce any real calibration data.
         confidence_result = build_confidence_result(
             projection_result=main_projection,
             exclusion_result=exclusion_result,
+            calibration_context={"ready": False},
             target_date=target_date,
             symbol=normalized_symbol,
         )
@@ -582,9 +589,15 @@ def run_projection_v2(
         scan_result=scan_result,
     )
     effective_target_date = primary.get("target_date") or target_date
+    # PR-CONF-3 (18O): pass ``calibration_context={"ready": False}``
+    # explicitly so the evaluator emits a ``ready=False`` reliability
+    # warning instead of a ``"calibration_context 缺失"`` warning.
+    # Confidence levels / scores remain ``unknown`` / ``None`` — this PR
+    # does not introduce any real calibration data.
     confidence_result = build_confidence_result(
         projection_result=main_projection,
         exclusion_result=exclusion_result,
+        calibration_context={"ready": False},
         target_date=effective_target_date,
         symbol=normalized_symbol,
     )

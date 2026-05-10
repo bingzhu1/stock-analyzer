@@ -460,5 +460,144 @@ class ProjectionOrchestratorV2Tests(unittest.TestCase):
         self.assertIn("memory_items", preflight["source_counts"])
 
 
+# ---------------------------------------------------------------------------
+# PR-CONF-3 (18O): both build_confidence_result call sites in
+# projection_orchestrator_v2 must pass explicit
+# ``calibration_context={"ready": False}``. Confidence levels / scores
+# remain ``unknown`` / ``None`` — this PR does not introduce any real
+# calibration data.
+# ---------------------------------------------------------------------------
+
+
+class CalibrationContextExplicitReadyFalseTests(unittest.TestCase):
+    """Capture build_confidence_result kwargs from each of the two call
+    sites in projection_orchestrator_v2 to verify
+    ``calibration_context={"ready": False}`` is passed explicitly."""
+
+    def test_v2_orchestrator_happy_path_passes_calibration_context_ready_false(
+        self,
+    ) -> None:
+        from services import projection_orchestrator_v2 as v2_mod
+
+        captured: list[dict[str, object]] = []
+        original = v2_mod.build_confidence_result
+
+        def _capturing_build(**kwargs: object) -> dict[str, object]:
+            captured.append(kwargs)
+            return original(**kwargs)
+
+        v2_mod.build_confidence_result = _capturing_build  # type: ignore[assignment]
+        try:
+            _run(_legacy_result())
+        finally:
+            v2_mod.build_confidence_result = original  # type: ignore[assignment]
+
+        self.assertGreaterEqual(len(captured), 1)
+        for kwargs in captured:
+            self.assertIn("calibration_context", kwargs)
+            self.assertEqual(
+                kwargs["calibration_context"], {"ready": False}
+            )
+
+    def test_v2_orchestrator_legacy_runner_failure_path_passes_ready_false(
+        self,
+    ) -> None:
+        # Drive the legacy-runner failure branch so the second
+        # build_confidence_result call site (line 483 in source) fires.
+        # Per existing test_v2_legacy_runner_failure_returns_failed_payload
+        # pattern, a runner that raises triggers the failure branch.
+        from services import projection_orchestrator_v2 as v2_mod
+
+        captured: list[dict[str, object]] = []
+        original = v2_mod.build_confidence_result
+
+        def _capturing_build(**kwargs: object) -> dict[str, object]:
+            captured.append(kwargs)
+            return original(**kwargs)
+
+        def _bad_runner(**_: object) -> dict[str, object]:
+            raise RuntimeError("intentional failure")
+
+        v2_mod.build_confidence_result = _capturing_build  # type: ignore[assignment]
+        try:
+            run_projection_v2(
+                _projection_runner=_bad_runner,
+                _primary_analysis_builder=_primary_builder(),
+                _rule_preflight_builder=_noop_preflight,
+            )
+        finally:
+            v2_mod.build_confidence_result = original  # type: ignore[assignment]
+
+        self.assertGreaterEqual(len(captured), 1)
+        for kwargs in captured:
+            self.assertEqual(
+                kwargs["calibration_context"], {"ready": False}
+            )
+
+    def test_v2_orchestrator_does_not_set_projection_or_exclusion_score(
+        self,
+    ) -> None:
+        from services import projection_orchestrator_v2 as v2_mod
+
+        captured: list[dict[str, object]] = []
+        original = v2_mod.build_confidence_result
+
+        def _capturing_build(**kwargs: object) -> dict[str, object]:
+            captured.append(kwargs)
+            return original(**kwargs)
+
+        v2_mod.build_confidence_result = _capturing_build  # type: ignore[assignment]
+        try:
+            _run(_legacy_result())
+        finally:
+            v2_mod.build_confidence_result = original  # type: ignore[assignment]
+
+        self.assertGreaterEqual(len(captured), 1)
+        for kwargs in captured:
+            cc = kwargs.get("calibration_context")
+            self.assertIsInstance(cc, dict)
+            self.assertIs(cc.get("ready"), False)
+            # PR-CONF-3 must not introduce real calibration scores.
+            self.assertNotIn("projection_score", cc)
+            self.assertNotIn("exclusion_score", cc)
+
+    def test_v2_orchestrator_confidence_result_remains_unknown_with_ready_false(
+        self,
+    ) -> None:
+        # End-to-end: the v2 orchestrator's confidence_result must remain
+        # ``unknown`` / ``None`` when calibration_context.ready=False.
+        from services import projection_orchestrator_v2 as v2_mod
+
+        captured_results: list[dict[str, object]] = []
+        original = v2_mod.build_confidence_result
+
+        def _capturing_build(**kwargs: object) -> dict[str, object]:
+            result = original(**kwargs)
+            captured_results.append(result)
+            return result
+
+        v2_mod.build_confidence_result = _capturing_build  # type: ignore[assignment]
+        try:
+            _run(_legacy_result())
+        finally:
+            v2_mod.build_confidence_result = original  # type: ignore[assignment]
+
+        self.assertGreaterEqual(len(captured_results), 1)
+        for result in captured_results:
+            self.assertEqual(
+                result["projection_confidence"]["level"], "unknown"
+            )
+            self.assertEqual(
+                result["exclusion_confidence"]["level"], "unknown"
+            )
+            self.assertEqual(
+                result["combined_confidence"]["level"], "unknown"
+            )
+            self.assertIsNone(result["projection_confidence"]["score"])
+            warnings_text = " ".join(result["reliability_warnings"])
+            self.assertIn("ready=False", warnings_text)
+            self.assertNotIn("calibration_context 缺失", warnings_text)
+
+
 if __name__ == "__main__":
     unittest.main()
