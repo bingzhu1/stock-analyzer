@@ -1355,39 +1355,69 @@ _CONFIDENCE_ORDER = ["low", "medium", "high"]
 
 
 def _apply_briefing_caution(result: dict, briefing: dict) -> dict:
-    """Lower final_confidence by one step when caution_level is high."""
+    """Surface briefing caution as a warning-only marker (PR-REVIEW-2 / 18R).
+
+    Reads the pre-prediction briefing's caution signal and records it as
+    a marker on the returned dict. The function **never** mutates
+    ``final_confidence`` / ``final_direction`` / ``final_prediction`` /
+    ``final_bias`` / ``primary_direction`` / ``primary_projection`` /
+    ``final_projection`` — review / memory / briefing must only learn
+    ex-post (1.0 §13 hard rule / 06 §6 / 07A §3.2 / 07B §3.2 / 07C §3.3
+    / 07D §11). The original confidence is preserved verbatim; the
+    function only attaches:
+
+    - ``briefing_caution_applied`` (bool): True when the briefing flags
+      a high-caution case where confidence *would* have been lowered
+      under the prior in-place rewrite logic. UI consumers
+      (``ui/predict_tab.py``) treat this as "show a caution warning"
+      — semantics unchanged.
+    - ``briefing_caution_reason`` (str | None): human-readable reason.
+    - ``briefing_caution_original_confidence`` (str | None): the value
+      of ``final_confidence`` at entry (for downstream display only).
+    - ``briefing_caution_recommended_confidence`` (str | None): the
+      one-step-lower value the briefing recommends as a *display-only*
+      hint. ``final_confidence`` itself is left intact so consumers can
+      see the projection's own confidence and decide what to do.
+
+    The caller in ``run_predict`` keeps the
+    ``result["confidence"] = result.get("final_confidence", ...)``
+    lockstep idiom; both fields now stay at the projection-side value
+    instead of being overwritten by review memory."""
     result = dict(result)
     caution_level = briefing.get("caution_level", "none")
     has_data = briefing.get("has_data", False)
 
+    # Default marker shape — never touch final_confidence.
+    result["briefing_caution_applied"] = False
+    result["briefing_caution_reason"] = None
+    result["briefing_caution_original_confidence"] = result.get(
+        "final_confidence"
+    )
+    result["briefing_caution_recommended_confidence"] = None
+
     if caution_level == "high" and has_data:
-        current = result["final_confidence"]
+        current = result.get("final_confidence")
         if current in _CONFIDENCE_ORDER:
             idx = _CONFIDENCE_ORDER.index(current)
             if idx > 0:
-                result["final_confidence"] = _CONFIDENCE_ORDER[idx - 1]
+                recommended = _CONFIDENCE_ORDER[idx - 1]
                 result["briefing_caution_applied"] = True
                 result["briefing_caution_reason"] = (
                     f"历史准确率 {briefing.get('overall_accuracy', 0.0):.0%}，"
                     f"基于 {briefing.get('record_count', 0)} 条复盘记录，"
-                    f"信心由 {current} 下调一档"
+                    f"建议视为 {recommended}（仅警告，不改写本次推演 final_confidence={current}）"
                 )
+                result["briefing_caution_recommended_confidence"] = recommended
             else:
-                result["briefing_caution_applied"] = False
                 result["briefing_caution_reason"] = (
                     f"历史风险高但信心已在最低档（{current}），未继续下调"
                 )
-        else:
-            result["briefing_caution_applied"] = False
-            result["briefing_caution_reason"] = None
+        # else: unknown / non-canonical confidence — leave defaults.
     elif caution_level == "medium" and has_data:
-        result["briefing_caution_applied"] = False
         result["briefing_caution_reason"] = (
             f"历史准确率中等（{briefing.get('overall_accuracy', 0.0):.0%}），维持当前信心并标注风险"
         )
-    else:
-        result["briefing_caution_applied"] = False
-        result["briefing_caution_reason"] = None
+    # else: no caution — defaults already applied above.
 
     return result
 
@@ -1511,9 +1541,11 @@ def run_predict(
     }
     if pre_briefing and pre_briefing.get("has_data"):
         result = _apply_briefing_caution(result, pre_briefing)
-        # _apply_briefing_caution may have lowered final_confidence; keep
-        # the ``confidence`` alias in lockstep so the two compat fields
-        # never diverge.
+        # PR-REVIEW-2 (18R): _apply_briefing_caution is now warning-only —
+        # it never modifies ``final_confidence``. The lockstep assignment
+        # below stays for legacy compat: ``confidence`` mirrors
+        # ``final_confidence``, and both now reflect the projection's own
+        # output (review memory cannot rewrite the current prediction).
         result["confidence"] = result.get("final_confidence", compat_confidence)
     # 11E X4-B: opt-in adapter overlay (no-op when v2_payload is None).
     return _apply_v2_legacy_adapter_overlay(result, v2_payload=v2_payload)
